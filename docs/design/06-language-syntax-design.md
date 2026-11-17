@@ -1,7 +1,6 @@
 # 语言语法设计笔记
 
-> 整合来源：`chat-编程语言形参语法设计`, `chat-Operator Overloading Approach`,
-> `chat-Import语句执行时机探讨`, `chat-迭代器协议分析与设计建议`
+> 整理自项目早期的设计讨论（原始记录未纳入仓库）。
 
 ---
 

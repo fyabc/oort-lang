@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   coverage gate.
 - Contribution, security and issue/PR templates.
 
-## [0.0.1] - 2026-11-18
+## [0.1.0] - 2026-11-18
 
 ### Added
 

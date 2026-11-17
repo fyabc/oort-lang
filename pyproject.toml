@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "oort-lang"
-version = "0.0.1"
+version = "0.1.0"
 authors = [
-    { name = "fyabc", email = "suyang.fy@alibaba-inc.com" },
+    { name = "fyabc" },
 ]
 description = "A toy programming language"
 readme = "README.md"

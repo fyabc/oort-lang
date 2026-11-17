@@ -99,12 +99,14 @@ def main() -> None:
         "-no-listener",
         "-Dlanguage=Python3",
         "-o",
-        str(GENERATED_DIR),
+        os.path.relpath(GENERATED_DIR, GRAMMAR_FILE_DIR),
         "-lib",
-        str(GRAMMAR_FILE_DIR),
-        str(GRAMMAR_FILENAME),
+        ".",
+        GRAMMAR_FILENAME.name,
     ]
-    subprocess.run(command, check=True, env=env)
+    # Run from grammars/ with a bare grammar filename so generated headers do
+    # not embed the author's absolute filesystem paths.
+    subprocess.run(command, check=True, env=env, cwd=GRAMMAR_FILE_DIR)
 
 
 if __name__ == "__main__":

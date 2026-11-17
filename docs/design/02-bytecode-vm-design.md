@@ -488,12 +488,5 @@ JIT 代码中寄存器可能持有堆指针，GC 需要精确的 Stack Maps。**
 
 ### 设计讨论来源
 
-本文档整合自以下讨论（见 `private/chats/`）：
-
-| 讨论文件 | 主要内容 |
-|---------|---------|
-| `chat-字节码指令集设计` | ISA 设计、双轨操作码、Lua 指令集详解 |
-| `chat-寄存器分配与JIT转换` | 寄存器分配算法、JIT 三种策略、代码生成 |
-| `chat-JIT 编译对比研究` | 栈式 vs 寄存器式 JIT、工具选型、实施路线 |
-| `chat-字节码错误定位` | 列号支持、差分编码、REPL 处理 |
-| `chat-CodeObject VarNames Comparison` | Python/Lua/V8/Ruby 闭包模型对比、CodeObject 设计、LLVM 闭包编译 |
+本文档整理自项目早期的设计讨论（ISA、寄存器分配、JIT 选型、错误定位、
+闭包模型与 CodeObject 设计）。原始讨论记录未纳入仓库。

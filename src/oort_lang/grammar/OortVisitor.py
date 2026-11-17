@@ -1,4 +1,4 @@
-# Generated from E:/GitProjects/oort-lang.py/grammars/Oort.g4 by ANTLR 4.13.1
+# Generated from Oort.g4 by ANTLR 4.13.1
 from antlr4 import *
 if "." in __name__:
     from .OortParser import OortParser
