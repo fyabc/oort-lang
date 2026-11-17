@@ -1,0 +1,182 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oort-lang"
+version = "0.0.1"
+authors = [
+    { name = "fyabc", email = "suyang.fy@alibaba-inc.com" },
+]
+description = "A toy programming language"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Software Development :: Interpreters",
+]
+dependencies = [
+    "antlr4-python3-runtime>=4.13.0",
+    "rich>=12.5.0",
+]
+
+[project.optional-dependencies]
+build-grammar = [
+    "antlr4-tools>=0.1.0",
+]
+test = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+]
+benchmark = [
+    "pytest-benchmark>=4.0.0",
+]
+dev = [
+    "ruff>=0.8.0",
+    "mypy>=1.0.0",
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-benchmark>=4.0.0",
+    "pre-commit>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/fyabc/oort-lang.py"
+Repository = "https://github.com/fyabc/oort-lang.py"
+Issues = "https://github.com/fyabc/oort-lang.py/issues"
+
+[project.scripts]
+oort = "oort_lang.entries.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oort_lang"]
+
+[tool.pytest.ini_options]
+log_level = "WARNING"
+log_format = "%(message)s"
+log_date_format = ""
+testpaths = ["tests", "benchmarks"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src/oort_lang"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/benchmarks/*",
+    "src/oort_lang/grammar/*",  # ANTLR-generated code
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+# ANTLR-generated parser files are not hand-maintained.
+extend-exclude = ["src/oort_lang/grammar"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "PTH",    # flake8-use-pathlib
+    "PGH",    # pygrep-hooks
+    "PIE",    # flake8-pie
+    "PL",     # pylint
+    "TRY",    # tryceratops
+    "FLY",    # flynt
+    "NPY",    # NumPy specific rules
+    "RUF",    # Ruff-specific
+]
+ignore = [
+    "PLR09",     # Too many X
+    "PLR2004",   # Magic value used in comparison
+    "TRY003",    # Avoid specifying long messages outside the exception class
+    "ARG001",    # Unused function argument
+    "ARG002",    # Unused method argument
+    "E501",      # Line too long
+    "PGH003",    # Use specific rule codes when ignoring type issues
+    "F405",      # May be undefined from star imports (common in this codebase)
+    "F403",      # Star imports used
+    "B904",      # raise from err
+    "C416",      # Unnecessary list comprehension
+    "SIM108",    # Use ternary operator
+    "PLW2901",   # redefined loop variable
+    "PLC0415",   # Import not at top-level (needed for lazy imports)
+    "PTH123",    # Use Path.open() instead of open()
+    "B011",      # assert False (used for unreachable code)
+    "B905",      # zip() without strict
+    "TRY004",    # Prefer TypeError for invalid type
+    "RUF005",    # Consider unpacking
+    "RUF012",    # Mutable class attributes
+    "RUF013",    # Implicit Optional
+    "PLW0108",   # Unnecessary lambda
+    "E712",      # Comparison to True/False
+    "UP031",     # Use format specifiers instead of percent format
+    "SIM105",    # Use contextlib.suppress
+    "SIM102",    # Use a single if statement instead of nested if statements
+    "E402",      # Module level import not at top of file
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "ARG", "PLR2004"]
+"benchmarks/**/*.py" = ["S101", "ARG"]
+"src/oort_lang/grammar/*.py" = ["ALL"]  # Generated code
+"**/__init__.py" = ["F401"]  # Re-exports in __init__.py
+
+[tool.ruff.lint.isort]
+known-first-party = ["oort_lang"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false
+warn_unused_configs = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+warn_no_return = false
+follow_imports = "skip"
+strict_optional = false
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "antlr4.*"
+ignore_missing_imports = true
