@@ -93,8 +93,8 @@ uv run pytest tests/
 uv run pytest benchmarks/
 
 # 代码质量
-uv run ruff check src/ tests/ benchmarks/
-uv run ruff format src/ tests/ benchmarks/
+uv run ruff check src/ tests/ benchmarks/ scripts/
+uv run ruff format src/ tests/ benchmarks/ scripts/
 uv run mypy src/
 ```
 

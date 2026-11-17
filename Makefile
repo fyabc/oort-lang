@@ -16,10 +16,10 @@ benchmark: ## Run benchmarks
 	uv run pytest benchmarks/ -v
 
 lint: ## Run linters
-	uv run ruff check src/ tests/ benchmarks/
+	uv run ruff check src/ tests/ benchmarks/ scripts/
 
 format: ## Format code
-	uv run ruff format src/ tests/ benchmarks/
+	uv run ruff format src/ tests/ benchmarks/ scripts/
 
 type-check: ## Run type checking
 	uv run mypy src/
