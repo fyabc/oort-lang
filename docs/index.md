@@ -6,6 +6,7 @@
 
 - [安装与使用](../README.md#安装与使用) — 安装 Oort 并运行第一个程序
 - [示例代码](../examples/) — 通过示例学习 Oort 语法
+- [VSCode 插件](../editors/vscode/README.md) — `.ort` 语法高亮与本地安装
 
 ## 语言规范
 

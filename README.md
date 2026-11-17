@@ -88,6 +88,20 @@ pip install .
 oort test.ort
 ```
 
+### VSCode 语法高亮
+
+仓库内置 `.ort` 高亮插件（TextMate，含文件图标，无需 Marketplace）：
+
+```bash
+cd editors/vscode
+npm install
+npm run package
+code --install-extension oort-lang-0.1.0.vsix
+```
+
+安装后重载窗口即可生效。开发方式、scope 说明与已知限制见
+[editors/vscode/README.md](editors/vscode/README.md)。
+
 ## 开发
 
 ```bash
@@ -129,6 +143,7 @@ src/oort_lang/
 grammars/Oort.g4      # 语法定义
 tests/                # 单元测试与集成测试
 examples/             # 示例程序
+editors/vscode/       # VSCode 语法高亮插件
 docs/                 # 规范、提案、实现笔记、设计调研
 benchmarks/           # 性能基线
 ```

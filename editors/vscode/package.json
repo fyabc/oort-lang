@@ -1,0 +1,59 @@
+{
+  "name": "oort-lang",
+  "displayName": "Oort",
+  "description": "Syntax highlighting and basic editor support for the Oort language",
+  "version": "0.1.0",
+  "publisher": "fyabc",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "oort",
+    "programming language",
+    "syntax highlighting"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fyabc/oort-lang.py",
+    "directory": "editors/vscode"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "oort",
+        "aliases": [
+          "Oort",
+          "oort"
+        ],
+        "extensions": [
+          ".ort"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/oort-light.svg",
+          "dark": "./icons/oort-dark.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "oort",
+        "scopeName": "source.oort",
+        "path": "./syntaxes/oort.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "test": "vscode-tmgrammar-test \"test/**/*.test.ort\"",
+    "package": "vsce package",
+    "install-local": "npm run package && code --install-extension oort-lang-0.1.0.vsix"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.0.0",
+    "vscode-tmgrammar-test": "^0.1.3"
+  }
+}

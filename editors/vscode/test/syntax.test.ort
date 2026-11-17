@@ -1,0 +1,53 @@
+# SYNTAX TEST "source.oort" "Oort syntax highlighting"
+
+#lang oort-object
+# <----- keyword.other.directive.oort
+#     ^^^^^^^^^^^ support.constant.dialect.oort
+
+val answer = 42
+# <--- storage.type.oort
+#            ^^ constant.numeric.oort
+
+if true { print("ok") } else { print(null) }
+# <-- keyword.control.oort
+#  ^^^^ constant.language.oort
+#                       ^^^^ keyword.control.oort
+#                                    ^^^^ constant.language.oort
+
+val ratio = 3.14
+#           ^^^^ constant.numeric.oort
+
+def operator "+"(other): other
+# <--- storage.type.oort
+#   ^^^^^^^^ keyword.other.operator.oort
+#            ^^^ entity.name.function.operator.oort
+
+class Vec {}
+# <----- storage.type.oort
+#     ^^^ entity.name.type.oort
+
+val d = {: "k": 1 :}
+#       ^^ punctuation.section.dict.begin.oort
+#                 ^^ punctuation.section.dict.end.oort
+
+val s = {. 1, 2 .}
+#       ^^ punctuation.section.set.begin.oort
+#               ^^ punctuation.section.set.end.oort
+
+print("hello" + 'raw')
+#     ^^^^^^^ string.quoted.single.oort
+#               ^^^^^ string.quoted.single.oort
+
+val raw = r"raw"
+#         ^^^^^^ string.quoted.single.raw.oort
+
+val text = """abc"""
+#          ^^^^^^^^^ string.quoted.triple.oort
+
+val n = 1 + 2 * 3
+#     ^ keyword.operator.assignment.oort
+#         ^ keyword.operator.oort
+#             ^ keyword.operator.oort
+
+# a normal comment
+# ^^^^^^^^^^^^^^^^ comment.line.number-sign.oort

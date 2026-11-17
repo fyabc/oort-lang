@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- VSCode extension in `editors/vscode/`: TextMate syntax highlighting,
+  bracket matching, comment configuration, an orbit-and-comet language file
+  icon and grammar tests.
 - Dialect contract: an optional first-line `#lang oort-object` directive,
   `DialectConfig` (feature gates and a per-compilation Pratt operator table),
   and explicit diagnostics for unknown, unimplemented (`oort-core`) or
