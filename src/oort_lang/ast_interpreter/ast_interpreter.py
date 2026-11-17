@@ -1,0 +1,543 @@
+#! /usr/bin/env python
+
+"""AST interpreter."""
+
+import operator
+from collections.abc import Iterable
+
+from ..ast import nodes
+from ..ast.ast_visitor import ASTVisitor
+from ..exceptions import OortSyntaxError, UnsupportedSyntax
+from ..exceptions.runtime_errors import (
+    OortAttributeError,
+    OortNameError,
+    OortRuntimeError,
+    OortTypeError,
+)
+from ..frontend.error_handler import CompilerErrorHandler
+from ..support.source_position import SourcePosition
+from .builtins import setup_builtins
+from .control_flow_exceptions import OortBreak, OortContinue, OortReturn
+from .environment import AssignResult, DefineResult, Entry, Environment
+from .objects import *
+from .objects import OortInstance
+
+_UNARY_OPS = {
+    "+": operator.pos,
+    "-": operator.neg,
+    "~": operator.inv,
+    "not": operator.not_,
+}
+_BINARY_OPS = {
+    "+": operator.add,
+    "-": operator.sub,
+    "*": operator.mul,
+    "/": operator.truediv,
+    "//": operator.floordiv,
+    "%": operator.mod,
+    "**": operator.pow,
+    "<<": operator.lshift,
+    ">>": operator.rshift,
+    "&": operator.and_,
+    "|": operator.or_,
+    "^": operator.xor,
+    "==": operator.eq,
+    "!=": operator.ne,
+    "<": operator.lt,
+    "<=": operator.le,
+    ">": operator.gt,
+    ">=": operator.ge,
+    "is": operator.is_,
+    "!is": operator.is_not,
+    "in": lambda x, y: x in y,
+    "!in": lambda x, y: x not in y,
+}
+
+_AUG_OPS = {
+    "+=": "+",
+    "-=": "-",
+    "*=": "*",
+    "/=": "/",
+    "%=": "%",
+    "**=": "**",
+    "<<=": "<<",
+    ">>=": ">>",
+    "&=": "&",
+    "^=": "^",
+    "|=": "|",
+}
+
+
+def _is_truthy(value: OortObject) -> bool:
+    # Truthy check: same as Python.
+    # TODO: Replace this simple check with complex `__bool__` call.
+    return bool(value.py_value)
+
+
+class ASTInterpreter(ASTVisitor[OortObject]):
+    def __init__(self, error_handler: CompilerErrorHandler):
+        self.error_handler = error_handler
+
+        self._global_env = Environment(name="<global>")
+        self.env = self._global_env
+        self._current_method = None
+        setup_builtins(self.env)
+
+    def run(self, node: nodes.ASTNode) -> OortObject:
+        result = node.accept(self)
+        return OortNull.get_null_value() if result is None else result
+
+    def run_block(self, statements: Iterable[nodes.ASTNode], env: Environment) -> OortObject:
+        """Run the block with given environment.
+
+        Used in function execution.
+        """
+        prev = self.env
+        try:
+            self.env = env
+            result = OortNull.get_null_value()
+            for stmt in statements:
+                result = stmt.accept(self)
+            return result
+        finally:
+            self.env = prev
+
+    def visit_module(self, node: nodes.ModuleNode) -> OortObject:
+        # Skip extra scope for `body`.
+        return self.visit_children(node.body)
+
+    def visit_block_expr(self, node: nodes.BlockExpr) -> OortObject:
+        block_env = Environment(outer=self.env, name="<block>")
+        return self.run_block(node.statements, block_env)
+
+    def visit_var_decl(self, node: nodes.VarDecl) -> OortObject:
+        init_value = node.init_value.accept(self)
+
+        targets = node.decl_targets
+        if len(targets) == 1:
+            values = [init_value]
+        else:
+            # Multiple declaration targets are unpacked from a tuple/list.
+            if isinstance(init_value, (OortTuple, OortList)):
+                values = list(init_value.value)
+            else:
+                raise OortTypeError(
+                    "Multiple declaration targets require a tuple or list initializer",
+                    node.init_value.position,
+                )
+            if len(values) != len(targets):
+                raise OortTypeError(
+                    f"Cannot unpack {len(values)} value(s) into {len(targets)} target(s)",
+                    node.init_value.position,
+                )
+
+        for decl_target, value in zip(targets, values, strict=True):
+            define_result = self.env.define(decl_target.name, value, mutable=node.mutable)
+            if define_result == DefineResult.REDEFINED:
+                raise OortSyntaxError(
+                    f"Name {decl_target.name!r} is already defined", decl_target.position
+                )
+        return OortNull.get_null_value()
+
+    def _read_lvalue(self, lhs: nodes.ASTNode) -> OortObject:
+        """Read the current value of an assignment target."""
+        if isinstance(lhs, nodes.Name):
+            entry = self.lookup_variable(lhs.id, lhs)
+            if entry is None:
+                raise OortNameError(f"Name {lhs.id!r} is not defined", lhs.position)
+            return entry.value
+        if isinstance(lhs, nodes.Attribute):
+            return lhs.accept(self)
+        if isinstance(lhs, nodes.Subscript):
+            return lhs.accept(self)
+        raise OortSyntaxError("Cannot assign to expression here.", lhs.position)
+
+    def visit_assignment(self, node: nodes.Assignment) -> OortObject:
+        if not isinstance(node.lhs, (nodes.LValue, nodes.TupleLiteral)):
+            raise OortSyntaxError("Cannot assign to expression here.", node.lhs.position)
+
+        if node.op.text == "=":
+            rhs = node.rhs.accept(self)
+        else:
+            base_op = _AUG_OPS.get(node.op.text)
+            if base_op is None:
+                raise UnsupportedSyntax(
+                    f"Unsupported assignment operator {node.op.text!r}",
+                    SourcePosition.from_token(node.op),
+                )
+            current = self._read_lvalue(node.lhs)
+            rhs_value = node.rhs.accept(self)
+            rhs = self._apply_binary(base_op, current, rhs_value, node.op)
+
+        self._assign(node.lhs, rhs)
+        return OortNull.get_null_value()
+
+    def _assign(self, lhs: nodes.ASTNode, rhs: OortObject):
+        if isinstance(lhs, nodes.TupleLiteral):
+            if isinstance(rhs, (OortTuple, OortList)):
+                values = list(rhs.value)
+            else:
+                raise OortTypeError("Cannot unpack a non-tuple value in assignment", lhs.position)
+            if len(values) != len(lhs.elements):
+                raise OortTypeError(
+                    f"Cannot unpack {len(values)} value(s) into "
+                    f"{len(lhs.elements)} assignment target(s)",
+                    lhs.position,
+                )
+            for target, value in zip(lhs.elements, values, strict=True):
+                self._assign(target, value)
+            return
+
+        if isinstance(lhs, nodes.Name):
+            depth = lhs.metadata.get("name_depth", None)
+            if depth is None:
+                assign_result = self._global_env.assign(lhs.id, rhs)
+            else:
+                assign_result = self.env.assign_at(lhs.id, rhs, depth)
+            if assign_result == AssignResult.NOT_FOUND:
+                raise OortNameError(f"Name {lhs.id!r} is not defined", lhs.position)
+            elif assign_result == AssignResult.IMMUTABLE:
+                raise OortSyntaxError(f"Cannot assign to immutable {lhs.id!r}", lhs.position)
+        elif isinstance(lhs, nodes.Subscript):
+            value = lhs.value.accept(self)
+            index = lhs.index.accept(self)
+            try:
+                value[index] = rhs
+            except Exception as e:
+                raise OortRuntimeError(f"{e}", lhs.position) from e
+        else:
+            assert isinstance(lhs, nodes.Attribute)
+            assert lhs.ctx == nodes.LValueContext.STORE
+
+            value = lhs.value.accept(self)
+            if value.is_native:
+                raise OortTypeError(
+                    f"Cannot set attribute {lhs.attribute!r} to native object", lhs.position
+                )
+
+            assert isinstance(value, OortInstance)
+            value.set(lhs.attribute, rhs)
+
+    def visit_attribute(self, node: nodes.Attribute) -> OortObject:
+        value = node.value.accept(self)
+
+        result = value.get(node.attribute)
+        if result is None:
+            raise OortAttributeError(
+                f"{value.type.name!r} object has no attribute {node.attribute!r}", node.position
+            )
+        return result
+
+    def visit_subscript(self, node: nodes.Subscript) -> OortObject:
+        value = node.value.accept(self)
+        index = node.index.accept(self)
+
+        # TODO: Replace with "__op_getitem__" call.
+        try:
+            return value[index]
+        except Exception as e:
+            raise OortRuntimeError(f"{e}", node.position)
+
+    def visit_call(self, node: nodes.Call) -> OortObject:
+        func = node.func.accept(self)
+
+        args = [arg.accept(self) for arg in node.args]
+
+        if isinstance(func, (OortNativeFunction, OortNativeMethod)):
+            # Native functions.
+            try:
+                return func(self, args)
+            except TypeError as e:
+                raise OortTypeError(f"{e}", node.position)
+            except Exception as e:
+                raise OortRuntimeError(f"{e}", node.position)
+        elif isinstance(func, (OortFunction, OortMethod)):
+            # User-defined functions.
+            arity = func.arity
+            # TODO: Add more complicated argument checks, and apply to all other call types (add signature to functions).
+            if len(node.args) != arity:
+                raise OortTypeError(
+                    f"{func.name}() takes {arity} arguments but {len(node.args)} were given",
+                    node.position,
+                )
+            return func(self, args)
+        elif isinstance(func, OortType):
+            # Class instantiation.
+            arity = func.arity
+            # TODO: Add more complicated argument checks, and apply to all other call types (add signature to functions).
+            if len(node.args) != arity:
+                raise OortTypeError(
+                    f"{func.name}.__init__() takes {arity} arguments but {len(node.args)} were given",
+                    node.position,
+                )
+            return func(self, args)
+        else:
+            assert isinstance(func, OortObject)
+            raise OortTypeError(f"{func.type.name} object is not callable", node.func.position)
+
+    def _apply_binary(self, op_text: str, lhs: OortObject, rhs: OortObject, op_token):
+        # TODO: Dispatch to `__op_*__` methods so that user-defined operators
+        #       and operator overloading work. See docs/proposals.
+        op = _BINARY_OPS.get(op_text)
+        if op is None:
+            raise OortRuntimeError(
+                f"Unknown binary operator {op_text!r}",
+                SourcePosition.from_token(op_token),
+                recoverable=False,
+            )
+
+        try:
+            result = op(lhs.py_value, rhs.py_value)
+        except TypeError as e:
+            raise OortTypeError(f"{e}", SourcePosition.from_token(op_token)) from e
+        except Exception as e:
+            raise OortRuntimeError(f"{e}", SourcePosition.from_token(op_token)) from e
+        else:
+            return wrap_value(result)
+
+    def visit_binary_expr(self, node: nodes.BinaryExpr) -> OortObject:
+        lhs = node.lhs.accept(self)
+        rhs = node.rhs.accept(self)
+        return self._apply_binary(node.op.text, lhs, rhs, node.op)
+
+    def visit_unary_expr(self, node: nodes.UnaryExpr) -> OortObject:
+        operand = node.operand.accept(self)
+        op = _UNARY_OPS.get(node.op.text)
+        if op is None:
+            raise OortRuntimeError(
+                f"Unknown unary operator {node.op.text!r}",
+                SourcePosition.from_token(node.op),
+                recoverable=False,
+            )
+
+        try:
+            result = op(operand.py_value)
+        except TypeError as e:
+            raise OortTypeError(f"{e}", SourcePosition.from_token(node.op))
+        except Exception as e:
+            raise OortRuntimeError(f"{e}", SourcePosition.from_token(node.op))
+        else:
+            return wrap_value(result)
+
+    def visit_and_expr(self, node: nodes.AndExpr) -> OortObject:
+        lhs = node.lhs.accept(self)
+        if _is_truthy(lhs):
+            return node.rhs.accept(self)
+        else:
+            return lhs
+
+    def visit_or_expr(self, node: nodes.OrExpr) -> OortObject:
+        lhs = node.lhs.accept(self)
+        if _is_truthy(lhs):
+            return lhs
+        else:
+            return node.rhs.accept(self)
+
+    def visit_return_expr(self, node: nodes.ReturnExpr) -> None:
+        if node.value is None:
+            raise OortReturn(OortNull.get_null_value())
+        else:
+            raise OortReturn(node.value.accept(self))
+
+    def visit_continue_expr(self, node: nodes.ContinueExpr) -> None:
+        raise OortContinue()
+
+    def visit_break_expr(self, node: nodes.BreakExpr) -> None:
+        raise OortBreak()
+
+    def visit_implicit_super_expr(self, node: nodes.ImplicitSuperExpr) -> OortSuperProxy:
+        entry = self.lookup_variable("this", node)
+        if entry is None:
+            raise OortNameError("Cannot find receiver for 'super' call", node.position)
+        receiver = entry.value
+
+        # `super` must resume after the class that *defines* the currently
+        # executing method, not after the receiver's dynamic type.
+        defining_type = getattr(self._current_method, "defining_type", None)
+        if defining_type is None or not (
+            isinstance(receiver, OortObject) and defining_type in receiver.type.mro()
+        ):
+            defining_type = receiver.type
+        return OortSuperProxy(defining_type, receiver)
+
+    def visit_class_def(self, node: nodes.ClassDef) -> OortType:
+        # Visit base classes and metaclasses.
+        bases = []
+        for base_node in node.bases:
+            base = base_node.accept(self)
+            if not isinstance(base, OortType):
+                raise OortTypeError(f"{base.type.name!r} object is not a class", base_node.position)
+            bases.append(base)
+
+        metaclass = None
+        if node.meta is not None:
+            metaclass = node.meta.accept(self)
+            if not isinstance(metaclass, OortType):
+                raise OortTypeError(
+                    f"{metaclass.type.name!r} object is not a class", node.meta.position
+                )
+            if not metaclass.is_metaclass:
+                raise OortTypeError(
+                    f"{metaclass.type.name!r} object is not a metaclass", node.meta.position
+                )
+
+        # Define class name (visible in class body).
+        try:
+            cls = OortType.create_type_object(node.name, bases=bases, metaclass=metaclass)
+        except TypeError as e:
+            raise OortTypeError(f"{e}", node.name_position)
+
+        self.env.define(node.name, cls, mutable=False)
+
+        # Visit class body.
+        class_env = Environment(outer=self.env, name=node.name)
+        prev = self.env
+        try:
+            self.env = class_env
+            for stmt in node.body.statements:
+                result = stmt.accept(self)
+
+                if isinstance(stmt, nodes.FunctionDef) and not stmt.is_lambda:
+                    # Method definition.
+                    if stmt.is_class_method:
+                        cls.set_class_field(stmt.name, result)
+                    else:
+                        cls.set(stmt.name, result)
+                elif isinstance(stmt, nodes.VarDecl):
+                    # TODO: Add "Slot" field definition.
+                    pass
+                else:
+                    # Allow any type of statement in class body.
+                    # TODO: Add compiler options to control this.
+                    pass
+        finally:
+            self.env = prev
+        return cls
+
+    def visit_function_def(self, node: nodes.FunctionDef) -> OortFunction:
+        func = OortFunction(node, closure=self.env)
+        self.env.define(node.name, func, mutable=False)
+        return func
+
+    def visit_if_expr(self, node: nodes.IfExpr) -> OortObject:
+        cond_value = node.condition.accept(self)
+
+        if _is_truthy(cond_value):
+            return node.if_block.accept(self)
+        elif node.else_block is not None:
+            return node.else_block.accept(self)
+        else:
+            return OortNull.get_null_value()
+
+    def visit_while_expr(self, node: nodes.WhileExpr) -> OortObject:
+        while _is_truthy(node.condition.accept(self)):
+            try:
+                node.body.accept(self)
+            except OortContinue:
+                continue
+            except OortBreak:
+                break
+        return OortNull.get_null_value()
+
+    def visit_for_expr(self, node: nodes.ForExpr) -> OortObject:
+        iterable = node.iterator.accept(self)
+
+        if isinstance(iterable, (OortList, OortTuple, OortSet, OortDict, OortString)):
+            items = list(iterable)
+        else:
+            try:
+                items = [wrap_value(item) for item in iterable.py_value]
+            except TypeError as e:
+                raise OortTypeError(f"{e}", node.iterator.position) from e
+
+        for item in items:
+            # A fresh environment per iteration gives each captured loop
+            # variable its own binding, like Python's `for` semantics.
+            loop_env = Environment(outer=self.env, name="<for>")
+            prev = self.env
+            try:
+                self.env = loop_env
+                if len(node.vars) == 1:
+                    self.env.define(node.vars[0].name, item)
+                else:
+                    if isinstance(item, (OortTuple, OortList)):
+                        values = list(item.value)
+                    else:
+                        raise OortTypeError(
+                            "Cannot unpack a non-tuple value in for loop", node.iterator.position
+                        )
+                    if len(values) != len(node.vars):
+                        raise OortTypeError(
+                            f"Cannot unpack {len(values)} value(s) into {len(node.vars)} "
+                            f"loop variable(s)",
+                            node.iterator.position,
+                        )
+                    for var, value in zip(node.vars, values, strict=True):
+                        self.env.define(var.name, value)
+
+                try:
+                    node.body.accept(self)
+                except OortContinue:
+                    continue
+                except OortBreak:
+                    break
+            finally:
+                self.env = prev
+
+        return OortNull.get_null_value()
+
+    def visit_list_literal(self, node: nodes.ListLiteral) -> OortList:
+        return OortList([item.accept(self) for item in node.elements])
+
+    def visit_tuple_literal(self, node: nodes.TupleLiteral) -> OortTuple:
+        return OortTuple(tuple(item.accept(self) for item in node.elements))
+
+    def visit_set_literal(self, node: nodes.SetLiteral) -> OortSet:
+        return OortSet({item.accept(self) for item in node.elements})
+
+    def visit_dict_literal(self, node: nodes.DictLiteral) -> OortDict:
+        items = {}
+        for key_node, value_node in node.items:
+            if key_node is None:
+                raise UnsupportedSyntax("Dictionary unpacking is not supported yet.", node.position)
+            items[key_node.accept(self)] = value_node.accept(self)
+        return OortDict(items)
+
+    def visit_slice_literal(self, node: nodes.SliceLiteral) -> OortSlice:
+        return OortSlice(
+            None if node.start is None else node.start.accept(self),
+            None if node.stop is None else node.stop.accept(self),
+            None if node.step is None else node.step.accept(self),
+        )
+
+    def visit_int_constant(self, node: nodes.IntConstant) -> OortInt:
+        return OortInt(node.value)
+
+    def visit_float_constant(self, node: nodes.FloatConstant) -> OortFloat:
+        return OortFloat(node.value)
+
+    def visit_string_constant(self, node: nodes.StringConstant) -> OortString:
+        return OortString(node.value)
+
+    def visit_boolean_constant(self, node: nodes.BooleanConstant) -> OortBool:
+        return OortBool.get_bool_value(node.value)
+
+    def visit_null_constant(self, node: nodes.NullConstant) -> OortNull:
+        return OortNull.get_null_value()
+
+    def visit_name(self, node: nodes.Name) -> OortObject:
+        if node.ctx == nodes.LValueContext.LOAD:
+            entry = self.lookup_variable(node.id, node)
+            if entry is None:
+                raise OortNameError(f"Name {node.id!r} is not defined", node.position)
+            return entry.value
+        else:
+            # Store & delete will be processed in assignment node.
+            raise AssertionError("Unreachable code")
+
+    def lookup_variable(self, name: str, node: nodes.ASTNode) -> Entry | None:
+        """Lookup variable with AST metadata."""
+        depth = node.metadata.get("name_depth", None)
+        if depth is None:
+            return self._global_env.get(name)
+        return self.env.get_at(name, depth)
