@@ -1,0 +1,41 @@
+# 类、继承与元类
+
+class Shape {
+    def __init__(name) {
+        this.name = name
+    }
+
+    def area: 0
+
+    def describe -> String {
+        this.name + " has area " + str(this.area())
+    }
+}
+
+class Rect < Shape {
+    def __init__(w, h) {
+        super.__init__("rect")
+        this.w = w
+        this.h = h
+    }
+
+    def area: this.w * this.h
+}
+
+class Square < Rect {
+    def __init__(side) { super.__init__(side, side) }
+}
+
+print(Rect(3, 4).describe())
+print(Square(5).describe())
+
+# 类方法定义在元类上
+class Factory {
+    def class.make: this()
+}
+print(type(Factory.make()))
+
+# 元类：M < Type，则 A 的元类可以是 M
+class M < Type {}
+class A :: M {}
+print(type(A))

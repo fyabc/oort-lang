@@ -1,0 +1,20 @@
+# for 循环：遍历范围、容器与解包
+
+for i in range(5) {
+    if i % 2 == 0: print(i)
+}
+
+for key in {: "a": 1, "b": 2 :} {
+    print("key:", key)
+}
+
+for k, v in [(1, "one"), (2, "two")] {
+    print(k, v)
+}
+
+# 循环变量按迭代独立捕获（闭包各自持有自己的值）
+var fns = []
+for i in [1, 2, 3] {
+    fns = fns + [do: i]
+}
+print(fns[0](), fns[1](), fns[2]())

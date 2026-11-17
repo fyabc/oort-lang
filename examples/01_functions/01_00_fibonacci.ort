@@ -1,0 +1,18 @@
+# 斐波那契函数的递归实现，并统计运行时间
+
+# 函数可作为参数传递
+def timed(f, arg) {
+    var start = clock()
+    var result = f(arg)
+    var end = clock()
+    print("Time elapsed:", end - start, "s")
+    result  # 无需显式返回结果，函数的最后一个表达式的值即为返回值
+}
+
+# 函数形参数量不大于1时，可省略括号
+def fib n {
+    if n <= 1: return n
+    fib(n-1) + fib(n-2)
+}
+
+print(timed(fib, 20))

@@ -1,0 +1,16 @@
+# 嵌套函数与闭包
+
+def makeCounter {
+    var i = 0
+    def count {
+        i = i + 1
+        print(i)
+    }
+    count
+}
+
+var counter = makeCounter()
+
+counter()   # 1
+counter()   # 2
+counter()   # 3
