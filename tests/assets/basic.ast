@@ -1,0 +1,26 @@
+Module {
+  (body): Block {
+    (0): ForExpr {
+      (var 0): SingleDeclTarget {
+        (type_expr): NULL
+      }
+      (iterator): Call {
+        (func): Name('range', ctx=LOAD) {}
+        (arg 0): Argument {
+          (value): Int(value=3) {}
+        }
+      }
+      (body): Block {
+        (0): Call {
+          (func): Name('print', ctx=LOAD) {}
+          (arg 0): Argument {
+            (value): BinaryExpr(op='+') {
+              (lhs): Name('i', ctx=LOAD) {}
+              (rhs): Int(value=2) {}
+            }
+          }
+        }
+      }
+    }
+  }
+}

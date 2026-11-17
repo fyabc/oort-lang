@@ -1,0 +1,57 @@
+#! /usr/bin/env python
+
+"""Tests that unimplemented features fail with explicit diagnostics.
+
+The parser accepts a superset of the language. Features that are not
+implemented by the dynamic core must be rejected with a clear error rather
+than silently doing the wrong thing.
+"""
+
+import pytest
+
+from tests.helpers import get_compiler
+
+UNSUPPORTED_CASES = [
+    ('import "math"', "module system"),
+    ('from "math" import sqrt', "module system"),
+    ("macro m {}", "macro system"),
+    ("@m(1)", "macro system"),
+    ("def f() { yield 1 }", "Generators"),
+    ("def f() { await g() }", "Async/await"),
+    ("def f(a=1) {}", "Default parameter values"),
+    ("def f(*args) {}", "Parameter kind"),
+    ("def f[T](a) {}", "Generic functions"),
+    ("class C[T] {}", "Generic classes"),
+    ("def f { $0 }", "Anonymous parameters"),
+    ("print(x=1)", "Keyword arguments"),
+    ("@[]", "Compiler attributes"),
+    ('print(f"{1}")', "Formatted string"),
+]
+
+
+@pytest.mark.parametrize("code, message", UNSUPPORTED_CASES)
+def test_unsupported_feature(code: str, message: str, caplog):
+    compiler = get_compiler("NOT_EXIST -t eval")
+    with pytest.raises(SystemExit):
+        compiler.run_string(code)
+    assert message in caplog.text
+
+
+def test_break_and_continue_inside_for_are_allowed(run_source):
+    out = run_source(
+        """\
+for i in [1, 2, 3] {
+    if i == 2: continue
+    if i == 3: break
+    print(i)
+}
+"""
+    ).stdout
+    assert out == "1\n"
+
+
+def test_break_outside_loop_is_rejected(caplog):
+    compiler = get_compiler("NOT_EXIST -t eval")
+    with pytest.raises(SystemExit):
+        compiler.run_string("break\n")
+    assert "Break outside loop." in caplog.text

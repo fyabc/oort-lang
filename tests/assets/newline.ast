@@ -1,0 +1,95 @@
+Module {
+  (body): Block {
+    (0): BinaryExpr(op='+') {
+      (lhs): Int(value=1) {}
+      (rhs): Int(value=2) {}
+    }
+    (1): BinaryExpr(op='+') {
+      (lhs): Int(value=1) {}
+      (rhs): Int(value=2) {}
+    }
+    (2): List {
+      (0): Int(value=1) {}
+      (1): Int(value=2) {}
+    }
+    (3): Dict {
+      (key 0): BinaryExpr(op='+') {
+        (lhs): Int(value=3) {}
+        (rhs): Int(value=4) {}
+      }
+      (value 0): String(value=x) {}
+    }
+    (4): Set {
+      (0): BinaryExpr(op='+') {
+        (lhs): Int(value=5) {}
+        (rhs): Int(value=6) {}
+      }
+    }
+    (5): Call {
+      (func): Name('print', ctx=LOAD) {}
+      (arg 0): Argument {
+        (value): FunctionDef(name='<lambda>') {
+          (ret_type): NULL
+          (body): Block {
+            (0): Int(value=2) {}
+            (1): Int(value=3) {}
+          }
+        }
+      }
+    }
+    (6): FunctionDef(name='<lambda>') {
+      (ret_type): NULL
+      (body): Block {
+        (0): BinaryExpr(op='+') {
+          (lhs): Int(value=7) {}
+          (rhs): Int(value=8) {}
+        }
+      }
+    }
+    (7): Call {
+      (func): Name('print', ctx=LOAD) {}
+      (arg 0): Argument {
+        (value): BinaryExpr(op='+') {
+          (lhs): Int(value=9) {}
+          (rhs): Int(value=10) {}
+        }
+      }
+      (arg 1): Argument {
+        (value): FunctionDef(name='<lambda>') {
+          (ret_type): NULL
+          (body): Block {
+            (0): FunctionDef(name='<lambda>') {
+              (ret_type): NULL
+              (body): Block {
+                (0): Int(value=2) {}
+                (1): Int(value=3) {}
+              }
+            }
+          }
+        }
+      }
+    }
+    (8): FunctionDef(name='<lambda>') {
+      (ret_type): NULL
+      (body): Block {
+        (0): Int(value=1) {}
+        (1): Int(value=2) {}
+        (2): Call {
+          (func): Name('print', ctx=LOAD) {}
+          (arg 0): Argument {
+            (value): BinaryExpr(op='+') {
+              (lhs): Int(value=11) {}
+              (rhs): Int(value=12) {}
+            }
+          }
+          (arg 1): Argument {
+            (value): FunctionDef(name='<lambda>') {
+              (ret_type): NULL
+              (body): Block {}
+            }
+          }
+        }
+      }
+    }
+  }
+}
