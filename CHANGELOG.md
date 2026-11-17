@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   spine: `oort-object` v1 first, a thin `oort-core` probe next, and a shared
   bytecode backend after both dialect v1s. Class slots are scoped to
   `oort-core`; `oort-object` keeps an open field bag (OP 0001 §5, OP 0007).
+- Minimum Python is now 3.11 (3.10 reached end of life); CI tests 3.11 and
+  3.13 on Linux, and 3.13 on Windows.
+- Development dependencies updated (ruff, mypy, pytest, pytest-benchmark,
+  pre-commit, virtualenv, filelock), resolving the open Dependabot alerts.
 
 ## [0.1.0] - 2026-11-18
 
