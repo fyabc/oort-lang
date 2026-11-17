@@ -55,6 +55,7 @@
 | 2026-11-18 | 采用“共享骨架 + 方言垂直切片 + 共享后端”的开发模型；先完成 `oort-object` v1，再以薄 `oort-core` 探针验证隔离 | [OP 0001 §5](0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受) |
 | 2026-11-18 | `oort-object` 使用开放字段袋、拒绝类体 `var`/`val`、禁止实例字段遮蔽类方法；槽归入 `oort-core` 静态对象模型 | [OP 0007](0007-oort-object-object-model.md) |
 | 2026-11-18 | `Oort.g4` 去除宿主语言动作，换行/括号交给 token 后处理层；REPL 重构为 `ReplSession` 并补分层测试 | [OP 0008](0008-lexer-postprocessing-and-repl.md) |
+| 2026-11-18 | `#lang` 按首行预处理识别（该行对词法器仍是注释），非首行/未知/未实现方言显式报错；`DialectConfig` 提供特性门控与 Pratt 表工厂 | [OP 0001 §3](0001-feature-layers-and-dialects.md#3-模块级方言控制) |
 
 ## 设计原则（所有提案必须满足）
 

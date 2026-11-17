@@ -3,20 +3,29 @@
 import argparse
 import logging
 import os
-from typing import Any
+from typing import Any, NoReturn
 
 from antlr4 import CommonTokenStream
 
 from ..ast_interpreter.ast_interpreter import ASTInterpreter
-from ..exceptions import OortException
+from ..exceptions import OortException, OortSyntaxError
 from ..frontend.ast_builder import ASTBuilder, ASTNode
 from ..frontend.ast_printer import ASTPrinter
+from ..frontend.dialect import (
+    DEFAULT_DIALECT,
+    DialectConfig,
+    LangDirective,
+    known_dialect_names,
+    lookup_dialect,
+    parse_lang_directive,
+)
 from ..frontend.error_handler import CompilerErrorHandler
 from ..frontend.error_listener import OortErrorListener
 from ..frontend.pass1 import Pass1Analyzer
 from ..grammar.OortLexer import OortLexer
 from ..grammar.OortParser import OortParser
 from ..support.input_info import FileInputInfo, InputInfo, StringInputInfo
+from ..support.source_position import SourcePosition
 
 
 class CompilerError(Exception):
@@ -35,8 +44,10 @@ class Compiler:
     def _run_input(self, input_info: InputInfo) -> Any:
         """Run a single input."""
 
+        dialect = self._resolve_dialect(input_info)
+
         parser = self._build_parser(input_info)
-        ast = self.build_ast(parser, input_info)
+        ast = self.build_ast(parser, input_info, dialect=dialect)
         if not ast:
             raise CompilerError()
 
@@ -47,7 +58,7 @@ class Compiler:
             return None
 
         # Semantic analysis.
-        pass1_analyzer = Pass1Analyzer(self.error_handler, input_info)
+        pass1_analyzer = Pass1Analyzer(self.error_handler, input_info, dialect=dialect)
         ast = self.semantic_analyze(ast, pass1_analyzer)
         if not ast:
             raise CompilerError()
@@ -75,6 +86,49 @@ class Compiler:
     def run_string(self, input_string: str, name: str = "<string>") -> Any:
         return self._run_input(StringInputInfo(input_string, name=name))
 
+    def _resolve_dialect(self, input_info: InputInfo) -> DialectConfig:
+        """Select the module dialect from its `#lang` directive."""
+        directive = parse_lang_directive(input_info.get_source_text())
+
+        if directive.error is not None:
+            self._report_dialect_error(directive.error, directive, input_info)
+
+        if directive.dialect_name is None:
+            return DEFAULT_DIALECT
+
+        config = lookup_dialect(directive.dialect_name)
+        if config is None:
+            known = ", ".join(known_dialect_names())
+            self._report_dialect_error(
+                f"Unknown dialect {directive.dialect_name!r}. Known dialects: {known}.",
+                directive,
+                input_info,
+            )
+
+        assert config is not None
+        if not config.implemented:
+            self._report_dialect_error(
+                f"The {config.name!r} dialect is not implemented yet.",
+                directive,
+                input_info,
+            )
+
+        logging.debug("Using dialect %s", config.name)
+        return config
+
+    def _report_dialect_error(
+        self, message: str, directive: LangDirective, input_info: InputInfo
+    ) -> NoReturn:
+        position = SourcePosition.from_location(
+            directive.line,
+            directive.column,
+            directive.text,
+            filename=input_info.input_filename,
+        )
+        self.error_handler.add(OortSyntaxError(message, position), input_info)
+        self.error_handler.report(exit_on_error=True)
+        raise CompilerError()  # Unreachable: `report` exits non-zero.
+
     def _build_parser(self, input_info: InputInfo) -> OortParser:
         """Build parser."""
         input_stream = input_info.get_input_stream()
@@ -90,6 +144,7 @@ class Compiler:
         self,
         parser: OortParser,
         input_info: InputInfo,
+        dialect: DialectConfig = DEFAULT_DIALECT,
         exit_on_error: bool = True,
         summary: bool = True,
     ) -> ASTNode | None:
@@ -100,7 +155,7 @@ class Compiler:
             return None
 
         # Build AST.
-        builder = ASTBuilder(self.error_handler, input_info)
+        builder = ASTBuilder(self.error_handler, input_info, dialect=dialect)
         ast = builder.parse(tree)
         logging.debug("AST built successfully")
 

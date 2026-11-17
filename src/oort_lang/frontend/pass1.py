@@ -12,6 +12,7 @@ from ..ast.nodes.declarations import ParameterKind
 from ..exceptions import OortSyntaxError
 from ..exceptions.runtime_errors import OortNameError
 from ..exceptions.syntax_errors import UnsupportedSyntax
+from ..frontend.dialect import DEFAULT_DIALECT, DialectConfig
 from ..frontend.error_handler import CompilerErrorHandler
 from ..frontend.operator_defs import validate_operator_definition
 from ..support.input_info import InputInfo
@@ -81,9 +82,15 @@ class Pass1Analyzer(ASTVisitor[T]):
         - etc.
     """
 
-    def __init__(self, error_handler: CompilerErrorHandler, input_info: InputInfo):
+    def __init__(
+        self,
+        error_handler: CompilerErrorHandler,
+        input_info: InputInfo,
+        dialect: DialectConfig = DEFAULT_DIALECT,
+    ):
         self.error_handler = error_handler
         self.input_info = input_info
+        self.dialect = dialect
 
         # All scopes (except <global>)
         self.scopes: list[Scope] = []
@@ -229,11 +236,25 @@ class Pass1Analyzer(ASTVisitor[T]):
         self.begin_scope()
         try:
             for stmt in node.body.statements:
+                self._check_class_body_statement(stmt)
                 stmt.accept(self)
         finally:
             self.end_scope()
             self._current_class = prev_class
             self._current_decl = prev_decl
+
+    def _check_class_body_statement(self, stmt: nodes.ASTNode):
+        """Apply dialect-specific rules to statements directly in a class body."""
+        if isinstance(stmt, nodes.VarDecl) and not self.dialect.features.class_body_vars:
+            self.error_handler.add(
+                OortSyntaxError(
+                    f"Class-body variable declarations are not supported in "
+                    f"the `{self.dialect.name}` dialect; assign instance fields "
+                    f"in `__init__` instead (`this.name = ...`).",
+                    stmt.position,
+                ),
+                self.input_info,
+            )
 
     def visit_function_def(self, node: nodes.FunctionDef) -> T | None:
         if node.type_params:

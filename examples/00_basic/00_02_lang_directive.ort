@@ -1,0 +1,5 @@
+#lang oort-object
+
+# 方言声明：文件首行的 `#lang` 选择模块方言。
+# 省略时默认使用 oort-object。
+print("oort-object")

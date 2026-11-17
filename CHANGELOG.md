@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Dialect contract: an optional first-line `#lang oort-object` directive,
+  `DialectConfig` (feature gates and a per-compilation Pratt operator table),
+  and explicit diagnostics for unknown, unimplemented (`oort-core`) or
+  misplaced dialect declarations.
 - Operator overloading: `def operator "<sym>"` methods for unary and binary
   operators, including comparisons and membership. Built-in types use the same
   dispatch table, `!=` / `!in` derive from `==` / `in`, and `is` / `!is`
@@ -20,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `oort-object` rejects `var` / `val` declarations directly in a class body.
+  Instances are open field bags; fields must be created with
+  `this.name = ...` in `__init__` (OP 0007).
+- Source files are read as UTF-8 with optional BOM (`utf-8-sig`).
 - Development roadmap is organized around dialect vertical slices on a shared
   spine: `oort-object` v1 first, a thin `oort-core` probe next, and a shared
   bytecode backend after both dialect v1s. Class slots are scoped to

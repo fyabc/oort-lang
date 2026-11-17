@@ -17,8 +17,9 @@ from ..grammar.OortParser import OortParser
 from ..grammar.OortVisitor import OortVisitor
 from ..support.input_info import InputInfo
 from ..support.source_position import SourcePosition
+from .dialect import DEFAULT_DIALECT, DialectConfig
 from .error_handler import CompilerErrorHandler
-from .operator_defs import Arity, Associativity, OperatorTable
+from .operator_defs import Arity, Associativity
 
 _STRING_PREFIX_RE = re.compile(r"^([A-Za-z]*)")
 
@@ -47,12 +48,18 @@ def _parse_string_literal(ctx: ParserRuleContext | Token) -> str:
 
 
 class ASTBuilder(OortVisitor):
-    def __init__(self, error_handler: CompilerErrorHandler, input_info: InputInfo):
+    def __init__(
+        self,
+        error_handler: CompilerErrorHandler,
+        input_info: InputInfo,
+        dialect: DialectConfig = DEFAULT_DIALECT,
+    ):
         self.error_handler = error_handler
         self.input_info = input_info
+        self.dialect = dialect
 
         # Pratt parser states.
-        self._op_table = OperatorTable.default()
+        self._op_table = dialect.new_operator_table()
         self._p_items = []
         self._p_pos = 0
 

@@ -18,8 +18,9 @@ print(p.norm2())     # 25
 
 - 类使用函数调用语法实例化，没有 `new`。
 - `__init__` 在实例创建后调用；其中不允许 `return` 值。
-- 实例字段通过 `this.field = value` 创建；类体顶层的 `var`/`val` 目前不会成为字段，
-  计划在 `oort-object` 中改为显式拒绝（[OP 0007](../proposals/0007-oort-object-object-model.md)）。
+- 实例字段通过 `this.field = value` 创建，实例是开放字段袋。
+- 类体顶层的 `var`/`val` 被拒绝：`oort-object` 没有类级槽或共享类属性；
+  请在 `__init__` 中赋值（[OP 0007](../proposals/0007-oort-object-object-model.md)）。
 
 ## 继承
 
@@ -104,8 +105,8 @@ class A :: M {}
 ## 当前限制
 
 - 槽变量属于 `oort-core` 静态对象模型，尚未实现；`oort-object` 的类体
-  `var`/`val` 计划按 [OP 0007](../proposals/0007-oort-object-object-model.md)
-  显式拒绝，实例字段通过 `this.x = ...` 创建。
+  `var`/`val` 已被显式拒绝，实例字段通过 `this.x = ...` 创建。
+- 实例字段遮蔽类方法的写入检查尚未实现（[OP 0007](../proposals/0007-oort-object-object-model.md)）。
 - 扩展方法（类外定义）未接入。
 - 属性钩子（`__getattr__` 等）、下标/属性重载、Trait/接口未实现。
 - 类属性的修改（`C.x = ...`）规则尚未定义。

@@ -4,6 +4,7 @@ from typing import Any
 
 from antlr4 import ParserRuleContext, Token
 from antlr4.FileStream import FileStream
+from antlr4.Token import CommonToken
 
 
 class AbstractSourcePosition:
@@ -49,10 +50,10 @@ class AbstractSourcePosition:
 class SourcePosition(AbstractSourcePosition):
     """Source code position."""
 
-    def __init__(self, start: Token | None, stop: Token | None):
+    def __init__(self, start: Token | None, stop: Token | None, filename: str | None = None):
         self.start = start
         self.stop = stop
-        self._filename = None
+        self._filename = filename
 
     @classmethod
     def from_context(cls, context: ParserRuleContext):
@@ -63,6 +64,19 @@ class SourcePosition(AbstractSourcePosition):
     @classmethod
     def from_token(cls, token: Token):
         return cls(token, token)
+
+    @classmethod
+    def from_location(cls, line: int, column: int, text: str, filename: str | None = None):
+        """Build a position for diagnostics that have no lexer token.
+
+        Used for errors detected before lexing, such as an invalid `#lang`
+        directive.
+        """
+        token = CommonToken()
+        token.line = line
+        token.column = column
+        token.text = text
+        return cls(token, token, filename=filename)
 
     @property
     def sort_key(self) -> Any:

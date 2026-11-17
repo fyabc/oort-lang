@@ -10,6 +10,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 
 | 类别 | 特性 |
 |------|------|
+| 方言 | 首行 `#lang oort-object`（可选，缺省即此方言）；未知/未实现方言与错位声明显式报错 |
 | 字面量 | 整数、浮点、字符串（含 `r`、三引号）、布尔、`null`、List/Tuple/Dict/Set、切片 |
 | 表达式 | 全部内建运算符、运算符重载（`def operator "<sym>"`）、`and`/`or` 短路、属性、下标、调用、尾随 lambda、块、`if`/`while`/`for` 表达式 |
 | 语句 | `var`/`val`（含多目标解包）、赋值（含增强赋值、元组交换）、`if`/`elif`/`else`、`while`、`for`、`return`/`break`/`continue` |
@@ -50,9 +51,10 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 - 运算符方法只能在类体内定义；顶层定义与 `def class.operator` 会被拒绝。
 - 扩展方法 `def C.f` 在类外定义时不会挂到 `C` 上。
 - 下标（`a[b]`）与属性（`a.b`）重载尚未接入运算符调度。
-- 类体中的 `var`/`val` 目前是类作用域局部变量，不会成为实例字段；
-  按 [OP 0007](../proposals/0007-oort-object-object-model.md) 计划在 `oort-object`
-  中改为显式拒绝。槽变量属于 `oort-core`。
+- 类体中的 `var`/`val` 在 `oort-object` 中被显式拒绝；实例字段只能通过
+  `this.x = ...` 创建（[OP 0007](../proposals/0007-oort-object-object-model.md)）。
+  槽变量属于 `oort-core`。
+- 实例字段遮蔽类方法的写入检查尚未实现；当前允许写入，会覆盖方法查找结果。
 
 ## 已知的实现约定
 

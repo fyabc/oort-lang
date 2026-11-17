@@ -13,6 +13,10 @@ class InputInfo:
     def get_input_stream(self) -> InputStream:
         raise NotImplementedError
 
+    def get_source_text(self) -> str:
+        """Whole source text, before lexing."""
+        raise NotImplementedError
+
     def get_lines(self) -> list[str]:
         raise NotImplementedError
 
@@ -28,9 +32,11 @@ class InputInfo:
 class FileInputInfo(InputInfo):
     """File input information."""
 
-    def __init__(self, input_file: os.PathLike, encoding: str = "UTF-8"):
+    def __init__(self, input_file: os.PathLike, encoding: str = "utf-8-sig"):
         self._orig_input_file = Path(input_file)
         self.input_file = self._orig_input_file.absolute()
+        # `utf-8-sig` accepts both plain UTF-8 and files with a BOM; the BOM is
+        # stripped so it cannot be mistaken for part of the first token.
         self.encoding = encoding
 
         self._lines = None
@@ -39,11 +45,14 @@ class FileInputInfo(InputInfo):
         logging.debug(f"Loading input from {self.input_file} ...")
         return FileStream(str(self.input_file), encoding=self.encoding)
 
+    def get_source_text(self) -> str:
+        with open(self.input_file, encoding=self.encoding) as f:
+            return f.read()
+
     def get_lines(self) -> list[str]:
         if self._lines is None:
-            with open(self.input_file, encoding=self.encoding) as f:
-                self._lines = list(f)
-                self._lines.append("")  # Add last EOF.
+            self._lines = self.get_source_text().splitlines(keepends=True)
+            self._lines.append("")  # Add last EOF.
         return self._lines
 
     @property
@@ -59,6 +68,9 @@ class StringInputInfo(InputInfo):
     """String input information."""
 
     def __init__(self, input_string: str, name: str = "<string>"):
+        # Match `FileInputInfo` (utf-8-sig): strip a leading BOM if present.
+        if input_string.startswith("﻿"):
+            input_string = input_string[1:]
         self.input_string = input_string
         self.name = name
         self._lines = None
@@ -68,6 +80,9 @@ class StringInputInfo(InputInfo):
         stream = InputStream(self.input_string)
         stream.name = self.module_name
         return stream
+
+    def get_source_text(self) -> str:
+        return self.input_string
 
     def get_lines(self) -> list[str]:
         if self._lines is None:
@@ -92,6 +107,9 @@ class ReplInputInfo(InputInfo):
 
     def get_input_stream(self) -> InputStream:
         raise RuntimeError("Not supported.")
+
+    def get_source_text(self) -> str:
+        return "".join(self._lines)
 
     def get_lines(self) -> list[str]:
         return self._lines

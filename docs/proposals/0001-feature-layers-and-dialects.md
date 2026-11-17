@@ -60,6 +60,11 @@ DSL 不是独立方言，而是与“类型纪律”正交的维度：
 - **禁止**在模块内混用方言；跨方言调用必须经过显式边界。
 - 这类似 Rust Editions / Haskell `LANGUAGE` pragmas，但更彻底：语义检查器彼此隔离。
 
+实现（2026-11-18）：`#lang` 在编译入口按**首行预处理**识别，范围仅限第一行
+（允许 UTF-8 BOM）。该行对词法器仍是注释，因此不改变行号。非首行声明、未知
+方言、已注册但未实现的方言都会得到显式诊断。`DialectConfig` 持有特性开关与
+Pratt 表工厂；`ASTBuilder` 与 `Pass1Analyzer` 接收当前方言。
+
 ### 4. 统一 HIR 与边界
 
 ```
@@ -139,8 +144,8 @@ DSL 不是独立方言，而是与“类型纪律”正交的维度：
 
 ## 实现计划
 
-1. 在编译入口解析 `#lang` 并路由到 `DialectConfig`；把 Pratt 运算符表改为按方言配置
-   （`OperatorTable.parent` 已预留）。
+1. ~~在编译入口解析 `#lang` 并路由到 `DialectConfig`；把 Pratt 运算符表改为按方言配置~~
+   （已完成，2026-11-18；`DialectConfig.new_operator_table()` 每次编译返回新表）。
 2. 完成 `oort-object` v1：动态对象模型（OP 0007）、参数绑定、模块/标准库/迭代器协议。
 3. 用 `oort-core` 的薄探针验证方言隔离，再实现完整类型系统与静态对象模型。
 4. 两个方言 v1 后统一 HIR，再实现共享字节码 VM。

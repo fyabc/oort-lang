@@ -8,9 +8,10 @@
 > 尚未实现但语法可解析的特性在 [06-conformance.md](06-conformance.md) 中列明，
 > 并由编译器显式拒绝。
 >
-> 当前规范描述的是默认方言 `oort-object` 的参考语义。方言契约（`#lang`）
-> 落地后，本目录将拆分为共享的词法/语法部分与每方言的语义规范；
-> 开发模型见 [OP 0001 §5](../proposals/0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受)。
+> 方言契约（首行 `#lang`）已落地：缺省 `oort-object`，`oort-core` 已注册但
+> 尚未实现。当前规范描述的是 `oort-object` 的参考语义；后续拆分共享的
+> 词法/语法部分与每方言的语义规范。开发模型见
+> [OP 0001 §5](../proposals/0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受)。
 
 ## 阅读顺序
 

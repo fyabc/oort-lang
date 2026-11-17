@@ -9,6 +9,7 @@ from tests.helpers import EXAMPLES_DIR
 EXPECTED_OUTPUTS = {
     "00_basic/00_00_hello_world.ort": "Hello, world!\n",
     "00_basic/00_01_control_flow.ort": "1\n2\n3\n4\n6\n7\n",
+    "00_basic/00_02_lang_directive.ort": "oort-object\n",
     "01_functions/01_01_call_with_block.ort": "Before call\nHello, Oort!\nAfter call\nOort!\n",
     "01_functions/01_02_closure.ort": "1\n2\n3\n",
     "02_collections/02_00_literals.ort": (
