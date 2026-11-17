@@ -8,11 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Operator overloading: `def operator "<sym>"` methods for unary and binary
+  operators, including comparisons and membership. Built-in types use the same
+  dispatch table, `!=` / `!in` derive from `==` / `in`, and `is` / `!is`
+  compare object identity.
 - Language specification (`docs/spec/`) and a proposal process
   (`docs/proposals/`, OP 0001–0006).
 - CI on Linux and Windows (Python 3.10/3.12): lint, format, type check and
   coverage gate.
 - Contribution, security and issue/PR templates.
+
+### Changed
+
+- Development roadmap is organized around dialect vertical slices on a shared
+  spine: `oort-object` v1 first, a thin `oort-core` probe next, and a shared
+  bytecode backend after both dialect v1s. Class slots are scoped to
+  `oort-core`; `oort-object` keeps an open field bag (OP 0001 §5, OP 0007).
 
 ## [0.1.0] - 2026-11-18
 

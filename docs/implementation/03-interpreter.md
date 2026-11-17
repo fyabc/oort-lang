@@ -24,8 +24,15 @@
 - 标量实现 `__eq__` / `__hash__`，因此可以作为字典键和集合元素；
   `List`/`Dict`/`Set` 不可哈希。
 - `py_value` 提供与 Python 原生值的转换，供内建函数与运算符使用。
-- 运算符目前直接作用于 `py_value`。用户运算符重载（`__op_*__` / `operator "..."`）
-  仍未接入调度，见 [proposal 0002](../proposals/0002-dsl-support.md)。
+- 运算符通过 `OortType.operators` 表调度，键为 `(符号, 操作数个数)`：
+  - 用户类在类体中用 `def operator "<sym>"` 定义，解释器在
+    `visit_class_def` 中调用 `set_operator` 登记；
+  - 内建类型在 `setup_type_system` 中登记原生运算符方法，
+    因此 `1 + 2` 与 `Vec(1) + Vec(2)` 走同一条查找/调用路径；
+  - `OortMethod.defining_type` 让运算符方法内部的 `super` 正确定位；
+  - `is` / `!is` 直接比较对象身份，`and` / `or` / `not` 不走运算符表；
+  - `!=` 与 `!in` 在没有显式方法时分别由 `==` 与 `in` 取反。
+  设计背景见 [proposal 0002](../proposals/0002-dsl-support.md)。
 
 ## 作用域与闭包
 

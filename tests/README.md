@@ -52,6 +52,7 @@ uv run pytest tests/ -k "collections" # 按名字筛选
 | 声明与解包 | `unit/runtime/test_declarations.py` |
 | 函数与闭包 | `unit/runtime/test_functions.py` |
 | 类与继承 | `unit/runtime/test_classes.py` |
+| 运算符重载 | `unit/runtime/test_operators.py` |
 | 容器与切片 | `unit/runtime/test_collections.py` |
 | 内建函数 | `unit/runtime/test_builtins.py` |
 | CLI | `integration/test_cli.py` |

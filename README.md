@@ -18,6 +18,10 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 产生错误结果。完整的实现/拒绝清单见
 [规范：实现状态](docs/spec/06-conformance.md)。
 
+开发以**方言垂直切片**为主轴：先完成 `oort-object` 动态方言的 v1，再以薄探针
+验证并实现 `oort-core`；共享字节码后端在两个方言 v1 之后。详见
+[开发计划](docs/DEVELOPMENT_PLAN.md) 与 [OP 0001 §5](docs/proposals/0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受)。
+
 ### 已实现
 
 - 类 C 语法；换行分隔语句，括号内可自由换行
@@ -27,6 +31,7 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 - `if` / `elif` / `else`、`while`、`for ... in`（含解包）
 - `var` / `val`、多目标声明与元组解包、增强赋值
 - 类、方法、类方法、多重继承（C3 MRO）、元类、`this` / `super`
+- 运算符重载：`def operator "+"(other)` 等方法，内建类型使用同一套调度
 - 内建：`print`、`clock`、`type`、`super`、`len`、`range`、`str`、`repr`、
   `int`、`float`、`bool`
 - REPL（多行输入）
@@ -35,7 +40,7 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 
 - 模块与导入系统 — [OP 0006](docs/proposals/0006-modules-and-imports.md)
 - 静态类型、泛型、ADT、模式匹配 — [OP 0005](docs/proposals/0005-type-system.md)
-- 运算符重载与自定义运算符调度 — [OP 0002](docs/proposals/0002-dsl-support.md)
+- 自定义运算符声明与优先级 — [OP 0002](docs/proposals/0002-dsl-support.md)
 - 宏系统与 `comptime` — [设计笔记](docs/design/05-macro-system-design.md)
 - 字节码 VM 与 LLVM 后端 — [OP 0004](docs/proposals/0004-bytecode-vm.md)
 - 语言方言（core / object / systems） — [OP 0001](docs/proposals/0001-feature-layers-and-dialects.md)

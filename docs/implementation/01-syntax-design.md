@@ -45,8 +45,9 @@ var a, b = 1, 2
 - 运算符优先级与结合性由 Pratt 解析器统一处理，见
   [spec: 表达式](../spec/02-expressions.md#运算符) 与
   `src/oort_lang/frontend/operator_defs.py`。
-- 用户自定义运算符在词法/语法层受支持（`USER_OP`），但运行时重载调度尚未实现；
-  遇到未实现的运算符会在运行期报错。设计见
+- 用户自定义运算符在词法/语法层受支持（`USER_OP`），运行时通过
+  `def operator "<sym>"` 方法调度；未定义方法的类型会在运行期报错。
+  运算符优先级声明仍待实现，设计见
   [proposal 0002](../proposals/0002-dsl-support.md)。
 - 函数调用（`f(x)`）、下标（`a[b]`）、属性（`a.b`）的优先级高于所有 Pratt 运算符。
 - 赋值是**语句**，不是表达式：

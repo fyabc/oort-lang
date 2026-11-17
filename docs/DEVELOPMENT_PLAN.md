@@ -10,81 +10,119 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
 1. 特性正交，不写“类型特判”；
 2. 未实现的语法显式报错，不保留半成品；
 3. 元编程（宏、`comptime`）最后做；
-4. 每个特性先有规范与测试，再有优化。
+4. 每个特性先有规范与测试，再有优化；
+5. 方言是语义边界：共享骨架不承载方言策略，后端不为方言复制。
+
+## 开发模型：共享骨架 + 方言垂直切片
+
+开发与验收以**方言**为主轴，但共享组件保持方言无关：
+
+| 层 | 内容 | 纪律 |
+|----|------|------|
+| 共享骨架 | 词法/语法超集、AST、源码位置、诊断、模块加载、CLI/REPL、测试框架 | 不为单个方言加特判 |
+| 方言切片 | 对象模型、语义分析、特性门控、规范与测试 | 一个方言一个语义分析器 |
+| 共享后端 | 树遍历解释器 → 统一 HIR → 字节码 VM | 方言差异在进入 HIR 前消化 |
+
+原则：
+
+- 一次只把一个方言做到端到端可运行，但共享骨架同步演进；
+- 一份语法超集，方言差异在语义分析阶段门控，不提前分叉文法；
+- 共享组件按需抽象：第一个方言需要时实现，第二个方言复用时才一般化；
+- 两个方言都先用树遍历解释器跑通 v1，字节码/LLVM 之后作为共享后端实现；
+- 第二个方言尽早用薄探针验证隔离，避免共享层被第一个方言的偶然实现污染。
+
+**方言 v1 的完成定义**：规范声明的特性全部可端到端运行，并有正向测试、拒绝测试、
+示例与文档；不以“所有后端/优化完成”为标准。
 
 ## 路线图
 
-### 阶段 0：动态核心（已完成）
+### 阶段 0：共享骨架与动态核心（已完成）
 
 - ANTLR 语法 + Pratt 表达式解析（带源码位置）
 - AST、Pass1 名称解析与作用域检查
 - 树遍历解释器：函数、闭包、类、继承、元类、`this`/`super`
 - 容器字面量、下标、切片、`for`、`elif`、增强赋值、多目标解包
+- 运算符重载：`def operator "<sym>"`，一元/二元/比较/成员，内建类型同一套方法表
 - 内建函数与 REPL
 - 测试重组：`tests/unit/{frontend,runtime}` + `tests/integration`
 - 移除不成熟的寄存器字节码原型（见 [OP 0004](proposals/0004-bytecode-vm.md)）
 
-### 阶段 1：核心语义收尾（当前）
+### 阶段 1：`oort-object` v1（当前）
 
-目标：让“已声明支持”的动态特性真正闭环，规范与实现一致。
+目标：把动态方言做成完整、可演示、可验收的产品。对象模型见
+[OP 0007](proposals/0007-oort-object-object-model.md)。
 
-| 项目 | 说明 | 优先级 |
-|------|------|--------|
-| 运算符重载调度 | 二元/一元/下标/比较走 `operator "..."` / `__op_*__` 方法，替换直接使用 Python 运算 | P0 |
-| 类槽变量 | `class C { var x }` 定义实例字段，`this.x` 访问；与动态字段并存规则 | P0 |
-| 扩展方法 | `def C.f` 在类外定义，按词法作用域生效 | P1 |
-| 默认/关键字参数 | 与函数签名统一，参数绑定算法一次设计到位 | P1 |
-| 迭代器协议 | `for` 支持用户对象（`__iter__`/`__next__` 或设计笔记 06 的双返回协议） | P1 |
-| 标准库最小集 | `map`/`filter`/`sorted`/`zip`/`enumerate`，`math`/`string` 模块（依赖模块系统） | P1 |
-| REPL 集成测试 | 多行输入、续行、错误恢复 | P2 |
-| 覆盖率基线 | 目标：核心模块 ≥ 80% 行覆盖 | P2 |
+#### P0 — 方言闭环
 
-验收：`docs/spec` 中每个“已实现”条目都有测试；`test_unsupported.py` 覆盖全部拒绝项。
+| 项目 | 说明 |
+|------|------|
+| 方言契约 | `#lang oort-object`（默认 + 显式）、`DialectConfig`、Pratt 表接入点、特性门控；测试/示例按方言组织 |
+| 动态对象模型 | 开放字段袋；拒绝类体 `var`/`val`；禁止实例字段遮蔽类方法；明确属性查找与默认相等/哈希 |
+| 参数绑定 | 默认参数与关键字参数统一设计，避免后续特批 |
+| 运算符重载 | 已完成（2026-11-18）；下标/属性重载另立提案 |
 
-### 阶段 2：模块与导入
+#### P1 — 运行时能力
 
-依据 [OP 0006](proposals/0006-modules-and-imports.md)：
+| 项目 | 说明 |
+|------|------|
+| 模块与导入 | 按 [OP 0006](proposals/0006-modules-and-imports.md) 实现加载器、缓存、循环诊断；属于共享骨架 |
+| 标准库最小集 | `map`/`filter`/`sorted`/`zip`/`enumerate`，`math`、`string` 模块 |
+| 迭代器协议 | 用户对象可用于 `for` |
+| 扩展方法 | `def C.f` 在类外定义，按词法作用域生效 |
 
-- 模块加载器、缓存、路径解析
-- 急切导入与初始化顺序
-- 循环依赖诊断
-- 标准库 prelude
-- 移除 `import` 的拒绝诊断
+#### P2 — 动态方言的打磨
 
-### 阶段 3：类型系统与数据建模
+| 项目 | 说明 |
+|------|------|
+| 字段初始化器 | 可选语法糖；每实例求值，另行提案，不属于槽 |
+| 下标/属性访问协议 | `a[b]`、`a.b` 走可重载方法，另立提案 |
+| 覆盖率基线 | 核心模块 ≥ 80% 行覆盖；提高阈值前先补测试 |
 
-依据 [OP 0005](proposals/0005-type-system.md)：
+验收：`docs/spec` 中 `oort-object` 的每个“已实现”条目都有测试；
+`test_unsupported.py` 覆盖该方言的全部拒绝项；示例可全部运行。
 
-1. 双向类型检查 + 局部推断（动态模块不受影响）
-2. 泛型（单态化 + 边界擦除）；类型参数语法采用已确定的
+### 阶段 2：`oort-core` v1
+
+先做**薄探针**，验证方言路由与语义隔离：
+
+- `#lang oort-core`；
+- 只支持 `Int` / `Bool` / 函数的最小静态子集；
+- 独立的类型检查器，复用 AST、诊断、模块加载、CLI 与测试框架；
+- 同一程序在 `oort-object` 下动态运行、在 `oort-core` 下静态检查。
+
+探针通过后，按 [OP 0005](proposals/0005-type-system.md) 实现完整切片：
+
+1. 双向类型检查 + 局部推断
+2. 泛型（单态化 + 边界擦除）；类型参数语法采用
    `[out T: Bound]` / `[in T: Bound]`（声明处变型）
 3. ADT（`enum`）与 `match`、穷尽性检查
 4. `Result[T, E]` / `Option[T]` 与 `?` 传播
-5. 模块级动态/静态边界与 blame
-6. Trait/接口与运算符重载对接
+5. 静态对象模型与**槽**：固定布局、确定赋值、`val` 只读、初始化顺序
+6. 模块级动态/静态边界与 blame
 
-### 阶段 4：方言与 DSL
+槽变量属于本阶段，不属于 `oort-object`。
 
-依据 [OP 0001](proposals/0001-feature-layers-and-dialects.md)、
-[OP 0002](proposals/0002-dsl-support.md)：
+### 阶段 3：共享后端
 
-1. `#lang` 模块级方言控制与 Pratt 运算符表配置
-2. 属性系统 `@[...]`
-3. 接收者 lambda + `@DslMarker`
-4. 运算符声明、`infix`、按名参数、字符串插值器
-5. 结果构建器（可选）
+前置：`oort-object` 与 `oort-core` 的 v1 对象模型均已稳定。
 
-### 阶段 5：字节码 VM
+- 统一 HIR：把方言语义在进入 HIR 前消化掉；
+- 寄存器式字节码 VM（[OP 0004](proposals/0004-bytecode-vm.md)、
+  [设计 02](design/02-bytecode-vm-design.md)）；
+- 与树遍历解释器做差分测试；
+- 用基准证明收益，再考虑 LLVM。
 
-依据 [OP 0004](proposals/0004-bytecode-vm.md) 与
-[设计笔记 02](design/02-bytecode-vm-design.md)：
+禁止为每个方言复制一套字节码后端。
 
-- 前置：显式失败约束、语义测试、对象模型统一、行号/异常表
-- 寄存器式 ISA、upvalue 闭包、端到端测试
-- 与解释器结果对拍
-- 基准证明收益
+### 阶段 4：`oort-systems` / `oort-meta` 与 DSL 开关（按需）
 
-### 阶段 6：静态后端与 Rust 迁移（远期）
+- DSL 是正交维度：`oort-script` / `oort-builder` 的接收者 lambda、`@DslMarker`、
+  属性系统、`infix`、按名参数、字符串插值器，按 [OP 0002](proposals/0002-dsl-support.md)
+  在 `oort-object` / `oort-core` 之上开关，不单独建管线；
+- `oort-systems` 依赖内存模型、ABI 与无 GC 对象表示；
+- `oort-meta` 依赖稳定的 AST、类型表示与模块边界，最后做。
+
+### 阶段 5：静态后端与 Rust 迁移（远期）
 
 - LLVM IR（llvmlite 原型，Rust/inkwell 生产）
 - 静态模块单态化与 GC/ARC 选择
@@ -97,30 +135,38 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
 - **语义分析**：覆盖名称解析、作用域、`this`/`super`、控制流位置检查；
   并负责显式拒绝未实现特性。类型检查尚未开始。
 - **解释器**：动态核心基本可用，函数、闭包、类、继承、元类、容器、循环都有测试。
-  运算符重载调度、槽变量、默认/关键字参数、用户迭代器协议仍缺失。
+  运算符重载已闭环（用户类与内建类型共用方法表）；默认/关键字参数、用户迭代器、
+  下标/属性重载仍未实现。
+- **动态对象模型**：当前实现是“实例字段袋 → 类 MRO”；类体 `var`/`val` 的语义
+  尚未收紧，方法遮蔽尚未禁止。这两项按 [OP 0007](proposals/0007-oort-object-object-model.md)
+  在 `oort-object` v1 中处理。
+- **方言**：尚未实现 `#lang`；当前行为是 `oort-object` 的参考实现。
 - **标准库**：只有最小内建函数；集合高阶函数、`math`/`string` 等模块等待模块系统。
 - **REPL**：支持多行输入、续行与错误恢复，并有集成测试。
 - **测试**：单元测试与集成测试分目录组织，覆盖全部已实现特性与拒绝清单；
   核心代码行覆盖率约 84%。
-- **类型系统**：仅解析类型标注，不检查、不推导；设计见 OP 0005。
+- **类型系统**：仅解析类型标注，不检查、不推导；属于 `oort-core`，设计见 OP 0005。
 - **模块/导入**：语法可解析，语义阶段显式报错；设计见 OP 0006。
 - **宏 / `comptime`**：未开始，排在类型系统与模块之后。
-- **字节码 VM**：旧原型已移除；重新实现的前置条件见 OP 0004。
-
+- **字节码 VM**：旧原型已移除；在 `oort-object` 与 `oort-core` v1 后作为共享后端实现。
 
 ## 决策索引
 
 | 决策 | 选择 | 参考 |
 |------|------|------|
+| 开发模型 | 共享骨架 + 方言垂直切片 + 共享后端 | [OP 0001 §5](proposals/0001-feature-layers-and-dialects.md) |
+| 方言默认值 | 缺省 `oort-object`，允许显式 `#lang`；其他方言必须显式声明 | [OP 0001](proposals/0001-feature-layers-and-dialects.md) |
+| `oort-object` 对象模型 | 开放字段袋；拒绝类体 `var`/`val`；禁止方法遮蔽 | [OP 0007](proposals/0007-oort-object-object-model.md) |
+| 槽变量归属 | `oort-core` 静态对象模型，与类型系统一起设计 | [OP 0007](proposals/0007-oort-object-object-model.md) / [OP 0005](proposals/0005-type-system.md) |
 | 执行后端（当前） | 树遍历解释器 | [实现笔记 03](implementation/03-interpreter.md) |
-| 执行后端（目标） | 寄存器式字节码 VM | [设计 02](design/02-bytecode-vm-design.md) / [OP 0004](proposals/0004-bytecode-vm.md) |
+| 执行后端（目标） | 寄存器式字节码 VM（两个方言 v1 后） | [设计 02](design/02-bytecode-vm-design.md) / [OP 0004](proposals/0004-bytecode-vm.md) |
 | 值表示（目标） | Tagged Pointer + 整数层级 | [设计 01](design/01-runtime-value-representation.md) |
 | 闭包模型 | 环境链（当前）；Upvalue（VM） | [设计 02](design/02-bytecode-vm-design.md) |
 | 泛型策略 | 内部单态化，边界擦除 | [OP 0005](proposals/0005-type-system.md) |
 | 元类 | 扁平化、共享、`::` 语法 | [实现笔记 04](implementation/04-class-system.md) |
 | `this` 绑定 | 方法内词法绑定 | [实现笔记 04](implementation/04-class-system.md) |
-| 运算符重载 | Trait / `operator "..."` 显式 | [OP 0002](proposals/0002-dsl-support.md) |
+| 运算符重载 | `def operator "<sym>"`，内建类型同一套方法表 | [OP 0002](proposals/0002-dsl-support.md) |
 | 导入语义 | 急切，模块级缓存 | [OP 0006](proposals/0006-modules-and-imports.md) |
-| 错误处理 | `Result`/`Option`（静态方言） | [OP 0005](proposals/0005-type-system.md) |
+| 错误处理 | `Result`/`Option`（`oort-core`） | [OP 0005](proposals/0005-type-system.md) |
 | 多线程 / ABI | 暂无稳定 ABI；优先 C FFI | [设计 07](design/07-concurrency-abi-design.md) |
 | 宏系统 | Token Stream + AST + `comptime`（最后） | [设计 05](design/05-macro-system-design.md) |

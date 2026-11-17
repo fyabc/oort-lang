@@ -18,7 +18,8 @@ print(p.norm2())     # 25
 
 - 类使用函数调用语法实例化，没有 `new`。
 - `__init__` 在实例创建后调用；其中不允许 `return` 值。
-- 实例字段通过 `this.field = value` 创建；类体顶层的 `var`/`val` 目前不会成为字段。
+- 实例字段通过 `this.field = value` 创建；类体顶层的 `var`/`val` 目前不会成为字段，
+  计划在 `oort-object` 中改为显式拒绝（[OP 0007](../proposals/0007-oort-object-object-model.md)）。
 
 ## 继承
 
@@ -48,6 +49,20 @@ print(C().f())   # 11
 
 - `super(args)` 等价于调用父类的初始化器（语法保留）。
 - 访问 `super.method` 得到绑定到当前接收者的父类方法。
+
+## 运算符方法
+
+```oort
+class Vec {
+    def __init__(x) { this.x = x }
+    def operator "+"(other) { Vec(this.x + other.x) }
+}
+```
+
+- `def operator "<sym>"` 定义运算符方法，`this` 绑定到左操作数（一元运算时为唯一操作数）。
+- 一元方法 0 个参数，二元方法 1 个参数；同一符号可同时定义两种形式。
+- 方法沿线性的类 MRO 查找，因此子类可继承或覆盖基类的运算符。
+- 完整调度规则见 [表达式：运算符重载](02-expressions.md#运算符重载)。
 
 ## 类方法
 
@@ -88,7 +103,9 @@ class A :: M {}
 
 ## 当前限制
 
-- 槽变量（类体中声明的字段）未实现。
+- 槽变量属于 `oort-core` 静态对象模型，尚未实现；`oort-object` 的类体
+  `var`/`val` 计划按 [OP 0007](../proposals/0007-oort-object-object-model.md)
+  显式拒绝，实例字段通过 `this.x = ...` 创建。
 - 扩展方法（类外定义）未接入。
-- 属性钩子（`__getattr__` 等）、运算符重载、Trait/接口未实现。
+- 属性钩子（`__getattr__` 等）、下标/属性重载、Trait/接口未实现。
 - 类属性的修改（`C.x = ...`）规则尚未定义。

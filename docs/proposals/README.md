@@ -22,12 +22,13 @@
 
 | 编号 | 标题 | 状态 |
 |------|------|------|
-| [0001](0001-feature-layers-and-dialects.md) | 特性分层与语言方言（防止 C++ 化） | Proposed |
+| [0001](0001-feature-layers-and-dialects.md) | 特性分层与语言方言（防止 C++ 化） | Accepted |
 | [0002](0002-dsl-support.md) | 嵌入式 DSL 支持 | Proposed |
 | [0003](0003-grammar-cleanup.md) | 文法清理与语义收紧 | Implemented |
 | [0004](0004-bytecode-vm.md) | 字节码虚拟机（重新实现） | Draft |
 | [0005](0005-type-system.md) | 类型系统、泛型、ADT 与模式匹配 | Draft |
 | [0006](0006-modules-and-imports.md) | 模块与导入系统 | Draft |
+| [0007](0007-oort-object-object-model.md) | `oort-object` 动态对象模型 | Proposed |
 
 ## 流程
 
@@ -49,6 +50,9 @@
 | 2026-11-18 | 文法清理：`USER_OP` 去掉 `.`/`:`/`@`，删除死 token，`elif`/`else` 对称化 | [OP 0003](0003-grammar-cleanup.md)（Implemented） |
 | 2026-11-18 | 移除不成熟的寄存器字节码原型；重新实现需满足显式失败与端到端测试等前置条件 | [OP 0004](0004-bytecode-vm.md) |
 | 2026-11-18 | 类型参数采用声明处变型：`[out T: Bound]` / `[in T: Bound]`，上界用 `T: Bound` | [OP 0005 §3.1](0005-type-system.md#31-类型参数语法与变型已接受) |
+| 2026-11-18 | 运算符方法统一用 `def operator "<sym>"` 字符串命名；内建类型与用户类共用 `OortType.operators` 调度；`!=`/`!in` 默认取反 | [OP 0002 §3](0002-dsl-support.md#3-运算符声明) |
+| 2026-11-18 | 采用“共享骨架 + 方言垂直切片 + 共享后端”的开发模型；先完成 `oort-object` v1，再以薄 `oort-core` 探针验证隔离 | [OP 0001 §5](0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受) |
+| 2026-11-18 | `oort-object` 使用开放字段袋、拒绝类体 `var`/`val`、禁止实例字段遮蔽类方法；槽归入 `oort-core` 静态对象模型 | [OP 0007](0007-oort-object-object-model.md) |
 
 ## 设计原则（所有提案必须满足）
 
