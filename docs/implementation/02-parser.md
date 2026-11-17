@@ -31,7 +31,10 @@ Oort 语句末尾不需要分号，因此需要区分“语句结束换行”与
 - 否则产生 `NEWLINE` token，作为语句分隔符；
 - 行尾 `\` 显式续行。
 
-实现见 `Oort.g4` 的 `@lexer::members` 与 `IGNORED_NEWLINE` 谓词。
+当前实现见 `Oort.g4` 的 `@lexer::members` 与 `IGNORED_NEWLINE` 谓词。
+这使文法依赖 Python 动作，且未匹配的闭括号会让词法器栈操作崩溃；
+计划按 [OP 0008](../proposals/0008-lexer-postprocessing-and-repl.md) 移除全部
+lexer 动作，把换行/括号处理移到 token 后处理层，并同步重构 REPL。
 
 ## 错误报告
 
@@ -67,3 +70,5 @@ print(
 - 用户自定义运算符可以解析并按默认优先级求值；按作用域声明运算符优先级尚未实现。
 - 格式化字符串尚未实现；`f"..."` 会显式报错。
 - 类型参数、宏、`yield`/`await` 能解析，但语义分析阶段会拒绝。
+- 未匹配的闭括号（如单独的 `)` / `}`）目前会触发 lexer 的 `IndexError`，
+  而不是语法诊断；随 OP 0008 修复。

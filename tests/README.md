@@ -38,6 +38,21 @@ uv run pytest tests/ -k "collections" # 按名字筛选
   非确定性输出（如计时）单独处理。
 - 测试文件按**被测子系统**命名，而不是按实现文件命名。
 
+## REPL 测试
+
+REPL 按层次测试，不依赖手动输入：
+
+- **单元**：括号/换行后处理、`is_complete` 判断、`ReplSession` 状态迁移；
+- **集成**：脚本化 transcript（多行、错误恢复、变量持久化、空行、输出格式）；
+- **子进程**：用管道 stdin 启动真实 CLI，检查退出码、stdout/stderr 与 EOF；
+- **PTY（可选）**：Ctrl-C/Ctrl-D、行编辑、历史与粘贴，跨平台成本较高；
+- **人工冒烟**：终端显示、颜色与快捷键等无法稳定自动化的部分，
+  使用 `private/repl-smoke.md`（该目录不公开）。
+
+自动化测试放在本目录；`private/` 只放人工检查清单。
+词法后处理与 REPL 重构设计见
+[OP 0008](../docs/proposals/0008-lexer-postprocessing-and-repl.md)。
+
 ## 覆盖范围
 
 | 领域 | 测试文件 |

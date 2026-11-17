@@ -70,6 +70,15 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
 | 迭代器协议 | 用户对象可用于 `for` |
 | 扩展方法 | `def C.f` 在类外定义，按词法作用域生效 |
 
+#### 共享骨架（与方言并行）
+
+| 项目 | 说明 |
+|------|------|
+| 文法去宿主化 | 删除 `Oort.g4` 的 `@lexer::members`、token 动作与 `IGNORED_NEWLINE` 谓词；新增 token 后处理层处理换行与括号栈（[OP 0008](proposals/0008-lexer-postprocessing-and-repl.md)） |
+| REPL 重构 | `ReplSession` + `ConsoleIO`；整缓冲区解析；正确处理 EOF/Ctrl-C；不再修改 ANTLR lexer/parser 内部字段（[OP 0008](proposals/0008-lexer-postprocessing-and-repl.md)） |
+| REPL 测试 | 括号/完整性单元测试、transcript 集成测试、子进程 stdin 冒烟测试；终端交互用 `private/repl-smoke.md` 人工检查 |
+| 未匹配闭括号 | 词法动作移除后，`}` / `)` 等应走语法诊断，而不是 Python traceback |
+
 #### P2 — 动态方言的打磨
 
 | 项目 | 说明 |
@@ -131,7 +140,8 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
 ## 当前状态总览
 
 - **前端（文法、解析、AST）**：基本完成。核心语法、容器字面量、类/函数定义、
-  切片与 `elif` 均已支持；Pratt 运算符表完整。剩余工作主要是随新提案扩展语法。
+  切片与 `elif` 均已支持；Pratt 运算符表完整。文法仍含 Python lexer 动作
+  （括号计数与换行谓词），计划按 OP 0008 移到 token 后处理层。
 - **语义分析**：覆盖名称解析、作用域、`this`/`super`、控制流位置检查；
   并负责显式拒绝未实现特性。类型检查尚未开始。
 - **解释器**：动态核心基本可用，函数、闭包、类、继承、元类、容器、循环都有测试。
@@ -142,7 +152,9 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
   在 `oort-object` v1 中处理。
 - **方言**：尚未实现 `#lang`；当前行为是 `oort-object` 的参考实现。
 - **标准库**：只有最小内建函数；集合高阶函数、`math`/`string` 等模块等待模块系统。
-- **REPL**：支持多行输入、续行与错误恢复，并有集成测试。
+- **REPL**：支持多行输入、续行与错误恢复，并有 transcript 集成测试；
+  但实现依赖 ANTLR lexer/parser 内部字段，EOF/Ctrl-C 行为未定义，
+  重构与分层测试见 OP 0008。
 - **测试**：单元测试与集成测试分目录组织，覆盖全部已实现特性与拒绝清单；
   核心代码行覆盖率约 84%。
 - **类型系统**：仅解析类型标注，不检查、不推导；属于 `oort-core`，设计见 OP 0005。
@@ -155,6 +167,7 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
 | 决策 | 选择 | 参考 |
 |------|------|------|
 | 开发模型 | 共享骨架 + 方言垂直切片 + 共享后端 | [OP 0001 §5](proposals/0001-feature-layers-and-dialects.md) |
+| 词法/REPL | 文法去宿主化；NEWLINE 由 token 后处理层过滤；REPL 用 `ReplSession` | [OP 0008](proposals/0008-lexer-postprocessing-and-repl.md) |
 | 方言默认值 | 缺省 `oort-object`，允许显式 `#lang`；其他方言必须显式声明 | [OP 0001](proposals/0001-feature-layers-and-dialects.md) |
 | `oort-object` 对象模型 | 开放字段袋；拒绝类体 `var`/`val`；禁止方法遮蔽 | [OP 0007](proposals/0007-oort-object-object-model.md) |
 | 槽变量归属 | `oort-core` 静态对象模型，与类型系统一起设计 | [OP 0007](proposals/0007-oort-object-object-model.md) / [OP 0005](proposals/0005-type-system.md) |
