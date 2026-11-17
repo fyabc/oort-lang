@@ -56,7 +56,8 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
 依据 [OP 0005](proposals/0005-type-system.md)：
 
 1. 双向类型检查 + 局部推断（动态模块不受影响）
-2. 泛型（单态化 + 边界擦除）
+2. 泛型（单态化 + 边界擦除）；类型参数语法采用已确定的
+   `[out T: Bound]` / `[in T: Bound]`（声明处变型）
 3. ADT（`enum`）与 `match`、穷尽性检查
 4. `Result[T, E]` / `Option[T]` 与 `?` 传播
 5. 模块级动态/静态边界与 blame
