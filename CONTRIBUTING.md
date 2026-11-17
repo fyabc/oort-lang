@@ -1,0 +1,70 @@
+# Contributing to Oort
+
+Thanks for helping! Oort is a learning-oriented language project, so clarity and
+explicit design decisions matter more than feature count.
+
+## Development setup
+
+```bash
+uv sync --extra dev
+pre-commit install
+
+uv run --frozen pytest tests/
+uv run --frozen ruff check src tests benchmarks scripts
+uv run --frozen ruff format --check src tests benchmarks scripts
+uv run --frozen mypy src/
+```
+
+Java 17+ is only needed to regenerate the parser from `grammars/Oort.g4`:
+
+```bash
+uv sync --extra build-grammar
+python scripts/build_grammar.py   # or: make build-grammar
+```
+
+Do not hand-edit files in `src/oort_lang/grammar/`; they are generated.
+
+## Where things live
+
+| Path | What |
+|------|------|
+| `docs/spec/` | Normative language reference (must match the implementation) |
+| `docs/proposals/` | PEP/RFC-style design proposals |
+| `docs/implementation/` | Compiler implementation notes |
+| `src/oort_lang/frontend/` | ANTLR parse tree → AST (Pratt), semantic analysis |
+| `src/oort_lang/ast_interpreter/` | Tree-walking runtime and object model |
+| `tests/unit/`, `tests/integration/` | Unit tests, CLI/REPL/example tests |
+
+## Rules for language changes
+
+1. **Open a proposal first** for anything non-trivial (new syntax, semantics,
+   type-system changes). Copy `docs/proposals/0000-template.md`.
+2. **No half-features.** If a construct is parsed but not implemented, it must be
+   rejected with `UnsupportedSyntax` in `src/oort_lang/frontend/pass1.py`, and
+   listed in `docs/spec/06-conformance.md`.
+3. **Update the spec and tests together.** A feature is not done until
+   `docs/spec/` and `tests/` reflect it.
+4. **Keep features orthogonal.** Avoid special cases for particular types or
+   syntax; prefer explicit, composable mechanisms.
+5. **Do not add metaprogramming shortcuts** (macros, `comptime`, hidden code
+   generation) before the runtime semantics are stable.
+
+## Tests
+
+- Add or extend tests under `tests/unit/` for the subsystem you touch.
+- CLI/REPL/example behavior belongs in `tests/integration/`.
+- New examples must be registered in `tests/integration/test_examples.py`.
+- Core code is expected to stay above the CI coverage threshold (80%).
+
+## Commits and pull requests
+
+- Use conventional commit subjects (`feat:`, `fix:`, `docs:`, `test:`, ...).
+- Keep each commit focused; avoid mixing refactors with behavior changes.
+- In the PR description, state what changed, why, which proposal/spec section
+  applies, and how it was tested.
+- CI must pass on Linux and Windows.
+
+## Reporting bugs
+
+Please include a minimal `.ort` reproducer, the command you ran, and the full
+diagnostic output. For security issues, see [SECURITY.md](SECURITY.md).

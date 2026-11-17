@@ -1,5 +1,8 @@
 # Oort Programming Language
 
+[![CI](https://github.com/fyabc/oort-lang.py/actions/workflows/ci.yml/badge.svg)](https://github.com/fyabc/oort-lang.py/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ## 简介
 
 Oort 是一门用于**编译原理与编程语言设计学习**的玩具语言。Python 实现目前作为原型，
@@ -130,3 +133,12 @@ benchmarks/           # 性能基线
 - [ANTLR 4](https://www.antlr.org/) — 词法与语法分析器生成
 - [uv](https://docs.astral.sh/uv/) — 依赖与虚拟环境管理
 - [ruff](https://docs.astral.sh/ruff/) / [mypy](https://mypy-lang.org/) — 代码质量
+
+## 参与贡献
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — 开发环境、测试与提案流程
+- [CHANGELOG.md](CHANGELOG.md) — 变更记录
+- [SECURITY.md](SECURITY.md) — 漏洞报告方式
+
+语言变更请先阅读 [提案流程](docs/proposals/README.md)；未实现的功能会被显式拒绝，
+不会静默产生错误结果。
