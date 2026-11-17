@@ -7,11 +7,22 @@ Oort 的类系统主要来自 Smalltalk / Python：类也是对象，类由元�
 
 - 类体内可以写任意语句，这些语句在类定义执行时立即执行。
 - 类作用域顶层定义的函数自动成为实例方法。
-- 顶层 `var` / `val` 目前不会成为类成员。按 [OP 0007](../proposals/0007-oort-object-object-model.md)，
-  `oort-object` 将显式拒绝类体变量；槽变量属于 `oort-core` 静态对象模型
-  （[OP 0005](../proposals/0005-type-system.md)）。
+- 顶层 `var` / `val` 在 `oort-object` 中被 `Pass1Analyzer` 显式拒绝；
+  槽变量属于 `oort-core` 静态对象模型（[OP 0005](../proposals/0005-type-system.md)）。
 - 类属性沿类的 MRO 查找；实例方法通过 `this` 绑定到实例。
 - 通过 `C.f` 访问方法得到未绑定函数；通过 `C().f` 得到绑定方法。
+
+## 实例字段与属性访问
+
+- `oort-object` 的实例是开放字段袋：`OortInstance.fields` 保存字段，
+  `this.x = ...` 任意时刻添加或更新字段。
+- 读取 `obj.name` 的顺序是：实例字段 → 类 MRO → 元类 MRO；未找到抛
+  `OortAttributeError`。
+- 写入前检查解析结果：如果 `name` 在类 MRO 或元类 MRO 中解析为可调用的类成员
+  （`OortFunction` / `OortNativeFunction` / 已绑定方法），拒绝写入，避免实例字段
+  静默覆盖方法。检查逻辑在 `find_callable_class_member`。
+- 非可调用类属性目前允许被实例字段遮蔽；类属性赋值规则尚未定义。
+- 默认相等与哈希都使用 Python 对象身份；覆盖 `operator "=="` 不改变哈希。
 
 ## 继承
 
@@ -106,8 +117,8 @@ Rect(3, 4).area()   # 12
 
 ## 已知限制
 
-- `oort-object` 的实例字段通过 `this.x = ...` 动态添加；类体变量将按 OP 0007
-  被拒绝。槽变量属于 `oort-core` 静态对象模型，尚未实现。
+- `oort-object` 的实例字段通过 `this.x = ...` 动态添加；类体变量已被拒绝。
+  槽变量属于 `oort-core` 静态对象模型，尚未实现。
 - 扩展方法（在类外 `def C.f`）语法可解析，但尚未接入语义。
 - 下标与属性重载尚未接入运算符方法表。
 - 属性查找没有 `__getattr__` / `__setattr__` 等钩子。

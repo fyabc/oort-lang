@@ -28,7 +28,7 @@
 | [0004](0004-bytecode-vm.md) | 字节码虚拟机（重新实现） | Draft |
 | [0005](0005-type-system.md) | 类型系统、泛型、ADT 与模式匹配 | Draft |
 | [0006](0006-modules-and-imports.md) | 模块与导入系统 | Draft |
-| [0007](0007-oort-object-object-model.md) | `oort-object` 动态对象模型 | Proposed |
+| [0007](0007-oort-object-object-model.md) | `oort-object` 动态对象模型 | Implemented |
 | [0008](0008-lexer-postprocessing-and-repl.md) | 词法后处理层与 REPL 重构 | Proposed |
 
 ## 流程
@@ -53,7 +53,8 @@
 | 2026-11-18 | 类型参数采用声明处变型：`[out T: Bound]` / `[in T: Bound]`，上界用 `T: Bound` | [OP 0005 §3.1](0005-type-system.md#31-类型参数语法与变型已接受) |
 | 2026-11-18 | 运算符方法统一用 `def operator "<sym>"` 字符串命名；内建类型与用户类共用 `OortType.operators` 调度；`!=`/`!in` 默认取反 | [OP 0002 §3](0002-dsl-support.md#3-运算符声明) |
 | 2026-11-18 | 采用“共享骨架 + 方言垂直切片 + 共享后端”的开发模型；先完成 `oort-object` v1，再以薄 `oort-core` 探针验证隔离 | [OP 0001 §5](0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受) |
-| 2026-11-18 | `oort-object` 使用开放字段袋、拒绝类体 `var`/`val`、禁止实例字段遮蔽类方法；槽归入 `oort-core` 静态对象模型 | [OP 0007](0007-oort-object-object-model.md) |
+| 2026-11-18 | `oort-object` 使用开放字段袋、拒绝类体 `var`/`val`、禁止实例字段遮蔽类方法；槽归入 `oort-core` 静态对象模型 | [OP 0007](0007-oort-object-object-model.md)（Implemented） |
+| 2026-11-18 | `oort-object` v1 对象模型实现完成：方法遮蔽检查覆盖类方法、缺失属性诊断、身份相等/哈希 | [OP 0007](0007-oort-object-object-model.md)（Implemented） |
 | 2026-11-18 | `Oort.g4` 去除宿主语言动作，换行/括号交给 token 后处理层；REPL 重构为 `ReplSession` 并补分层测试 | [OP 0008](0008-lexer-postprocessing-and-repl.md) |
 | 2026-11-18 | `#lang` 按首行预处理识别（该行对词法器仍是注释），非首行/未知/未实现方言显式报错；`DialectConfig` 提供特性门控与 Pratt 表工厂 | [OP 0001 §3](0001-feature-layers-and-dialects.md#3-模块级方言控制) |
 

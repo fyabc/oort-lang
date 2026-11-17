@@ -479,6 +479,33 @@ class OortMethod(OortMethodMixin, OortInstance):
         return result
 
 
+_CALLABLE_CLASS_MEMBERS = (OortFunction, OortNativeFunction, OortMethod, OortNativeMethod)
+
+
+def find_callable_class_member(name: str, start_type: "OortType") -> "OortObject | None":
+    """Find the callable class member that `name` resolves to, if any.
+
+    Lookup follows the instance attribute order used by `OortObject.get`:
+    the class MRO first, then the metaclass MRO (class methods). A
+    non-callable class member stops the search and is returned as no conflict;
+    callers may let an instance field shadow it (OP 0007 leaves the priority
+    of non-callable class attributes undefined).
+    """
+    for mro_type in start_type.mro():
+        value = mro_type.fields.get(name)
+        if value is not None:
+            return value if isinstance(value, _CALLABLE_CLASS_MEMBERS) else None
+
+    metaclass = start_type.type
+    if metaclass is not None:
+        for mro_type in metaclass.mro():
+            value = mro_type.fields.get(name)
+            if value is not None:
+                return value if isinstance(value, _CALLABLE_CLASS_MEMBERS) else None
+
+    return None
+
+
 class OortSuperProxy(OortNativeMixin, OortObject):
     """Oort super proxy object."""
 

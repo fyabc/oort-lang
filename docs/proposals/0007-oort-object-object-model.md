@@ -1,10 +1,13 @@
 # OP 0007: `oort-object` 动态对象模型
 
-- **状态**：Proposed
+- **状态**：Implemented
 - **作者**：Oort 设计讨论
 - **相关**：[OP 0001](0001-feature-layers-and-dialects.md)、
   [OP 0005](0005-type-system.md)、[设计 04](../design/04-class-object-model.md)、
   [规范：类](../spec/05-classes.md)
+
+> 实现进度（2026-11-18）：v1 核心已落地，包括开放字段袋、类体变量拒绝、
+> 方法遮蔽检查、缺失字段诊断与身份相等/哈希。字段初始化器按 §5 留待 P1 单独提案。
 
 ## 摘要
 
@@ -173,16 +176,19 @@ c.f = 2             # 错误：不能用一个实例字段遮蔽方法 f
 1. ~~方言契约落地后，在 `oort-object` 的语义分析中拒绝类体 `VarDecl`，并给出
    “在 `__init__` 中赋值”的诊断~~（已完成，2026-11-18；由
    `DialectFeatures.class_body_vars` 门控）。
-2. 在属性写入路径中加入方法遮蔽检查，覆盖实例方法与类方法。
-3. 测试：动态字段增删改、缺失字段错误、类体变量拒绝、方法遮蔽错误、
-   默认相等/哈希、`operator "=="` 覆盖。
-4. 更新 `docs/spec/05-classes.md`、`docs/spec/06-conformance.md` 与
-   `docs/implementation/04-class-system.md`。
+2. ~~在属性写入路径中加入方法遮蔽检查，覆盖实例方法与类方法~~（已完成，
+   2026-11-18；`find_callable_class_member`）。
+3. ~~测试：动态字段增删改、缺失字段错误、类体变量拒绝、方法遮蔽错误、
+   默认相等/哈希、`operator "=="` 覆盖~~（已完成，2026-11-18；见
+   `tests/unit/runtime/test_object_model.py`）。
+4. ~~更新 `docs/spec/05-classes.md`、`docs/spec/06-conformance.md` 与
+   `docs/implementation/04-class-system.md`~~（已完成）。
 5. 字段初始化器与显式类属性各自另立提案。
 
 ## 未解决问题
 
-- 方法遮蔽检查是否也覆盖元类上的类方法？建议覆盖，诊断中说明冲突来源。
+- ~~方法遮蔽检查是否也覆盖元类上的类方法？~~ 已决定覆盖（2026-11-18），
+  检查顺序与属性查找一致：类 MRO，然后元类 MRO。
 - 默认哈希与自定义 `==` 的一致性：需要引入 `operator "hash"` 还是禁止自定义相等
   对象作为键？
 - 类体中的副作用语句是否保留？当前建议保留，但规范需说明其执行时机。

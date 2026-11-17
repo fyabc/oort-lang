@@ -19,7 +19,7 @@ from .builtins import setup_builtins
 from .control_flow_exceptions import OortBreak, OortContinue, OortReturn
 from .environment import AssignResult, DefineResult, Entry, Environment
 from .objects import *
-from .objects import OortInstance, _get_operator_from_cls
+from .objects import OortInstance, _get_operator_from_cls, find_callable_class_member
 
 _AUG_OPS = {
     "+=": "+",
@@ -184,6 +184,13 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                 )
 
             assert isinstance(value, OortInstance)
+            if not isinstance(value, OortType) and (
+                find_callable_class_member(lhs.attribute, value.type) is not None
+            ):
+                raise OortAttributeError(
+                    f"Cannot shadow method {lhs.attribute!r} with an instance field",
+                    lhs.position,
+                )
             value.set(lhs.attribute, rhs)
 
     def visit_attribute(self, node: nodes.Attribute) -> OortObject:

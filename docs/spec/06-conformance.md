@@ -15,7 +15,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 表达式 | 全部内建运算符、运算符重载（`def operator "<sym>"`）、`and`/`or` 短路、属性、下标、调用、尾随 lambda、块、`if`/`while`/`for` 表达式 |
 | 语句 | `var`/`val`（含多目标解包）、赋值（含增强赋值、元组交换）、`if`/`elif`/`else`、`while`、`for`、`return`/`break`/`continue` |
 | 函数 | `def`、`do` lambda、闭包、递归、精确位置参数、尾随闭包 |
-| 类 | 定义、实例化、`__init__`、方法、类方法、单/多重继承、C3 MRO、元类、`this`/`super` |
+| 类 | 定义、实例化、`__init__`、方法、类方法、单/多重继承、C3 MRO、元类、`this`/`super`；开放字段袋、方法遮蔽检查、身份相等/哈希 |
 | 内建 | `print`、`clock`、`type`、`super`、`len`、`range`、`str`、`repr`、`int`、`float`、`bool` |
 
 ## 可解析但被拒绝
@@ -54,7 +54,10 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 - 类体中的 `var`/`val` 在 `oort-object` 中被显式拒绝；实例字段只能通过
   `this.x = ...` 创建（[OP 0007](../proposals/0007-oort-object-object-model.md)）。
   槽变量属于 `oort-core`。
-- 实例字段遮蔽类方法的写入检查尚未实现；当前允许写入，会覆盖方法查找结果。
+- 实例字段不能遮蔽实例方法或类方法；写入时报
+  `Cannot shadow method 'name' with an instance field`。
+- 默认相等与哈希使用对象身份；缺失字段读取抛 `OortAttributeError`。
+- 自定义 `==` 不会改变哈希，相关字典键/集合元素行为尚未定义。
 
 ## 已知的实现约定
 

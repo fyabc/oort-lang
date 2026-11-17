@@ -19,6 +19,7 @@ EXPECTED_OUTPUTS = {
     "03_oop/03_00_inheritance.ort": (
         "rect has area 12\nrect has area 25\n<Type 'Factory'>\n<Type 'M'>\n"
     ),
+    "03_oop/03_01_object_model.ort": "1\n0\ntrue\nfalse\nA\n",
 }
 
 EXAMPLE_FILES = sorted(p.relative_to(EXAMPLES_DIR).as_posix() for p in EXAMPLES_DIR.rglob("*.ort"))

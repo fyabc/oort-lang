@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `oort-object` rejects `var` / `val` declarations directly in a class body.
   Instances are open field bags; fields must be created with
   `this.name = ...` in `__init__` (OP 0007).
+- Instance fields can no longer shadow instance or class methods; missing
+  attributes raise `OortAttributeError`. Default equality and hashing use
+  object identity.
 - Source files are read as UTF-8 with optional BOM (`utf-8-sig`).
 - Development roadmap is organized around dialect vertical slices on a shared
   spine: `oort-object` v1 first, a thin `oort-core` probe next, and a shared

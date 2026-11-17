@@ -1,0 +1,25 @@
+# 开放字段袋：字段在 __init__ 或任意方法中通过 this.x 创建
+class Counter {
+    def __init__ {
+        this.n = 0
+    }
+
+    def increment {
+        this.n = this.n + 1
+        this
+    }
+}
+
+val a = Counter()
+val b = Counter()
+a.increment()
+print(a.n)          # 1
+print(b.n)          # 0
+
+# 默认相等是身份比较
+print(a == a)       # true
+print(a == b)       # false
+
+# 实例可作为字典键（身份哈希）
+val d = {: a: "A" :}
+print(d[a])         # A
