@@ -2,12 +2,11 @@
 
 """AST interpreter."""
 
-import operator
 from collections.abc import Iterable
 
 from ..ast import nodes
 from ..ast.ast_visitor import ASTVisitor
-from ..exceptions import OortSyntaxError, UnsupportedSyntax
+from ..exceptions import OortException, OortSyntaxError, UnsupportedSyntax
 from ..exceptions.runtime_errors import (
     OortAttributeError,
     OortNameError,
@@ -20,38 +19,7 @@ from .builtins import setup_builtins
 from .control_flow_exceptions import OortBreak, OortContinue, OortReturn
 from .environment import AssignResult, DefineResult, Entry, Environment
 from .objects import *
-from .objects import OortInstance
-
-_UNARY_OPS = {
-    "+": operator.pos,
-    "-": operator.neg,
-    "~": operator.inv,
-    "not": operator.not_,
-}
-_BINARY_OPS = {
-    "+": operator.add,
-    "-": operator.sub,
-    "*": operator.mul,
-    "/": operator.truediv,
-    "//": operator.floordiv,
-    "%": operator.mod,
-    "**": operator.pow,
-    "<<": operator.lshift,
-    ">>": operator.rshift,
-    "&": operator.and_,
-    "|": operator.or_,
-    "^": operator.xor,
-    "==": operator.eq,
-    "!=": operator.ne,
-    "<": operator.lt,
-    "<=": operator.le,
-    ">": operator.gt,
-    ">=": operator.ge,
-    "is": operator.is_,
-    "!is": operator.is_not,
-    "in": lambda x, y: x in y,
-    "!in": lambda x, y: x not in y,
-}
+from .objects import OortInstance, _get_operator_from_cls
 
 _AUG_OPS = {
     "+=": "+",
@@ -275,49 +243,80 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             assert isinstance(func, OortObject)
             raise OortTypeError(f"{func.type.name} object is not callable", node.func.position)
 
-    def _apply_binary(self, op_text: str, lhs: OortObject, rhs: OortObject, op_token):
-        # TODO: Dispatch to `__op_*__` methods so that user-defined operators
-        #       and operator overloading work. See docs/proposals.
-        op = _BINARY_OPS.get(op_text)
-        if op is None:
-            raise OortRuntimeError(
-                f"Unknown binary operator {op_text!r}",
-                SourcePosition.from_token(op_token),
-                recoverable=False,
-            )
+    def _find_operator(self, receiver: OortObject, symbol: str, operand_count: int):
+        """Find an operator method for `receiver` in its class MRO."""
+        return _get_operator_from_cls(symbol, operand_count, receiver.type, receiver)
 
+    def _invoke_operator(self, method, args: list[OortObject], symbol: str, position):
         try:
-            result = op(lhs.py_value, rhs.py_value)
+            result = method(self, args)
+        except OortException:
+            raise
         except TypeError as e:
-            raise OortTypeError(f"{e}", SourcePosition.from_token(op_token)) from e
+            raise OortTypeError(
+                f"Operator {symbol!r} is not supported for these operands: {e}", position
+            ) from e
         except Exception as e:
-            raise OortRuntimeError(f"{e}", SourcePosition.from_token(op_token)) from e
-        else:
-            return wrap_value(result)
+            raise OortRuntimeError(f"{e}", position) from e
+        return result
+
+    def _apply_binary(self, op_text: str, lhs: OortObject, rhs: OortObject, op_token):
+        position = SourcePosition.from_token(op_token)
+
+        # Identity is not overloadable.
+        if op_text == "is":
+            return OortBool.get_bool_value(lhs is rhs)
+        if op_text == "!is":
+            return OortBool.get_bool_value(lhs is not rhs)
+
+        # Membership dispatches to the container (the right operand).
+        if op_text in ("in", "!in"):
+            method = self._find_operator(rhs, op_text, 2)
+            if method is None and op_text == "!in":
+                method = self._find_operator(rhs, "in", 2)
+                if method is not None:
+                    result = self._invoke_operator(method, [lhs], "in", position)
+                    return OortBool.get_bool_value(not _is_truthy(result))
+            if method is None:
+                raise OortTypeError(
+                    f"Type {rhs.type.name!r} does not support operator {op_text!r}", position
+                )
+            result = self._invoke_operator(method, [lhs], op_text, position)
+            return OortBool.get_bool_value(_is_truthy(result))
+
+        method = self._find_operator(lhs, op_text, 2)
+        if method is None and op_text == "!=":
+            # `!=` defaults to the negation of `==`.
+            method = self._find_operator(lhs, "==", 2)
+            if method is not None:
+                result = self._invoke_operator(method, [rhs], "==", position)
+                return OortBool.get_bool_value(not _is_truthy(result))
+        if method is None:
+            raise OortTypeError(
+                f"Type {lhs.type.name!r} does not support operator {op_text!r}", position
+            )
+        return self._invoke_operator(method, [rhs], op_text, position)
 
     def visit_binary_expr(self, node: nodes.BinaryExpr) -> OortObject:
         lhs = node.lhs.accept(self)
         rhs = node.rhs.accept(self)
         return self._apply_binary(node.op.text, lhs, rhs, node.op)
 
+    def _apply_unary(self, op_text: str, operand: OortObject, op_token) -> OortObject:
+        position = SourcePosition.from_token(op_token)
+        if op_text == "not":
+            return OortBool.get_bool_value(not _is_truthy(operand))
+
+        method = self._find_operator(operand, op_text, 1)
+        if method is None:
+            raise OortTypeError(
+                f"Type {operand.type.name!r} does not support operator {op_text!r}", position
+            )
+        return self._invoke_operator(method, [], op_text, position)
+
     def visit_unary_expr(self, node: nodes.UnaryExpr) -> OortObject:
         operand = node.operand.accept(self)
-        op = _UNARY_OPS.get(node.op.text)
-        if op is None:
-            raise OortRuntimeError(
-                f"Unknown unary operator {node.op.text!r}",
-                SourcePosition.from_token(node.op),
-                recoverable=False,
-            )
-
-        try:
-            result = op(operand.py_value)
-        except TypeError as e:
-            raise OortTypeError(f"{e}", SourcePosition.from_token(node.op))
-        except Exception as e:
-            raise OortRuntimeError(f"{e}", SourcePosition.from_token(node.op))
-        else:
-            return wrap_value(result)
+        return self._apply_unary(node.op.text, operand, node.op)
 
     def visit_and_expr(self, node: nodes.AndExpr) -> OortObject:
         lhs = node.lhs.accept(self)
@@ -399,7 +398,9 @@ class ASTInterpreter(ASTVisitor[OortObject]):
 
                 if isinstance(stmt, nodes.FunctionDef) and not stmt.is_lambda:
                     # Method definition.
-                    if stmt.is_class_method:
+                    if stmt.is_operator:
+                        cls.set_operator(stmt.operator_symbol, stmt.operator_operand_count, result)
+                    elif stmt.is_class_method:
                         cls.set_class_field(stmt.name, result)
                     else:
                         cls.set(stmt.name, result)

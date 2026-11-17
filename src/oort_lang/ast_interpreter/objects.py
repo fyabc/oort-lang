@@ -2,6 +2,7 @@
 
 """Internal representation of Oort objects in AST-interpreter."""
 
+import operator
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -36,6 +37,30 @@ __all__ = [
     "setup_type_system",
     "wrap_value",
 ]
+
+
+def _get_operator_from_cls(
+    symbol: str, operand_count: int, start_type: "OortType", receiver: "OortObject"
+) -> "OortObject | None":
+    """Look up an operator method in the class MRO and bind it to `receiver`.
+
+    Operator methods live in `OortType.operators`, keyed by (symbol, operand
+    count), so unary and binary forms of the same symbol (e.g. `-x` and
+    `x - y`) can coexist.
+    """
+    key = (symbol, operand_count)
+    for mro_type in start_type.mro():
+        value = mro_type.operators.get(key)
+        if value is not None:
+            if isinstance(value, OortFunction):
+                return OortMethod(
+                    this=receiver, node=value.node, closure=value.closure, defining_type=mro_type
+                )
+            elif isinstance(value, OortNativeFunction):
+                return OortNativeMethod.from_native_func(this=receiver, func=value)
+            else:
+                return value
+    return None
 
 
 def _get_from_cls(name: str, start_type: "OortType", receiver: "OortObject") -> "OortObject | None":
@@ -169,6 +194,8 @@ class OortType(OortInstance, OortCallableMixin):
         self.bases: list[OortType] = bases or []
         self._mro_cache = None
         self._has_class_method: bool = False
+        # Operator methods, keyed by (symbol, operand count).
+        self.operators: dict[tuple[str, int], OortObject] = {}
 
     def __repr__(self):
         return f"<Type {self.name!r}>"
@@ -220,6 +247,10 @@ class OortType(OortInstance, OortCallableMixin):
             )
         type_obj.type = winner
         return type_obj
+
+    def set_operator(self, symbol: str, operand_count: int, value: OortObject):
+        """Register an operator method (`def operator "<sym>"`)."""
+        self.operators[(symbol, operand_count)] = value
 
     def set_class_field(self, name: str, value: OortObject):
         """Set class-level fields, create metaclass if not exist."""
@@ -850,16 +881,143 @@ def setup_type_system():
     _setup_basic_type("Function", OortFunctionMixin)
     _setup_basic_type("Method", OortMethodMixin)
     _setup_basic_type("SuperProxy", OortSuperProxy)
-    _setup_basic_type("Null", OortNull)
+    t_null = _setup_basic_type("Null", OortNull)
     t_int = _setup_basic_type("Int", OortInt)
     _setup_basic_type("Bool", OortBool, bases=[t_int])
-    _setup_basic_type("Float", OortFloat)
-    _setup_basic_type("String", OortString)
-    _setup_basic_type("List", OortList)
-    _setup_basic_type("Tuple", OortTuple)
-    _setup_basic_type("Dict", OortDict)
-    _setup_basic_type("Set", OortSet)
+    t_float = _setup_basic_type("Float", OortFloat)
+    t_string = _setup_basic_type("String", OortString)
+    t_list = _setup_basic_type("List", OortList)
+    t_tuple = _setup_basic_type("Tuple", OortTuple)
+    t_dict = _setup_basic_type("Dict", OortDict)
+    t_set = _setup_basic_type("Set", OortSet)
     _setup_basic_type("Slice", OortSlice)
+
+    _setup_native_operators(
+        t_object=t_object,
+        t_null=t_null,
+        t_int=t_int,
+        t_float=t_float,
+        t_string=t_string,
+        t_list=t_list,
+        t_tuple=t_tuple,
+        t_dict=t_dict,
+        t_set=t_set,
+    )
+
+
+def _install_operators(
+    type_obj: "OortType",
+    unary: dict[str, Callable] | None = None,
+    binary: dict[str, Callable] | None = None,
+):
+    """Install native operator implementations on a built-in type."""
+    for symbol, func in (unary or {}).items():
+        type_obj.operators[(symbol, 1)] = OortNativeFunction(func, name=f"operator {symbol}")
+    for symbol, func in (binary or {}).items():
+        type_obj.operators[(symbol, 2)] = OortNativeFunction(func, name=f"operator {symbol}")
+
+
+def _setup_native_operators(
+    t_object: "OortType",
+    t_null: "OortType",
+    t_int: "OortType",
+    t_float: "OortType",
+    t_string: "OortType",
+    t_list: "OortType",
+    t_tuple: "OortType",
+    t_dict: "OortType",
+    t_set: "OortType",
+):
+    """Define built-in operators as methods, like user-defined ones.
+
+    Native operator functions receive Python values (`this.py_value` and the
+    operands' `py_value`), because `OortNativeMethod` unwraps them before the
+    call. Results are wrapped again by the interpreter.
+    """
+    comparisons = {
+        "==": operator.eq,
+        "<": operator.lt,
+        "<=": operator.le,
+        ">": operator.gt,
+        ">=": operator.ge,
+    }
+    # `!=` and `!in` are derived from `==` and `in` unless a type overrides
+    # them explicitly.
+
+    _install_operators(t_object, binary={"==": operator.eq})
+    _install_operators(t_null, binary={"==": operator.eq})
+
+    _install_operators(
+        t_int,
+        unary={"+": operator.pos, "-": operator.neg, "~": operator.inv},
+        binary={
+            "+": operator.add,
+            "-": operator.sub,
+            "*": operator.mul,
+            "/": operator.truediv,
+            "//": operator.floordiv,
+            "%": operator.mod,
+            "**": operator.pow,
+            "<<": operator.lshift,
+            ">>": operator.rshift,
+            "&": operator.and_,
+            "|": operator.or_,
+            "^": operator.xor,
+            **comparisons,
+        },
+    )
+    _install_operators(
+        t_float,
+        unary={"+": operator.pos, "-": operator.neg},
+        binary={
+            "+": operator.add,
+            "-": operator.sub,
+            "*": operator.mul,
+            "/": operator.truediv,
+            "//": operator.floordiv,
+            "%": operator.mod,
+            "**": operator.pow,
+            **comparisons,
+        },
+    )
+    _install_operators(
+        t_string,
+        binary={
+            "+": operator.add,
+            "*": operator.mul,
+            "%": operator.mod,
+            "in": lambda text, part: part in text,
+            **comparisons,
+        },
+    )
+    for type_obj in (t_list, t_tuple):
+        _install_operators(
+            type_obj,
+            binary={
+                "+": operator.add,
+                "*": operator.mul,
+                "in": lambda container, item: item in container,
+                **comparisons,
+            },
+        )
+    _install_operators(
+        t_dict,
+        binary={
+            "in": lambda mapping, key: key in mapping,
+            **comparisons,
+        },
+    )
+    _install_operators(
+        t_set,
+        binary={
+            "&": operator.and_,
+            "|": operator.or_,
+            "^": operator.xor,
+            "-": operator.sub,
+            "in": lambda container, item: item in container,
+            **comparisons,
+        },
+    )
 
 
 def wrap_value(value) -> OortObject:

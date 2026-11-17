@@ -13,6 +13,7 @@ from ..exceptions import OortSyntaxError
 from ..exceptions.runtime_errors import OortNameError
 from ..exceptions.syntax_errors import UnsupportedSyntax
 from ..frontend.error_handler import CompilerErrorHandler
+from ..frontend.operator_defs import validate_operator_definition
 from ..support.input_info import InputInfo
 from ..support.source_position import SourcePosition
 
@@ -237,6 +238,8 @@ class Pass1Analyzer(ASTVisitor[T]):
     def visit_function_def(self, node: nodes.FunctionDef) -> T | None:
         if node.type_params:
             self._unsupported("Generic functions are not implemented yet.", node)
+        if node.is_operator:
+            self._check_operator_definition(node)
         for param in node.params:
             if param.default_value is not None:
                 self._unsupported("Default parameter values are not implemented yet.", param)
@@ -247,9 +250,31 @@ class Pass1Analyzer(ASTVisitor[T]):
 
         if not node.is_lambda:
             # TODO: Allow function redefinition in local scopes to support overloading.
-            self.declare(node.name, node.name_position)
-            self.define(node.name)  # Define eagerly for recursive function.
+            self.declare(self._declaration_name(node), node.name_position)
+            self.define(self._declaration_name(node))  # Define eagerly for recursion.
         self.resolve_function(node)
+
+    @staticmethod
+    def _declaration_name(node: nodes.FunctionDef) -> str:
+        """Name used for duplicate checks; operator arities may coexist."""
+        if node.is_operator:
+            return f"{node.name}#{node.operator_operand_count}"
+        return node.name
+
+    def _check_operator_definition(self, node: nodes.FunctionDef):
+        if self._current_decl != OutsideDeclType.CLASS:
+            self._unsupported("Operator methods must be defined inside a class.", node)
+            return
+        if node.is_class_method:
+            self._unsupported("Class operator methods are not supported yet.", node)
+            return
+
+        message = validate_operator_definition(node.operator_symbol, node.operator_operand_count)
+        if message is not None:
+            self.error_handler.add(
+                OortSyntaxError(message, node.name_position),
+                self.input_info,
+            )
 
     def visit_for_expr(self, node: nodes.ForExpr) -> T | None:
         node.iterator.accept(self)

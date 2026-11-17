@@ -26,6 +26,11 @@ UNSUPPORTED_CASES = [
     ("print(x=1)", "Keyword arguments"),
     ("@[]", "Compiler attributes"),
     ('print(f"{1}")', "Formatted string"),
+    ('def operator "+"(a) {}', "Operator methods must be defined inside a class"),
+    ('class C { def operator "foo"(a) {} }', "Invalid operator symbol"),
+    ('class C { def operator "*"() {} }', "cannot be defined as a unary operator"),
+    ('class C { def operator "is"(a) {} }', "cannot be overloaded"),
+    ('class C { def class.operator "+"(a) {} }', "Class operator methods"),
 ]
 
 

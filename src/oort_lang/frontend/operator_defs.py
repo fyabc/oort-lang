@@ -5,6 +5,71 @@
 from dataclasses import dataclass
 from enum import Enum
 
+# Characters allowed in user-defined operators. Keep in sync with `USER_OP`
+# in `grammars/Oort.g4`.
+USER_OPERATOR_CHARS = frozenset("!%&*+-/<=>?^|~")
+
+# Built-in operators that may be overloaded. `and`, `or`, `not`, `is` and
+# `!is` are deliberately excluded: they are short-circuit, truthiness or
+# identity operations and cannot be dispatched to user code.
+BUILTIN_UNARY_OPERATORS = frozenset({"+", "-", "~"})
+BUILTIN_BINARY_OPERATORS = frozenset(
+    {
+        "+",
+        "-",
+        "*",
+        "/",
+        "//",
+        "%",
+        "**",
+        "<<",
+        ">>",
+        "&",
+        "|",
+        "^",
+        "==",
+        "!=",
+        "<",
+        "<=",
+        ">",
+        ">=",
+        "in",
+        "!in",
+    }
+)
+RESERVED_OPERATOR_SYMBOLS = frozenset({"and", "or", "not", "is", "!is", "await", "="})
+
+
+def validate_operator_definition(symbol: str, operand_count: int) -> str | None:
+    """Validate an operator method definition.
+
+    Returns an error message, or None if the definition is valid.
+    """
+    if not symbol:
+        return "Operator symbol cannot be empty."
+
+    if symbol in RESERVED_OPERATOR_SYMBOLS:
+        return f"Operator {symbol!r} cannot be overloaded."
+
+    is_builtin = symbol in BUILTIN_UNARY_OPERATORS or symbol in BUILTIN_BINARY_OPERATORS
+    if not is_builtin and not all(char in USER_OPERATOR_CHARS for char in symbol):
+        return f"Invalid operator symbol {symbol!r}."
+
+    if operand_count not in (1, 2):
+        return "An operator method takes at most one parameter."
+
+    if is_builtin:
+        allowed = set()
+        if symbol in BUILTIN_UNARY_OPERATORS:
+            allowed.add(1)
+        if symbol in BUILTIN_BINARY_OPERATORS:
+            allowed.add(2)
+        if operand_count not in allowed:
+            arity = "unary" if operand_count == 1 else "binary"
+            return f"Operator {symbol!r} cannot be defined as a {arity} operator."
+
+    return None
+
 
 class Arity(Enum):
     PREFIX = 1

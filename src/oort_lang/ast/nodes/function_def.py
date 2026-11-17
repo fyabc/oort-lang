@@ -10,6 +10,8 @@ from .base import ASTNode
 from .declarations import Parameter, TypeParameter
 from .expressions import BlockExpr, StmtExpr
 
+_OPERATOR_NAME_PREFIX = "operator "
+
 
 class FunctionDef(StmtExpr):
     def __init__(
@@ -63,3 +65,25 @@ class FunctionDef(StmtExpr):
     @property
     def is_class_method(self) -> bool:
         return len(self.names) == 2 and self.names[0] == "class"
+
+    @property
+    def operator_symbol(self) -> str | None:
+        """Operator symbol for `def operator "<sym>"`, else None."""
+        if not self.names:
+            return None
+        name = self.names[-1]
+        if not name.startswith(_OPERATOR_NAME_PREFIX):
+            return None
+        symbol = name[len(_OPERATOR_NAME_PREFIX) :]
+        return symbol or None
+
+    @property
+    def is_operator(self) -> bool:
+        return self.operator_symbol is not None
+
+    @property
+    def operator_operand_count(self) -> int | None:
+        """Number of operands (including the receiver) for an operator method."""
+        if not self.is_operator:
+            return None
+        return len(self.params) + 1
