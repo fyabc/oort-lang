@@ -108,5 +108,58 @@ print(D().f())
     assert captured.out == "42\n52\n"
 
 
+def test_inherited_initializer(run_source):
+    out = run_source(
+        """\
+class B {
+    def __init__(x) { this.x = x }
+    def f: this.x
+}
+class D < B {}
+print(D(5).f())
+"""
+    ).stdout
+    assert out == "5\n"
+
+
+def test_super_in_inherited_method(run_source):
+    out = run_source(
+        """\
+class A { def f: 1 }
+class B < A {
+    def g: super.f() + 10
+}
+class C < B {}
+print(C().g())
+"""
+    ).stdout
+    assert out == "11\n"
+
+
+def test_super_chain(run_source):
+    out = run_source(
+        """\
+class A { def f: 0 }
+class B < A { def f: super.f() + 1 }
+class C < B { def f: super.f() + 10 }
+print(C().f())
+"""
+    ).stdout
+    assert out == "11\n"
+
+
+def test_diamond_inheritance(run_source):
+    out = run_source(
+        """\
+class A { def f: 1 }
+class B < A {}
+class C < A {}
+class D < B, C {}
+print(B().f(), C().f(), D().f())
+"""
+    ).stdout
+    assert out == "1 1 1\n"
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
