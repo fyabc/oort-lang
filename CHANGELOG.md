@@ -6,16 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-19
+
 ### Added
 
 - VSCode extension in `editors/vscode/`: TextMate syntax highlighting,
   bracket matching, comment configuration, an orbit-and-comet language file
   icon and grammar tests.
 - Anonymous lambda parameters `$0` / `$1` for lambdas without an explicit
-  parameter list (`do: $0 * 2`, `do: $0 + $1`).
+  parameter list (`do: $0 * 2`, `do: $0 + $1`; OP 0010).
 - Full parameter binding: call-time default values, keyword arguments,
   positional-only (`/`) and keyword-only (`*`) parameters, `*args` as a Tuple,
-  `**kwargs` as a Dict, and `&block` with trailing-block or keyword syntax.
+  `**kwargs` as a Dict, and `&block` with trailing-block or keyword syntax
+  (OP 0011).
 - Dialect contract: an optional first-line `#lang oort-object` directive,
   `DialectConfig` (feature gates and a per-compilation Pratt operator table),
   and explicit diagnostics for unknown, unimplemented (`oort-core`) or
@@ -24,8 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   operators, including comparisons and membership. Built-in types use the same
   dispatch table, `!=` / `!in` derive from `==` / `in`, and `is` / `!is`
   compare object identity.
+- Expression and surface syntax cleanup (OP 0009): Python/Rust precedence,
+  strict `Bool`/`Int` separation, parenthesized parameter lists, implicit
+  infix disabled, `break value`, DOT continuation and Oort container display.
 - Language specification (`docs/spec/`) and a proposal process
-  (`docs/proposals/`, OP 0001–0006).
+  (`docs/proposals/`, OP 0001–0011).
 - CI on Linux and Windows (Python 3.11–3.13): lint, format, type check and a
   coverage gate.
 - Contribution, security and issue/PR templates.
@@ -71,12 +77,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   attributes raise `OortAttributeError`. Default equality and hashing use
   object identity.
 - Source files are read as UTF-8 with optional BOM (`utf-8-sig`).
-- Development roadmap is organized around dialect vertical slices on a shared
-  spine: `oort-object` v1 first, a thin `oort-core` probe next, and a shared
+- The public roadmap is now high-level; detailed planning lives in the private
+  ledger and GitHub milestones/issues. Development is organized around dialect
+  vertical slices on a shared spine: `oort-object` v1 first, a thin `oort-core` probe next, and a shared
   bytecode backend after both dialect v1s. Class slots are scoped to
   `oort-core`; `oort-object` keeps an open field bag (OP 0001 §5, OP 0007).
-- Minimum Python is now 3.11 (3.10 reached end of life); CI tests 3.11 and
-  3.13 on Linux, and 3.13 on Windows.
+- Minimum Python is now 3.11 (3.10 reached end of life); CI tests 3.11–3.13
+  on Linux, and 3.13 on Windows.
 - Development dependencies updated (ruff, mypy, pytest, pytest-benchmark,
   pre-commit, virtualenv, filelock), resolving the open Dependabot alerts.
 

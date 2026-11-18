@@ -3,7 +3,7 @@
 ## Supported versions
 
 Oort is an early-stage project. Only the latest `main` branch and the most recent
-release receive fixes. Version `0.1.x` is experimental and should not be used
+release receive fixes. Version `0.2.x` is experimental and should not be used
 where untrusted input is executed.
 
 ## Reporting a vulnerability

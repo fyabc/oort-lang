@@ -6,6 +6,7 @@ import sys
 
 import pytest
 
+from oort_lang import __version__
 from oort_lang.driver.main import main
 
 
@@ -50,4 +51,4 @@ def test_parse_error_exits_nonzero(monkeypatch, caplog):
 
 def test_version(monkeypatch, capsys):
     assert _run_cli(monkeypatch, ["--version"]) == 0
-    assert "Oort" in capsys.readouterr().out
+    assert f"Oort {__version__}" in capsys.readouterr().out

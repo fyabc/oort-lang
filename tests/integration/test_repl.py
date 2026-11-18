@@ -5,6 +5,7 @@
 import pytest
 from rich.console import Console
 
+from oort_lang import __version__
 from oort_lang.driver.repl import run_repl
 from tests.helpers import get_compiler
 
@@ -21,6 +22,11 @@ def _run_repl(monkeypatch, lines: list[str]) -> int:
     monkeypatch.setattr(Console, "input", fake_input)
     compiler = get_compiler("NOT_EXIST -t eval")
     return run_repl(compiler)
+
+
+def test_repl_banner_uses_package_version(monkeypatch, capsys):
+    assert _run_repl(monkeypatch, []) == 0
+    assert f"Oort {__version__}" in capsys.readouterr().out
 
 
 def test_repl_evaluates_expression(monkeypatch, capsys):
