@@ -42,7 +42,7 @@ items[0] = 9
 x += 1                  # 增强赋值
 ```
 
-支持的增强运算符：`+= -= *= /= %= **= <<= >>= &= ^= |=`。
+支持的增强运算符：`+= -= *= /= //= %= **= <<= >>= &= ^= |=`。
 
 - 元组解包要求右侧为长度相同的元组/列表。
 - 增强赋值先读取左侧当前值，再计算并写回；不能用于元组目标。
@@ -93,12 +93,16 @@ for k, v in pairs { ... }
 ```oort
 return              # 返回值 null
 return expr
-break
+break               # 循环表达式返回 null
+break expr          # 循环表达式返回 expr
 continue
 ```
 
 - `return` 只能出现在函数/方法中；`__init__` 中禁止返回值。
-- `break` / `continue` 只能出现在循环中。
+- `break` / `continue` 只能出现在循环中；函数边界会切断与外层循环的关系：
+  循环内定义的函数里写 `break` / `continue` 会报错。
+- `break expr` 使 `while` / `for` 表达式返回 `expr`；无 `break` 或裸 `break`
+  时循环表达式的值为 `null`。
 
 ## 语句列表与块
 

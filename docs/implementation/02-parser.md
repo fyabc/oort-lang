@@ -18,7 +18,11 @@
 
 - 优先级与结合性集中在一张表里（`frontend/operator_defs.py`），增删运算符
   不需要改文法。
-- 支持中缀函数调用（`a plus b`）与用户自定义运算符 token。
+- 使用整数 binding power（左结合取 `p + 1`，右结合取 `p`），不再用浮点
+  epsilon；非结合运算符（比较）通过 `Associativity.NONE` 标记，链式写作
+  `a < b < c` 会报语法错误。
+- 为中缀函数调用与用户自定义运算符 token 保留了解析路径，但隐式中缀
+  （`a plus b`）当前关闭，等 OP 0002 的显式 `infix` 声明。
 - 为未来的**按方言/作用域注册运算符**留出接口（`OperatorTable.parent`），
   这是 [DSL 提案](../proposals/0002-dsl-support.md) 的基础。
 
@@ -29,7 +33,8 @@ Oort 语句末尾不需要分号，因此需要区分“语句结束换行”与
 
 - 位于 `()`、`[]`、`{: :}`、`{. .}` 内且最内层不是 `{}` 时，`\n` 被丢弃；
 - 否则产生 `NEWLINE` token，作为语句分隔符；
-- 行尾 `\` 显式续行。
+- 行尾 `\` 显式续行；
+- `atomExpr NEWLINE* DOT` 允许行首 `.` 继续方法链（例如 `user\n    .name()`）。
 
 当前实现见 `Oort.g4` 的 `@lexer::members` 与 `IGNORED_NEWLINE` 谓词。
 这使文法依赖 Python 动作，且未匹配的闭括号会让词法器栈操作崩溃；
@@ -63,11 +68,17 @@ print(
   `else: expr`、`else { ... }`。
 - 切片支持 `[::step]` / `[lower::step]`（`DOUBLE_COLON` 与 `::` 元类语法共用词法）。
 - 赋值两侧改为 `expressionList`，从而支持 `a, b = b, a` 与 `var a, b = 1, 2`。
+- `IDENTIFIER` 去掉 `!` 后缀：`a!=b`、`x!in xs`、`a!is b` 无需空格即可正确分词。
+- `parameterDef` 只保留括号形式，消除裸形参下 `:` 的类型标注/函数体歧义。
+- `BREAK expression?` 支持 `break value`；`AUG_ASSIGN` 增加 `//=`；
+  token `TRUE_DIV` 更名为 `FLOOR_DIV`。
+- 方法链允许在 `.` 前换行。
 
 ## 已知限制
 
 - 不支持一元后缀运算符（参考 Scala 的后缀调用争议）。
 - 用户自定义运算符可以解析并按默认优先级求值；按作用域声明运算符优先级尚未实现。
+- 隐式中缀调用（`a plus b`）已关闭，等 OP 0002 的显式 `infix` 声明。
 - 格式化字符串尚未实现；`f"..."` 会显式报错。
 - 类型参数、宏、`yield`/`await` 能解析，但语义分析阶段会拒绝。
 - 未匹配的闭括号（如单独的 `)` / `}`）目前会触发 lexer 的 `IndexError`，

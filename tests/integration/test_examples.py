@@ -13,7 +13,7 @@ EXPECTED_OUTPUTS = {
     "01_functions/01_01_call_with_block.ort": "Before call\nHello, Oort!\nAfter call\nOort!\n",
     "01_functions/01_02_closure.ort": "1\n2\n3\n",
     "02_collections/02_00_literals.ort": (
-        "(1, 2)\n{a: 1, b: 2}\n3 true\n[2, 3]\nello\n[0, 2, 4]\n"
+        "(1, 2)\n{: a: 1, b: 2 :}\n3 true\n[2, 3]\nello\n[0, 2, 4]\n"
     ),
     "02_collections/02_01_for_loop.ort": ("0\n2\n4\nkey: a\nkey: b\n1 one\n2 two\n1 2 3\n"),
     "03_oop/03_00_inheritance.ort": (

@@ -163,3 +163,33 @@ print(B().f(), C().f(), D().f())
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+def test_line_leading_dot_continuation(run_source):
+    out = run_source(
+        """\
+class C {
+    def f: this
+}
+val c = C()
+val d = c
+    .f()
+print(d is c)
+"""
+    ).stdout
+    assert out == "true\n"
+
+
+def test_explicit_parent_initializer_via_super_method(run_source):
+    out = run_source(
+        """\
+class A {
+    def __init__(x) { this.x = x }
+}
+class B < A {
+    def __init__ { super.__init__(5) }
+}
+print(B().x)
+"""
+    ).stdout
+    assert out == "5\n"

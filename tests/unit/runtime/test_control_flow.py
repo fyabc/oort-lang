@@ -84,3 +84,22 @@ def test_break_outside_loop_is_rejected(caplog):
     with pytest.raises(SystemExit):
         compiler.run_string("break\n")
     assert "Break outside loop." in caplog.text
+
+
+def test_break_value(run_source):
+    out = run_source(
+        """\
+val a = while true { break 42 }
+val b = for i in [1, 2, 3] {
+    if i == 2: break i * 10
+}
+val c = for i in [1] { i }
+print(a, b, c)
+"""
+    ).stdout
+    assert out == "42 20 null\n"
+
+
+def test_break_without_value_returns_null(run_source):
+    out = run_source("val a = while true { break }\nprint(a)\n").stdout
+    assert out == "null\n"

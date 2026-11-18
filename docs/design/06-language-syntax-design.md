@@ -119,6 +119,9 @@ import lazy "module"   # 显式懒加载
 
 ### 4.2 协议定义
 
+> 以下为设计示意，混用了 `self` 等伪代码形式，不代表当前 Oort 语法；
+> 实际语法以 [语言规范](../spec/index.md) 为准。
+
 ```oort
 # 迭代器：返回 (value, has_next) 的闭包
 def __iter__(self) -> () -> (T, Bool) {

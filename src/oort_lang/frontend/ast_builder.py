@@ -194,7 +194,8 @@ class ASTBuilder(OortVisitor):
         return ContinueExpr(ctx)
 
     def visitBreakExpr(self, ctx: OortParser.BreakExprContext) -> BreakExpr:
-        return BreakExpr(ctx)
+        value_ctx = ctx.expression()
+        return BreakExpr(ctx, None if value_ctx is None else self.visit(value_ctx))
 
     def visitFlattenExprList(self, ctx: OortParser.FlattenExprListContext) -> ASTNode:
         old_p_items = self._p_items
@@ -213,11 +214,13 @@ class ASTBuilder(OortVisitor):
 
         return expr
 
-    def _parse_expr(self, min_bp: float) -> ASTNode:
+    def _parse_expr(self, min_bp: int) -> ASTNode:
         lhs = self._parse_prefix()
         if lhs is None:
             item = self._p_peek()
             raise SyntaxError(f"Unexpected item '{item}' in prefix expression")
+
+        last_non_assoc_prec: int | None = None
 
         while not self._p_at_end():
             item = self._p_peek()
@@ -241,8 +244,22 @@ class ASTBuilder(OortVisitor):
 
             op_name = item.getText()
             if isinstance(item, OortParser.IdExprContext):
-                # Infix call (e.g. `a plus b`).
-                op_def = self._op_table.get(op_name, Arity.INFIX, default=True)
+                # Infix call (e.g. `a plus b`). Infix calls must be declared
+                # explicitly; implicit infix is disabled until OP 0002.
+                op_def = self._op_table.get(op_name, Arity.INFIX, default=False)
+                if op_def is None:
+                    self.error_handler.add(
+                        OortSyntaxError(
+                            f"Infix call {op_name!r} is not supported yet; "
+                            f"use a method call or an explicit operator declaration.",
+                            position=SourcePosition.from_context(item),
+                        ),
+                        self.input_info,
+                    )
+                    for remaining in self._p_items[self._p_pos :]:
+                        self.visit(remaining)
+                    self._p_pos = len(self._p_items)
+                    break
                 if op_def.precedence >= min_bp:
                     attr_node = Attribute(
                         SourcePosition(lhs.position.start, item.stop), lhs, op_name
@@ -263,9 +280,15 @@ class ASTBuilder(OortVisitor):
                         args = []
                         position = SourcePosition(lhs.position.start, item.stop)
                     else:
-                        rhs = self._parse_expr(
-                            op_def.precedence + 0.1
-                        )  # infix call is always left-associative.
+                        if op_def.associativity == Associativity.NONE:
+                            if last_non_assoc_prec == op_def.precedence:
+                                self._report_chained_comparison(item)
+                                last_non_assoc_prec = None
+                            else:
+                                last_non_assoc_prec = op_def.precedence
+                        else:
+                            last_non_assoc_prec = None
+                        rhs = self._parse_expr(self._right_bp(op_def))
                         args = [Argument(rhs.position, rhs)]
                         position = SourcePosition(lhs.position.start, rhs.position.stop)
                     lhs = Call(position, attr_node, args, infix=True)
@@ -297,12 +320,15 @@ class ASTBuilder(OortVisitor):
                         rhs = None
                         position = SourcePosition(lhs.position.start, item.symbol)
                     else:
-                        new_bp = (
-                            op_def.precedence + 0.1
-                            if op_def.associativity == Associativity.LEFT
-                            else op_def.precedence
-                        )
-                        rhs = self._parse_expr(new_bp)
+                        if op_def.associativity == Associativity.NONE:
+                            if last_non_assoc_prec == op_def.precedence:
+                                self._report_chained_comparison(item)
+                                last_non_assoc_prec = None
+                            else:
+                                last_non_assoc_prec = op_def.precedence
+                        else:
+                            last_non_assoc_prec = None
+                        rhs = self._parse_expr(self._right_bp(op_def))
                         position = SourcePosition(lhs.position.start, rhs.position.stop)
                     if op_name == "and":
                         lhs = AndExpr(position, op=item.symbol, lhs=lhs, rhs=rhs)
@@ -314,6 +340,27 @@ class ASTBuilder(OortVisitor):
 
             break
         return lhs
+
+    def _right_bp(self, op_def) -> int:
+        """Right binding power for a binary operator."""
+        if op_def.associativity == Associativity.RIGHT:
+            return op_def.precedence
+        return op_def.precedence + 1
+
+    def _report_chained_comparison(self, item):
+        """Report a chained non-associative comparison (e.g. `a < b < c`)."""
+        position = (
+            SourcePosition.from_token(item.symbol)
+            if isinstance(item, TerminalNodeImpl)
+            else SourcePosition.from_context(item)
+        )
+        self.error_handler.add(
+            OortSyntaxError(
+                "Comparison operators cannot be chained; use `and` to combine comparisons.",
+                position,
+            ),
+            self.input_info,
+        )
 
     def _parse_prefix(self) -> ASTNode | None:
         if self._p_at_end():
@@ -541,12 +588,10 @@ class ASTBuilder(OortVisitor):
 
         pos_only_flag = False
         kw_only_flag = False
-        pos_only_idx = -1 << 30
-        kw_only_idx = 1 << 30
-        var_kw_idx = -1 << 30
-        block_idx = -1 << 30
-
-        # TODO: Add support to block parameter.
+        pos_only_idx: int | None = None
+        kw_only_idx: int | None = None
+        var_kw_idx: int | None = None
+        block_idx: int | None = None
 
         def _make_error(msg: str, param_ctx: OortParser.ParameterContext):
             self.error_handler.add(
@@ -563,18 +608,23 @@ class ASTBuilder(OortVisitor):
                 if marker.type == OortParser.DIV:
                     if pos_only_flag:
                         _make_error("Positional-only parameter flag redefinition", param_ctx)
-                    if kw_only_flag:
+                    if kw_only_flag or var_kw_idx is not None or block_idx is not None:
                         _make_error(
-                            "Positional-only parameter flag must comes after kw-only parameter flag",
+                            "Positional-only parameter flag must come before keyword-only "
+                            "and variadic parameters",
                             param_ctx,
                         )
-                        kw_only_idx = len(params)
                     pos_only_flag = True
                     pos_only_idx = len(params)
                     continue
                 elif marker.type == OortParser.MUL:
                     if kw_only_flag:
                         _make_error("Keyword-only parameter flag redefinition", param_ctx)
+                    if var_kw_idx is not None or block_idx is not None:
+                        _make_error(
+                            "Keyword-only parameter flag must come before variadic parameters",
+                            param_ctx,
+                        )
                     kw_only_flag = True
                     kw_only_idx = len(params)
                     continue
@@ -588,14 +638,19 @@ class ASTBuilder(OortVisitor):
             if kind == ParameterKind.VAR_POS:
                 if kw_only_flag:
                     _make_error("Keyword-only parameter flag redefinition", param_ctx)
+                if var_kw_idx is not None or block_idx is not None:
+                    _make_error(
+                        "Variadic positional parameter must come before other variadic parameters",
+                        param_ctx,
+                    )
                 kw_only_flag = True
                 kw_only_idx = len(params)
             elif kind == ParameterKind.VAR_KW:
-                if var_kw_idx > 0:
-                    _make_error("Variational keyword parameter redefinition", param_ctx)
+                if var_kw_idx is not None:
+                    _make_error("Variadic keyword parameter redefinition", param_ctx)
                 var_kw_idx = len(params)
             elif kind == ParameterKind.BLOCK:
-                if block_idx > 0:
+                if block_idx is not None:
                     _make_error("Trailing-block parameter redefinition", param_ctx)
                 block_idx = len(params)
             else:
@@ -605,26 +660,31 @@ class ASTBuilder(OortVisitor):
             related_params_ctx.append(param_ctx)
 
         n_params = len(params)
-        if 0 < block_idx < n_params - 1:
+        if block_idx is not None and block_idx != n_params - 1:
             _make_error(
                 "Trailing block parameter must be the last parameter", related_params_ctx[block_idx]
             )
 
-        if 0 < var_kw_idx < n_params - 2 or (var_kw_idx == n_params - 2 and block_idx == -1):
-            _make_error(
-                "Variational keyword parameter must after all other parameters (except trailing block)",
-                related_params_ctx[var_kw_idx],
-            )
+        if var_kw_idx is not None:
+            expected_idx = n_params - 2 if block_idx is not None else n_params - 1
+            if var_kw_idx != expected_idx:
+                _make_error(
+                    "Variadic keyword parameter must come after all other parameters "
+                    "(except a trailing block parameter)",
+                    related_params_ctx[var_kw_idx],
+                )
 
         # Set parameter kinds.
-        for idx in range(pos_only_idx):
-            param = params[idx]
-            if param.kind == ParameterKind.DEFAULT:
-                param.kind = ParameterKind.POS_ONLY
-        for idx in range(kw_only_idx, len(params)):
-            param = params[idx]
-            if param.kind == ParameterKind.DEFAULT:
-                param.kind = ParameterKind.KW_ONLY
+        if pos_only_idx is not None:
+            for idx in range(pos_only_idx):
+                param = params[idx]
+                if param.kind == ParameterKind.DEFAULT:
+                    param.kind = ParameterKind.POS_ONLY
+        if kw_only_idx is not None:
+            for idx in range(kw_only_idx, len(params)):
+                param = params[idx]
+                if param.kind == ParameterKind.DEFAULT:
+                    param.kind = ParameterKind.KW_ONLY
 
         return params
 
@@ -704,11 +764,7 @@ class ASTBuilder(OortVisitor):
     def parseParameterDef(self, ctx: OortParser.ParameterDefContext) -> list[Parameter]:
         if ctx is None:
             return []
-        param_ctx = ctx.parameter()
-        if param_ctx is not None:
-            return self.parseParameterList([param_ctx])
-        else:
-            return self.parseParameterList(ctx.parameterList())
+        return self.parseParameterList(ctx.parameterList())
 
     def visitReturnTypeDef(self, ctx: OortParser.ReturnTypeDefContext) -> ASTNode:
         return self.visit(ctx.expression())
@@ -804,12 +860,11 @@ class ASTBuilder(OortVisitor):
         return Name(ctx, ctx.getText())
 
     def visitExplicitSuperExpr(self, ctx: OortParser.ExplicitSuperExprContext) -> Call:
-        arg_list_nodes = []
-        arg_list_ctx = ctx.argumentList()
-        if arg_list_ctx is not None:
-            for arg_ctx in arg_list_ctx.argument():
-                arg_list_nodes.append(self.visitArgument(arg_ctx))
-        return Call(ctx, Name(ctx.SUPER().symbol, "super"), arg_list_nodes)
+        raise UnsupportedSyntax(
+            "Explicit super(...) calls are not supported; use super.__init__(...) "
+            "or super.method(...).",
+            SourcePosition.from_context(ctx),
+        )
 
     def visitImplicitSuperExpr(self, ctx: OortParser.ImplicitSuperExprContext) -> ImplicitSuperExpr:
         return ImplicitSuperExpr(ctx)

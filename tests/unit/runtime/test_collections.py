@@ -13,7 +13,7 @@ print([])
 print((1,))
 """,
     ).stdout
-    assert out == "(1, 2)\n{a: 1}\n{1, 2}\n[]\n(1,)\n"
+    assert out == "(1, 2)\n{: a: 1 :}\n{. 1, 2 .}\n[]\n(1,)\n"
 
 
 def test_collection_subscript(run_source):
@@ -44,3 +44,15 @@ print([0, 1, 2, 3, 4][1::2])
 def test_nested_collections(run_source):
     out = run_source('print({: "xs": [1, 2] :}["xs"][1])\n').stdout
     assert out == "2\n"
+
+
+def test_container_repr_uses_oort_literals(run_source):
+    out = run_source(
+        """\
+print(repr({: "a": 1 :}))
+print(repr({. 1 .}))
+print(repr({:}))
+print(repr({.}))
+"""
+    ).stdout
+    assert out == "{: 'a': 1 :}\n{. 1 .}\n{:}\n{.}\n"

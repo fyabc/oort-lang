@@ -165,3 +165,22 @@ class C { super }
 0 warnings generated.
 """
     )
+
+
+@pytest.mark.parametrize(
+    ("keyword", "message"),
+    [("break", "Break outside loop."), ("continue", "Continue outside loop.")],
+)
+def test_loop_control_cannot_cross_function_boundary(
+    keyword: str, message: str, caplog: pytest.LogCaptureFixture
+):
+    test_string = f"""\
+while true {{
+    def f {{ {keyword} }}
+    f()
+}}
+"""
+    compiler = get_compiler("NOT_EXIST -t eval")
+    with pytest.raises(SystemExit):
+        compiler.run_string(test_string)
+    assert message in caplog.text

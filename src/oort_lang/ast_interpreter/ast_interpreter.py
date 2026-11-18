@@ -26,6 +26,7 @@ _AUG_OPS = {
     "-=": "-",
     "*=": "*",
     "/=": "/",
+    "//=": "//",
     "%=": "%",
     "**=": "**",
     "<<=": "<<",
@@ -349,7 +350,8 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         raise OortContinue()
 
     def visit_break_expr(self, node: nodes.BreakExpr) -> None:
-        raise OortBreak()
+        value = OortNull.get_null_value() if node.value is None else node.value.accept(self)
+        raise OortBreak(value)
 
     def visit_implicit_super_expr(self, node: nodes.ImplicitSuperExpr) -> OortSuperProxy:
         entry = self.lookup_variable("this", node)
@@ -438,14 +440,16 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             return OortNull.get_null_value()
 
     def visit_while_expr(self, node: nodes.WhileExpr) -> OortObject:
+        result = OortNull.get_null_value()
         while _is_truthy(node.condition.accept(self)):
             try:
                 node.body.accept(self)
             except OortContinue:
                 continue
-            except OortBreak:
+            except OortBreak as e:
+                result = OortNull.get_null_value() if e.value is None else e.value
                 break
-        return OortNull.get_null_value()
+        return result
 
     def visit_for_expr(self, node: nodes.ForExpr) -> OortObject:
         iterable = node.iterator.accept(self)
@@ -458,9 +462,11 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             except TypeError as e:
                 raise OortTypeError(f"{e}", node.iterator.position) from e
 
+        result = OortNull.get_null_value()
         for item in items:
             # A fresh environment per iteration gives each captured loop
-            # variable its own binding, like Python's `for` semantics.
+            # variable its own binding (like JavaScript `let`/C# `foreach`,
+            # not Python's shared loop variable).
             loop_env = Environment(outer=self.env, name="<for>")
             prev = self.env
             try:
@@ -487,12 +493,13 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                     node.body.accept(self)
                 except OortContinue:
                     continue
-                except OortBreak:
+                except OortBreak as e:
+                    result = OortNull.get_null_value() if e.value is None else e.value
                     break
             finally:
                 self.env = prev
 
-        return OortNull.get_null_value()
+        return result
 
     def visit_list_literal(self, node: nodes.ListLiteral) -> OortList:
         return OortList([item.accept(self) for item in node.elements])

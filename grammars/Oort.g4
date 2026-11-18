@@ -84,7 +84,7 @@ expression
     | YIELD expression?                                                 # YieldExpr
     | RETURN expression?                                                # ReturnExpr
     | CONTINUE                                                          # ContinueExpr
-    | BREAK                                                             # BreakExpr
+    | BREAK expression?                                                 # BreakExpr
     | macroCallName expression                                          # MacroBlockExpr
     ;
 
@@ -97,7 +97,7 @@ flattenExprList
         | EXP
         | ADD | SUB | BIT_NOT
         | ARROW
-        | MUL | DIV | TRUE_DIV | MOD
+        | MUL | DIV | FLOOR_DIV | MOD
         | LSHIFT | RSHIFT
         | BIT_AND | BIT_XOR | BIT_OR
         | IN | NOT_IN | IS | IS_NOT | LT | LE | GT | GE
@@ -113,7 +113,7 @@ atomExpr
     | THIS                                                              # IdExpr
     | SUPER LPA argumentList RPA                                        # ExplicitSuperExpr
     | SUPER                                                             # ImplicitSuperExpr
-    | atomExpr op=DOT dotAttribute                                      # DotExpr
+    | atomExpr NEWLINE* op=DOT dotAttribute                             # DotExpr
     | atomExpr LBK subscriptArgumentList RBK                            # SubscriptExpr
     | atomExpr LPA argumentList RPA lambdaDef?                          # FunctionCallExpr
     | atomExpr lambdaDef                                                # FunctionCallExpr
@@ -227,7 +227,6 @@ funcName
 
 parameterDef
     : LPA parameterList RPA
-    | parameter
     ;
 
 returnTypeDef
@@ -379,7 +378,7 @@ BIT_NOT: '~';
 
 MUL: '*';
 DIV: '/';
-TRUE_DIV: '//';
+FLOOR_DIV: '//';
 MOD: '%';
 
 ADD: '+';
@@ -407,7 +406,7 @@ RSET_LITERAL: '.}' {self.setLiteralCount -= 1; self.brackets.pop()};
 EMPTY_SET_LITERAL: '{.}';
 
 AUG_ASSIGN
-    : AddAssign | SubAssign | MulAssign | DivAssign | ModAssign | ExpAssign
+    : AddAssign | SubAssign | MulAssign | DivAssign | FloorDivAssign | ModAssign | ExpAssign
     | LShiftAssign | RShiftAssign | BitAndAssign | BitXorAssign | BitOrAssign
     ;
 
@@ -415,6 +414,7 @@ fragment AddAssign: '+=';
 fragment SubAssign: '-=';
 fragment MulAssign: '*=';
 fragment DivAssign: '/=';
+fragment FloorDivAssign: '//=';
 fragment ModAssign: '%=';
 fragment ExpAssign: '**=';
 fragment LShiftAssign: '<<=';
@@ -553,7 +553,7 @@ fragment LongStringChar
 
 // Identifier (include anonymous parameters).
 IDENTIFIER
-    : Letter LetterDigit* '!'?
+    : Letter LetterDigit*
     | AnonymousParameter
     ;
 

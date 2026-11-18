@@ -12,11 +12,11 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 |------|------|
 | 方言 | 首行 `#lang oort-object`（可选，缺省即此方言）；未知/未实现方言与错位声明显式报错 |
 | 字面量 | 整数、浮点、字符串（含 `r`、三引号）、布尔、`null`、List/Tuple/Dict/Set、切片 |
-| 表达式 | 全部内建运算符、运算符重载（`def operator "<sym>"`）、`and`/`or` 短路、属性、下标、调用、尾随 lambda、块、`if`/`while`/`for` 表达式 |
-| 语句 | `var`/`val`（含多目标解包）、赋值（含增强赋值、元组交换）、`if`/`elif`/`else`、`while`、`for`、`return`/`break`/`continue` |
-| 函数 | `def`、`do` lambda、闭包、递归、精确位置参数、尾随闭包 |
+| 表达式 | 全部内建运算符、运算符重载（`def operator "<sym>"`）、位运算高于比较、比较非结合、`Bool` 与 `Int` 严格区分、`and`/`or` 短路、属性、下标、调用、尾随 lambda、块、`if`/`while`/`for` 表达式、行首 `.` 方法链续行 |
+| 语句 | `var`/`val`（含多目标解包）、赋值（含 `//=` 等增强赋值、元组交换）、`if`/`elif`/`else`、`while`、`for`、`return`、`break expr`、`continue` |
+| 函数 | `def`、`do` lambda、闭包、递归、精确位置参数、尾随闭包；所有形参列表都使用括号 |
 | 类 | 定义、实例化、`__init__`、方法、类方法、单/多重继承、C3 MRO、元类、`this`/`super`；开放字段袋、方法遮蔽检查、身份相等/哈希 |
-| 内建 | `print`、`clock`、`type`、`super`、`len`、`range`、`str`、`repr`、`int`、`float`、`bool` |
+| 内建 | `print`、`clock`、`type`、`super`（仅 `super.method` / `super.__init__`）、`len`、`range`、`str`、`repr`、`int`、`float`、`bool` |
 
 ## 可解析但被拒绝
 
@@ -36,6 +36,15 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 编译器属性 | `@[]` | Compiler attributes are not implemented yet. |
 | 格式化字符串 | `f"..."` | Formatted string literals are not implemented yet. |
 | 字典展开 | `{: **d :}` | Dictionary unpacking is not supported yet. |
+| 扩展方法 | `def C.f ...`（类外） | Extension methods are not implemented yet. |
+| 类方法定义位置 | `def class.f ...`（类外） | Class methods must be defined inside a class. |
+| 命名空间类 | `class A.B {}` | Namespaced classes are not implemented yet. |
+| 显式 `super` 调用 | `super(1)`、`super(A, this)` | Explicit super(...) calls are not supported |
+| 隐式中缀 | `a b c` | Infix call 'b' is not supported yet |
+| 裸形参 | `def f x: ...`、`do x: ...` | 语法错误（形参必须加括号） |
+| 比较链 | `0 <= i < n` | Comparison operators cannot be chained |
+
+`super.__init__(args)` 与 `super.method` 仍然可用。
 
 ## 解析但被忽略
 
@@ -49,7 +58,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
   但其**优先级**仍为默认值（中缀 500、左结合）；按作用域声明优先级属于
   [OP 0002](../proposals/0002-dsl-support.md) 的后续工作。
 - 运算符方法只能在类体内定义；顶层定义与 `def class.operator` 会被拒绝。
-- 扩展方法 `def C.f` 在类外定义时不会挂到 `C` 上。
+- 扩展方法 `def C.f` 尚未实现，当前在类外会显式报错。
 - 下标（`a[b]`）与属性（`a.b`）重载尚未接入运算符调度。
 - 类体中的 `var`/`val` 在 `oort-object` 中被显式拒绝；实例字段只能通过
   `this.x = ...` 创建（[OP 0007](../proposals/0007-oort-object-object-model.md)）。
@@ -61,10 +70,12 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 
 ## 已知的实现约定
 
-- 语句之间必须有换行或 `;`；同一行写多条语句时必须用 `;`。
+- 语句之间必须有换行或 `;`；同一行写多条语句时必须用 `;`；
+  行首 `.` 续行是这一规则的例外（见词法换行规则）。
 - `: expression` 形式的函数/分支体必须与冒号在同一行。
 - `for` 的循环变量按迭代独立绑定。
-- `print` 使用对象的 `__str__`：字符串不带引号，容器使用 `[...]` / `(...)` / `{...}` 形式。
+- `print` 使用对象的 `__str__`：字符串不带引号；List/Tuple 使用 `[...]` / `(...)`，
+  Dict/Set 使用 `{: ... :}` / `{. ... .}`；`repr` 使用 Oort 字面量形式。
 
 ## 测试对应关系
 

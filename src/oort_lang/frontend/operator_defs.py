@@ -79,6 +79,7 @@ class Arity(Enum):
 class Associativity(Enum):
     LEFT = 1
     RIGHT = 2
+    NONE = 3  # Non-associative: chaining at the same precedence is an error.
 
 
 @dataclass
@@ -132,19 +133,19 @@ class OperatorTable:
             ("-", Arity.INFIX): OperatorDef("-", Arity.INFIX, 600, Associativity.LEFT),
             ("<<", Arity.INFIX): OperatorDef("<<", Arity.INFIX, 400, Associativity.LEFT),
             (">>", Arity.INFIX): OperatorDef(">>", Arity.INFIX, 400, Associativity.LEFT),
-            (">", Arity.INFIX): OperatorDef(">", Arity.INFIX, 300, Associativity.LEFT),
-            ("<", Arity.INFIX): OperatorDef("<", Arity.INFIX, 300, Associativity.LEFT),
-            (">=", Arity.INFIX): OperatorDef(">=", Arity.INFIX, 300, Associativity.LEFT),
-            ("<=", Arity.INFIX): OperatorDef("<=", Arity.INFIX, 300, Associativity.LEFT),
-            ("in", Arity.INFIX): OperatorDef("in", Arity.INFIX, 300, Associativity.LEFT),
-            ("!in", Arity.INFIX): OperatorDef("!in", Arity.INFIX, 300, Associativity.LEFT),
-            ("is", Arity.INFIX): OperatorDef("is", Arity.INFIX, 300, Associativity.LEFT),
-            ("!is", Arity.INFIX): OperatorDef("!is", Arity.INFIX, 300, Associativity.LEFT),
-            ("==", Arity.INFIX): OperatorDef("==", Arity.INFIX, 200, Associativity.LEFT),
-            ("!=", Arity.INFIX): OperatorDef("!=", Arity.INFIX, 200, Associativity.LEFT),
-            ("&", Arity.INFIX): OperatorDef("&", Arity.INFIX, 180, Associativity.LEFT),
-            ("^", Arity.INFIX): OperatorDef("^", Arity.INFIX, 160, Associativity.LEFT),
-            ("|", Arity.INFIX): OperatorDef("|", Arity.INFIX, 140, Associativity.LEFT),
+            (">", Arity.INFIX): OperatorDef(">", Arity.INFIX, 300, Associativity.NONE),
+            ("<", Arity.INFIX): OperatorDef("<", Arity.INFIX, 300, Associativity.NONE),
+            (">=", Arity.INFIX): OperatorDef(">=", Arity.INFIX, 300, Associativity.NONE),
+            ("<=", Arity.INFIX): OperatorDef("<=", Arity.INFIX, 300, Associativity.NONE),
+            ("in", Arity.INFIX): OperatorDef("in", Arity.INFIX, 300, Associativity.NONE),
+            ("!in", Arity.INFIX): OperatorDef("!in", Arity.INFIX, 300, Associativity.NONE),
+            ("is", Arity.INFIX): OperatorDef("is", Arity.INFIX, 300, Associativity.NONE),
+            ("!is", Arity.INFIX): OperatorDef("!is", Arity.INFIX, 300, Associativity.NONE),
+            ("==", Arity.INFIX): OperatorDef("==", Arity.INFIX, 300, Associativity.NONE),
+            ("!=", Arity.INFIX): OperatorDef("!=", Arity.INFIX, 300, Associativity.NONE),
+            ("&", Arity.INFIX): OperatorDef("&", Arity.INFIX, 340, Associativity.LEFT),
+            ("^", Arity.INFIX): OperatorDef("^", Arity.INFIX, 330, Associativity.LEFT),
+            ("|", Arity.INFIX): OperatorDef("|", Arity.INFIX, 320, Associativity.LEFT),
             ("and", Arity.INFIX): OperatorDef("and", Arity.INFIX, 90, Associativity.LEFT),
             ("or", Arity.INFIX): OperatorDef("or", Arity.INFIX, 80, Associativity.LEFT),
         }

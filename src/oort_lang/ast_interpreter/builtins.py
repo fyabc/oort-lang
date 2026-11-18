@@ -153,8 +153,10 @@ def setup_builtins(env: Environment):
     _define_native_function(env, "super", OortSuperProxy, unwrap=False)
     _define_native_function(env, "len", len)
     _define_native_function(env, "range", range)
-    _define_native_function(env, "str", str)
-    _define_native_function(env, "repr", repr)
+    # Keep Oort objects wrapped so their own `__str__` / `__repr__` decide
+    # the display syntax (containers use Oort literal delimiters).
+    _define_native_function(env, "str", str, unwrap=False)
+    _define_native_function(env, "repr", repr, unwrap=False)
     _define_native_function(env, "int", int)
     _define_native_function(env, "float", float)
     _define_native_function(env, "bool", bool)

@@ -96,8 +96,12 @@ class ContinueExpr(StmtExpr):
 
 
 class BreakExpr(StmtExpr):
-    def __init__(self, context: ParserRuleContext):
+    def __init__(self, context: ParserRuleContext, value: ASTNode | None = None):
         super().__init__(context)
+        self.value = value
+
+    def named_children(self) -> Iterable[tuple[str, ASTNode | None]]:
+        yield "value", self.value
 
     def _accept(self, visitor: ASTVisitor):
         return visitor.visit_break_expr(self)

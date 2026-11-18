@@ -63,17 +63,18 @@ def addInt(a: Int, b: Int) -> Int {
 
 def subInt(a: Int, b: Int): a - b
 
-def doubleInt a: Int { a * 2 }
+def doubleInt(a: Int): a * 2
 ```
 
-- 形参不超过一个时可省略括号。
+- 所有形参列表都必须使用括号；裸形参形式已移除，避免 `:` 在类型标注与
+  函数体之间的歧义。
 - 函数体最后一条语句的值即返回值（除非用 `return` 提前返回）。
 - 返回类型用 `->`，动态方言中仅作标注。
 - 匿名函数用 `do` 引导：
 
 ```oort
-val add = do (a, b) { a + b }
-val inc = do x: x + 1
+val add = do(a, b) { a + b }
+val inc = do(x): x + 1
 ```
 
 - 不使用 `{}` 直接引导 lambda：`if` / `class` / `def` 的代码块也会用 `{}`，
@@ -82,7 +83,7 @@ val inc = do x: x + 1
 
 ```oort
 repeat do { print("Hello") }
-val doubled = map(ints) do i: i * 2
+val doubled = map(ints) do(i): i * 2
 ```
 
 - `$0`、`$1` 匿名形参**尚未实现**（会显式报错）。

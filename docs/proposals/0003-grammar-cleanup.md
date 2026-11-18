@@ -102,6 +102,9 @@ variableDecl: kind=(VAR | VAL) declTarget ASSIGN expressionList;
 - `else` 的两种写法都保留，`elif` 是新增语法。
 - 赋值两侧的表达式列表使 `a = 1, 2` 成为元组赋值，而不是语法错误。
 
+后续的表面积清理（移除 `!` 后缀、裸形参、隐式中缀、`super(...)` 等）
+见 [OP 0009](0009-expression-and-surface-cleanup.md)。
+
 ## 测试
 
 - `tests/unit/frontend/test_lexer.py`：token 字符集、换行、注释。

@@ -28,10 +28,11 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 - 整数/浮点/字符串/布尔/`null`
 - List、Tuple、Dict、Set 字面量与下标、切片
 - 一等函数、`do` lambda、闭包、尾随闭包调用
-- `if` / `elif` / `else`、`while`、`for ... in`（含解包）
-- `var` / `val`、多目标声明与元组解包、增强赋值
+- `if` / `elif` / `else`、`while`、`for ... in`（含解包）、`break expr`
+- `var` / `val`、多目标声明与元组解包、增强赋值（含 `//=`）
 - 类、方法、类方法、多重继承（C3 MRO）、元类、`this` / `super`
 - 运算符重载：`def operator "+"(other)` 等方法，内建类型使用同一套调度
+- 行首 `.` 方法链续行；`Bool` 与 `Int` 语义分离
 - 内建：`print`、`clock`、`type`、`super`、`len`、`range`、`str`、`repr`、
   `int`、`float`、`bool`
 - REPL（多行输入）

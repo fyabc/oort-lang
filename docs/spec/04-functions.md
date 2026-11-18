@@ -5,13 +5,14 @@
 ```oort
 def add(a, b) { a + b }
 def add(a, b): a + b
-def inc x: x + 1                 # 单个形参可省略括号
+def inc(x): x + 1
 def greeting: print("Hello")     # 无形参
 def add(a: Int, b: Int) -> Int { a + b }
 ```
 
 - `def` 后面的名字可以是普通标识符。
-- 形参列表为空或只有一个形参时可省略括号。
+- **所有形参列表都必须带括号**；裸形参写法（`def f x: ...`）已移除，
+  以避免 `:` 同时表示“类型标注”和“函数体”的歧义。
 - 函数体可以是块 `{ ... }` 或 `: expression`。
 - 返回值是函数体最后一条语句的值；`return` 可提前返回。
 - `-> Type` 与形参类型标注会被解析，但当前不参与检查。
@@ -22,20 +23,21 @@ def add(a: Int, b: Int) -> Int { a + b }
 ## 匿名函数
 
 ```oort
-val add = do (a, b) { a + b }
-val inc = do x: x + 1
+val add = do(a, b) { a + b }
+val inc = do(x): x + 1
 val hello = do: print("Hello")
 ```
 
 `do` 引导的匿名函数与 `def` 共享参数与函数体规则。
+`do` 后面若带形参，必须使用括号；`do x: x + 1` 会被拒绝。
 `$0`、`$1` 等匿名形参尚未实现。
 
 ## 调用与尾随闭包
 
 ```oort
 add(1, 2)
-repeat do { print("hi") }        # 唯一实参是 lambda：省略括号
-map(xs) do x: x * 2              # lambda 是最后一个实参：放在括号后
+repeat do { print("hi") }        # 唯一实参是 lambda：省略实参括号
+map(xs) do(x): x * 2             # lambda 是最后一个实参：放在括号后
 ```
 
 尾随 lambda 在语法上等价于追加一个位置实参。
@@ -71,7 +73,7 @@ print(c(), c(), c())    # 1 2 3
 函数在定义时即被绑定，因此可以递归调用自身：
 
 ```oort
-def fib n {
+def fib(n) {
     if n <= 1: return n
     fib(n - 1) + fib(n - 2)
 }
@@ -81,6 +83,7 @@ def fib n {
 
 - 在类体顶层定义的 `def` 自动成为实例方法（`this` 绑定到实例）。
 - `def class.f` 定义类方法（`this` 绑定到类对象），详见 [类](05-classes.md)。
-- 扩展方法（在类外 `def C.f`）语法可解析，但尚未接入语义。
+  `def class.f` 只能出现在类体内；在其他位置会被拒绝。
+- 扩展方法（在类外 `def C.f`）尚未实现，当前会显式报错。
 - 运算符方法（`def operator "+"(other)`）是类体中的特殊方法，见
   [表达式：运算符重载](02-expressions.md#运算符重载)；在类外定义会被拒绝。

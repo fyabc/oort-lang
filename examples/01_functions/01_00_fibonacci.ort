@@ -9,8 +9,7 @@ def timed(f, arg) {
     result  # 无需显式返回结果，函数的最后一个表达式的值即为返回值
 }
 
-# 函数形参数量不大于1时，可省略括号
-def fib n {
+def fib(n) {
     if n <= 1: return n
     fib(n-1) + fib(n-2)
 }

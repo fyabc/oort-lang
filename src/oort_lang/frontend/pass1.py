@@ -207,6 +207,8 @@ class Pass1Analyzer(ASTVisitor[T]):
                 OortSyntaxError("Break outside loop.", node.position),
                 self.input_info,
             )
+        if node.value is not None:
+            node.value.accept(self)
 
     def visit_implicit_super_expr(self, node: nodes.ImplicitSuperExpr) -> T | None:
         self.resolve_local(node, "this")
@@ -219,6 +221,9 @@ class Pass1Analyzer(ASTVisitor[T]):
     def visit_class_def(self, node: nodes.ClassDef) -> T | None:
         if node.type_params:
             self._unsupported("Generic classes are not implemented yet.", node)
+        if len(node.names) > 1:
+            self._unsupported("Namespaced classes are not implemented yet.", node)
+            return None
         for base in node.bases:
             base.accept(self)
         if node.meta is not None:
@@ -259,6 +264,16 @@ class Pass1Analyzer(ASTVisitor[T]):
     def visit_function_def(self, node: nodes.FunctionDef) -> T | None:
         if node.type_params:
             self._unsupported("Generic functions are not implemented yet.", node)
+        if node.is_class_method and self._current_decl != OutsideDeclType.CLASS:
+            self._unsupported("Class methods must be defined inside a class.", node)
+            return None
+        if (
+            len(node.names) > 1
+            and not node.is_class_method
+            and self._current_decl != OutsideDeclType.CLASS
+        ):
+            self._unsupported("Extension methods are not implemented yet.", node)
+            return None
         if node.is_operator:
             self._check_operator_definition(node)
         for param in node.params:
@@ -381,6 +396,9 @@ class Pass1Analyzer(ASTVisitor[T]):
         prev_func = self._current_func
         self._current_func = node
         prev_decl = self._current_decl
+        # A function boundary also ends any enclosing loop for break/continue.
+        prev_loop = self._current_loop
+        self._current_loop = None
         if self._current_decl == OutsideDeclType.CLASS:
             # Check method names.
             if len(node.names) > 1:
@@ -424,3 +442,4 @@ class Pass1Analyzer(ASTVisitor[T]):
 
         self._current_func = prev_func
         self._current_decl = prev_decl
+        self._current_loop = prev_loop

@@ -30,6 +30,7 @@
 | [0006](0006-modules-and-imports.md) | 模块与导入系统 | Draft |
 | [0007](0007-oort-object-object-model.md) | `oort-object` 动态对象模型 | Implemented |
 | [0008](0008-lexer-postprocessing-and-repl.md) | 词法后处理层与 REPL 重构 | Proposed |
+| [0009](0009-expression-and-surface-cleanup.md) | 表达式语义与语法表面积清理 | Implemented |
 
 ## 流程
 
@@ -57,6 +58,9 @@
 | 2026-11-18 | `oort-object` v1 对象模型实现完成：方法遮蔽检查覆盖类方法、缺失属性诊断、身份相等/哈希 | [OP 0007](0007-oort-object-object-model.md)（Implemented） |
 | 2026-11-18 | `Oort.g4` 去除宿主语言动作，换行/括号交给 token 后处理层；REPL 重构为 `ReplSession` 并补分层测试 | [OP 0008](0008-lexer-postprocessing-and-repl.md) |
 | 2026-11-18 | `#lang` 按首行预处理识别（该行对词法器仍是注释），非首行/未知/未实现方言显式报错；`DialectConfig` 提供特性门控与 Pratt 表工厂 | [OP 0001 §3](0001-feature-layers-and-dialects.md#3-模块级方言控制) |
+| 2026-11-18 | 位运算高于比较；比较非结合；`Bool` 不再 `<: Int` | [OP 0009](0009-expression-and-surface-cleanup.md)（Implemented） |
+| 2026-11-18 | 移除标识符 `!` 后缀；所有形参列表必须带括号；关闭隐式中缀；拒绝 `def C.f` / `class A.B` / 显式 `super(...)` | [OP 0009](0009-expression-and-surface-cleanup.md)（Implemented） |
+| 2026-11-18 | 支持 `break expr`、行首 `.` 续行、`//=`；Dict/Set 使用 Oort 字面量显示 | [OP 0009](0009-expression-and-surface-cleanup.md)（Implemented） |
 
 ## 设计原则（所有提案必须满足）
 

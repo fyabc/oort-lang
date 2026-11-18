@@ -48,8 +48,10 @@ class C < B { def f: super.f() + 10 }
 print(C().f())   # 11
 ```
 
-- `super(args)` 等价于调用父类的初始化器（语法保留）。
-- 访问 `super.method` 得到绑定到当前接收者的父类方法。
+- `super.method` 得到绑定到当前接收者的父类方法；
+  调用父类初始化器写 `super.__init__(args)`。
+- 显式的 `super(Class, this)` / `super(args)` 调用形式已被拒绝；
+  当前只保留 `super` 的成员访问形式。
 
 ## 运算符方法
 

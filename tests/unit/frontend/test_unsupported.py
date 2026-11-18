@@ -26,6 +26,13 @@ UNSUPPORTED_CASES = [
     ("print(x=1)", "Keyword arguments"),
     ("@[]", "Compiler attributes"),
     ('print(f"{1}")', "Formatted string"),
+    ("def C.g: 1", "Extension methods are not implemented yet."),
+    ("def class.f: 1", "Class methods must be defined inside a class."),
+    ("class A.B {}", "Namespaced classes are not implemented yet."),
+    (
+        "class A { def __init__ { super(1) } }",
+        "Explicit super(...) calls are not supported",
+    ),
     ('def operator "+"(a) {}', "Operator methods must be defined inside a class"),
     ('class C { def operator "foo"(a) {} }', "Invalid operator symbol"),
     ('class C { def operator "*"() {} }', "cannot be defined as a unary operator"),

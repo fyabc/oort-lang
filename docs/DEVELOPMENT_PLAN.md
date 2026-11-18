@@ -60,6 +60,7 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
 | 动态对象模型 | 已完成（2026-11-18）：开放字段袋、类体 `var`/`val` 拒绝、实例字段禁止遮蔽方法与类方法、缺失属性诊断、身份相等/哈希；槽仍归 `oort-core` |
 | 参数绑定 | 默认参数与关键字参数统一设计，避免后续特批 |
 | 运算符重载 | 已完成（2026-11-18）；下标/属性重载另立提案 |
+| 表达式/表面积清理 | 已完成（2026-11-18）：优先级、`Bool`、`!` 后缀、形参括号、隐式中缀关闭、半成品拒绝、`break value`、`.` 续行、`//=`、容器显示（[OP 0009](proposals/0009-expression-and-surface-cleanup.md)） |
 
 #### P1 — 运行时能力
 
@@ -145,18 +146,17 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
 - **语义分析**：覆盖名称解析、作用域、`this`/`super`、控制流位置检查；
   并负责显式拒绝未实现特性。类型检查尚未开始。
 - **解释器**：动态核心基本可用，函数、闭包、类、继承、元类、容器、循环都有测试。
-  运算符重载已闭环（用户类与内建类型共用方法表）；默认/关键字参数、用户迭代器、
-  下标/属性重载仍未实现。
-- **动态对象模型**：当前实现是“实例字段袋 → 类 MRO”；类体 `var`/`val` 的语义
-  尚未收紧，方法遮蔽尚未禁止。这两项按 [OP 0007](proposals/0007-oort-object-object-model.md)
-  在 `oort-object` v1 中处理。
-- **方言**：尚未实现 `#lang`；当前行为是 `oort-object` 的参考实现。
+  运算符重载已闭环（用户类与内建类型共用方法表）；`break value`、行首 `.`
+  方法链续行、`//=` 已实现；默认/关键字参数、用户迭代器、下标/属性重载仍未实现。
+- **动态对象模型**：开放字段袋、类体 `var`/`val` 拒绝、方法遮蔽检查、缺失属性
+  诊断、身份相等/哈希均已完成（[OP 0007](proposals/0007-oort-object-object-model.md)）。
+- **方言**：`#lang oort-object` 已实现（缺省 + 显式）；其他方言仍为占位。
 - **标准库**：只有最小内建函数；集合高阶函数、`math`/`string` 等模块等待模块系统。
 - **REPL**：支持多行输入、续行与错误恢复，并有 transcript 集成测试；
   但实现依赖 ANTLR lexer/parser 内部字段，EOF/Ctrl-C 行为未定义，
   重构与分层测试见 OP 0008。
 - **测试**：单元测试与集成测试分目录组织，覆盖全部已实现特性与拒绝清单；
-  核心代码行覆盖率约 84%。
+  核心代码行覆盖率约 87%。
 - **类型系统**：仅解析类型标注，不检查、不推导；属于 `oort-core`，设计见 OP 0005。
 - **模块/导入**：语法可解析，语义阶段显式报错；设计见 OP 0006。
 - **宏 / `comptime`**：未开始，排在类型系统与模块之后。
@@ -179,6 +179,10 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
 | 元类 | 扁平化、共享、`::` 语法 | [实现笔记 04](implementation/04-class-system.md) |
 | `this` 绑定 | 方法内词法绑定 | [实现笔记 04](implementation/04-class-system.md) |
 | 运算符重载 | `def operator "<sym>"`，内建类型同一套方法表 | [OP 0002](proposals/0002-dsl-support.md) |
+| 表达式优先级 | 位运算高于比较；比较非结合 | [OP 0009](proposals/0009-expression-and-surface-cleanup.md) |
+| `Bool` 语义 | 不是 `Int` 子类型；只支持 `==` / `!=` | [OP 0009](proposals/0009-expression-and-surface-cleanup.md) |
+| 形参语法 | 所有形参列表必须带括号 | [OP 0009](proposals/0009-expression-and-surface-cleanup.md) |
+| 语法表面积 | 关闭隐式中缀；拒绝 `def C.f` / `class A.B` / 显式 `super(...)` | [OP 0009](proposals/0009-expression-and-surface-cleanup.md) |
 | 导入语义 | 急切，模块级缓存 | [OP 0006](proposals/0006-modules-and-imports.md) |
 | 错误处理 | `Result`/`Option`（`oort-core`） | [OP 0005](proposals/0005-type-system.md) |
 | 多线程 / ABI | 暂无稳定 ABI；优先 C FFI | [设计 07](design/07-concurrency-abi-design.md) |

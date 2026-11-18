@@ -13,7 +13,7 @@ def decorate(arg, f) {
     print("After call")
     result
 }
-var ret = decorate("Oort!") do arg {
+var ret = decorate("Oort!") do(arg) {
     print("Hello,", arg)
     arg
 }

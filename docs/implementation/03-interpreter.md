@@ -23,6 +23,8 @@
 
 - 标量实现 `__eq__` / `__hash__`，因此可以作为字典键和集合元素；
   `List`/`Dict`/`Set` 不可哈希。
+- `Bool` 不是 `Int` 的子类型；`Bool` 只登记 `==` / `!=`，不参与算术、位运算
+  或大小比较。容器成员测试也对 `Bool`/`Int` 做严格区分。
 - `py_value` 提供与 Python 原生值的转换，供内建函数与运算符使用。
 - 运算符通过 `OortType.operators` 表调度，键为 `(符号, 操作数个数)`：
   - 用户类在类体中用 `def operator "<sym>"` 定义，解释器在
@@ -46,7 +48,7 @@
 - `val` 的不可变性在赋值时检查。
 
 `for` 循环**每次迭代创建新的绑定环境**，因此闭包捕获的是当次迭代的值
-（与 Python 一致）：
+（对应 JavaScript `let` / C# 5+ `foreach`；Python 的循环变量是共享绑定）：
 
 ```oort
 var fs = []
@@ -60,6 +62,7 @@ print(fs[0](), fs[1]())   # 1 2
 
 - `if` / `elif` / `else` 都是表达式；`elif` 在 AST 中降级为嵌套 `if`。
 - `while`、`for` 支持 `break` / `continue`（通过内部异常实现）。
+- `break value` 使循环表达式返回该值；裸 `break` 或正常结束返回 `null`。
 - 块的值是最后一条语句的值；函数体返回值同理。
 
 ## 内建函数与类型
@@ -71,8 +74,10 @@ print(fs[0](), fs[1]())   # 1 2
 - 函数：`print`、`clock`、`type`、`super`、`len`、`range`、`str`、`repr`、
   `int`、`float`、`bool`。
 
-这些内建函数接收解包后的 Python 值（`unwrap=True`），返回值再装箱；
-`print`、`type`、`super` 需要看到 Oort 对象本身，因此 `unwrap=False`。
+这些内建函数默认接收解包后的 Python 值（`unwrap=True`），返回值再装箱；
+`print`、`type`、`super`、`str`、`repr` 需要看到 Oort 对象本身，因此
+`unwrap=False`。`str` / `repr` 使用对象自己的 `__str__` / `__repr__`，
+容器因此输出 Oort 字面量形式。
 
 ## 未实现功能的处理
 

@@ -7,7 +7,7 @@ def decorate(arg, f) {
     result
 }
 
-var ret = decorate("Oort!") do arg {
+var ret = decorate("Oort!") do(arg) {
     print("Hello,", arg)
     arg
 }

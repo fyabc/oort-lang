@@ -17,6 +17,9 @@ class OortReturn(Exception):
 class OortBreak(Exception):
     """Control flow exception for `break` statement."""
 
+    def __init__(self, value: "OortObject | None" = None):
+        self.value = value
+
 
 class OortContinue(Exception):
     """Control flow exception for `continue` statement."""

@@ -108,6 +108,14 @@ def main() -> None:
     # not embed the author's absolute filesystem paths.
     subprocess.run(command, check=True, env=env, cwd=GRAMMAR_FILE_DIR)
 
+    # ANTLR leaves trailing spaces on many generated lines; keep the tracked
+    # generated sources clean so `git diff --check` stays useful.
+    for generated in GENERATED_DIR.glob("*.py"):
+        text = generated.read_text(encoding="utf-8")
+        cleaned = "\n".join(line.rstrip() for line in text.splitlines()) + "\n"
+        if cleaned != text:
+            generated.write_text(cleaned, encoding="utf-8")
+
 
 if __name__ == "__main__":
     main()

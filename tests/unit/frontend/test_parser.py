@@ -69,3 +69,29 @@ else { print(2) }
 """
     ).stdout
     assert out == "1\n"
+
+
+@pytest.mark.parametrize("source", ["def f x: Int\n", "do x: Int\n"])
+def test_bare_parameters_are_rejected(source: str, caplog: pytest.LogCaptureFixture):
+    compiler = get_compiler("NOT_EXIST -t eval")
+    with pytest.raises(SystemExit):
+        compiler.run_string(source)
+    assert "OortSyntaxError" in caplog.text
+
+
+def test_parenthesized_typed_parameters(run_source):
+    out = run_source(
+        """\
+def f(x: Int): x + 1
+val g = do(x: Int): x * 2
+print(f(1), g(3))
+"""
+    ).stdout
+    assert out == "2 6\n"
+
+
+def test_implicit_infix_is_rejected(caplog: pytest.LogCaptureFixture):
+    compiler = get_compiler("NOT_EXIST -t eval")
+    with pytest.raises(SystemExit):
+        compiler.run_string("a b c\n")
+    assert "Infix call 'b' is not supported yet" in caplog.text

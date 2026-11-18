@@ -27,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Operator precedence now follows Python/Rust: bitwise `& ^ |` bind tighter than
+  comparisons, and comparisons are non-associative (`a < b < c` is an error).
+- `Bool` is no longer a subtype of `Int`: boolean arithmetic and `true == 1` are
+  rejected; container membership keeps booleans and integers distinct.
+- Identifiers no longer accept a trailing `!`, so `a!=b`, `x!in xs` and `a!is b`
+  lex correctly without spaces.
+- All parameter lists now require parentheses. Bare forms such as `def f x: ...`
+  and `do x: ...` are syntax errors, removing the `:` type-vs-body ambiguity.
+- Implicit infix calls (`a b c`) are disabled until the explicit `infix` design
+  lands; `def C.f`, `class A.B` and explicit `super(...)` calls are rejected.
+- `break expr` makes `while` / `for` expressions return a value; a line starting
+  with `.` continues a method chain; `//=` is supported.
+- Dict/set display uses Oort literal delimiters (`{: ... :}` / `{. ... .}`).
 - `oort-object` rejects `var` / `val` declarations directly in a class body.
   Instances are open field bags; fields must be created with
   `this.name = ...` in `__init__` (OP 0007).
@@ -42,6 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   3.13 on Linux, and 3.13 on Windows.
 - Development dependencies updated (ruff, mypy, pytest, pytest-benchmark,
   pre-commit, virtualenv, filelock), resolving the open Dependabot alerts.
+
+### Fixed
+
+- `break` / `continue` inside a function defined in a loop no longer escape to
+  the outer loop.
+- Parameter-layout validation now handles variadic keyword and trailing block
+  parameters at index 0, and the marker-order diagnostic is corrected.
+- Pratt binding powers are integers instead of floating-point epsilon values.
 
 ## [0.1.0] - 2026-11-18
 

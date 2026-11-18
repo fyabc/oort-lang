@@ -386,7 +386,10 @@ class OortFunction(OortFunctionMixin, OortInstance):
         from .environment import Environment
 
         call_env = Environment(outer=self.closure, name=self.name)
-        assert len(args) == len(self.node.params)
+        if len(args) != len(self.node.params):
+            raise TypeError(
+                f"{self.name}() takes {len(self.node.params)} arguments but {len(args)} were given"
+            )
         for param, arg in zip(self.node.params, args, strict=False):
             call_env.define(param.name, arg)
         try:
@@ -459,7 +462,10 @@ class OortMethod(OortMethodMixin, OortInstance):
         from .environment import Environment
 
         call_env = Environment(outer=self.closure, name=self.name)
-        assert len(args) == len(self.node.params)
+        if len(args) != len(self.node.params):
+            raise TypeError(
+                f"{self.name}() takes {len(self.node.params)} arguments but {len(args)} were given"
+            )
         for param, arg in zip(self.node.params, args, strict=False):
             call_env.define(param.name, arg)
 
@@ -812,10 +818,14 @@ class OortDict(OortObject):
         raise TypeError("unhashable type: 'Dict'")
 
     def __repr__(self):
-        return repr(self.value)
+        if not self.value:
+            return "{:}"
+        return "{: " + ", ".join(f"{k!r}: {v!r}" for k, v in self.value.items()) + " :}"
 
     def __str__(self):
-        return "{" + ", ".join(f"{k}: {v}" for k, v in self.value.items()) + "}"
+        if not self.value:
+            return "{:}"
+        return "{: " + ", ".join(f"{k}: {v}" for k, v in self.value.items()) + " :}"
 
     @property
     def py_value(self):
@@ -845,10 +855,14 @@ class OortSet(OortObject):
         raise TypeError("unhashable type: 'Set'")
 
     def __repr__(self):
-        return repr(self.value)
+        if not self.value:
+            return "{.}"
+        return "{. " + ", ".join(repr(item) for item in self.value) + " .}"
 
     def __str__(self):
-        return "{" + ", ".join(str(item) for item in self.value) + "}"
+        if not self.value:
+            return "{.}"
+        return "{. " + ", ".join(str(item) for item in self.value) + " .}"
 
     @property
     def py_value(self):
@@ -910,7 +924,9 @@ def setup_type_system():
     _setup_basic_type("SuperProxy", OortSuperProxy)
     t_null = _setup_basic_type("Null", OortNull)
     t_int = _setup_basic_type("Int", OortInt)
-    _setup_basic_type("Bool", OortBool, bases=[t_int])
+    # Bool is deliberately not a subtype of Int. `true + true` and
+    # `true == 1` should not silently work just because Python's bool is int.
+    t_bool = _setup_basic_type("Bool", OortBool)
     t_float = _setup_basic_type("Float", OortFloat)
     t_string = _setup_basic_type("String", OortString)
     t_list = _setup_basic_type("List", OortList)
@@ -922,6 +938,7 @@ def setup_type_system():
     _setup_native_operators(
         t_object=t_object,
         t_null=t_null,
+        t_bool=t_bool,
         t_int=t_int,
         t_float=t_float,
         t_string=t_string,
@@ -947,6 +964,7 @@ def _install_operators(
 def _setup_native_operators(
     t_object: "OortType",
     t_null: "OortType",
+    t_bool: "OortType",
     t_int: "OortType",
     t_float: "OortType",
     t_string: "OortType",
@@ -971,40 +989,82 @@ def _setup_native_operators(
     # `!=` and `!in` are derived from `==` and `in` unless a type overrides
     # them explicitly.
 
+    def _bool_eq(lhs, rhs):
+        # `False == 0` in Python; Oort keeps booleans and integers distinct.
+        return isinstance(lhs, bool) and isinstance(rhs, bool) and lhs == rhs
+
+    def _numeric_eq(lhs, rhs):
+        if isinstance(lhs, bool) or isinstance(rhs, bool):
+            return False
+        return lhs == rhs
+
+    def _numeric_binop(op):
+        def wrapped(lhs, rhs):
+            if isinstance(lhs, bool) or isinstance(rhs, bool):
+                raise TypeError("Bool values are not numbers")
+            return op(lhs, rhs)
+
+        return wrapped
+
+    def _numeric_cmp(op):
+        def wrapped(lhs, rhs):
+            if isinstance(lhs, bool) or isinstance(rhs, bool):
+                raise TypeError("Bool values are not ordered with numbers")
+            return op(lhs, rhs)
+
+        return wrapped
+
+    def _strict_equal(lhs, rhs):
+        if isinstance(lhs, bool) != isinstance(rhs, bool):
+            return False
+        return lhs == rhs
+
+    def _contains(container, item):
+        return any(_strict_equal(element, item) for element in container)
+
+    numeric_comparisons = {
+        "==": _numeric_eq,
+        "<": _numeric_cmp(operator.lt),
+        "<=": _numeric_cmp(operator.le),
+        ">": _numeric_cmp(operator.gt),
+        ">=": _numeric_cmp(operator.ge),
+    }
+
     _install_operators(t_object, binary={"==": operator.eq})
     _install_operators(t_null, binary={"==": operator.eq})
+    _install_operators(t_bool, binary={"==": _bool_eq})
 
     _install_operators(
         t_int,
         unary={"+": operator.pos, "-": operator.neg, "~": operator.inv},
         binary={
-            "+": operator.add,
-            "-": operator.sub,
-            "*": operator.mul,
-            "/": operator.truediv,
-            "//": operator.floordiv,
-            "%": operator.mod,
-            "**": operator.pow,
-            "<<": operator.lshift,
-            ">>": operator.rshift,
-            "&": operator.and_,
-            "|": operator.or_,
-            "^": operator.xor,
-            **comparisons,
+            "+": _numeric_binop(operator.add),
+            "-": _numeric_binop(operator.sub),
+            "*": _numeric_binop(operator.mul),
+            "/": _numeric_binop(operator.truediv),
+            "//": _numeric_binop(operator.floordiv),
+            "%": _numeric_binop(operator.mod),
+            "**": _numeric_binop(operator.pow),
+            "<<": _numeric_binop(operator.lshift),
+            ">>": _numeric_binop(operator.rshift),
+            "&": _numeric_binop(operator.and_),
+            "|": _numeric_binop(operator.or_),
+            "^": _numeric_binop(operator.xor),
+            **numeric_comparisons,
         },
     )
     _install_operators(
         t_float,
         unary={"+": operator.pos, "-": operator.neg},
         binary={
-            "+": operator.add,
-            "-": operator.sub,
-            "*": operator.mul,
-            "/": operator.truediv,
-            "//": operator.floordiv,
-            "%": operator.mod,
-            "**": operator.pow,
-            **comparisons,
+            "+": _numeric_binop(operator.add),
+            "-": _numeric_binop(operator.sub),
+            "*": _numeric_binop(operator.mul),
+            "/": _numeric_binop(operator.truediv),
+            "//": _numeric_binop(operator.floordiv),
+            "%": _numeric_binop(operator.mod),
+            "**": _numeric_binop(operator.pow),
+            **numeric_comparisons,
         },
     )
     _install_operators(
@@ -1023,13 +1083,15 @@ def _setup_native_operators(
             binary={
                 "+": operator.add,
                 "*": operator.mul,
-                "in": lambda container, item: item in container,
+                "in": _contains,
                 **comparisons,
             },
         )
     _install_operators(
         t_dict,
         binary={
+            # Keys are wrapped OortObjects, so Python's dict lookup is already
+            # Bool/Int-strict and stays O(1).
             "in": lambda mapping, key: key in mapping,
             **comparisons,
         },
@@ -1041,7 +1103,7 @@ def _setup_native_operators(
             "|": operator.or_,
             "^": operator.xor,
             "-": operator.sub,
-            "in": lambda container, item: item in container,
+            "in": _contains,
             **comparisons,
         },
     )

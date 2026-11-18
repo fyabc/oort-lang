@@ -31,6 +31,9 @@ Oort 的语言变更采用类 PEP/RFC 流程：
 - [OP 0004: 字节码虚拟机](proposals/0004-bytecode-vm.md)
 - [OP 0005: 类型系统、泛型、ADT 与模式匹配](proposals/0005-type-system.md)
 - [OP 0006: 模块与导入系统](proposals/0006-modules-and-imports.md)
+- [OP 0007: `oort-object` 动态对象模型](proposals/0007-oort-object-object-model.md)（已实现）
+- [OP 0008: 词法后处理层与 REPL 重构](proposals/0008-lexer-postprocessing-and-repl.md)
+- [OP 0009: 表达式语义与语法表面积清理](proposals/0009-expression-and-surface-cleanup.md)（已实现）
 
 ## 实现与设计
 

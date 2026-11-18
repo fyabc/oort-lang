@@ -29,23 +29,23 @@
 目标写法：
 
 ```oort
-html do
-    head do title("Page") end
-end
+html do {
+    head do { title("Page") }
+}
 ```
 
 而不是必须显式传 builder：
 
 ```oort
-html do |h|
-    h.head do |hd| hd.title("Page") end
-end
+html do(h) {
+    h.head do(hd) { hd.title("Page") }
+}
 ```
 
 两种路径：
 
 - 类型级（Kotlin 风格）：`Builder.() -> Unit`，调用处自动注入 `this`；
-- 调用处显式：`html do this: HtmlBuilder ... end`。
+- 调用处显式：`html do(builder: HtmlBuilder) { ... }`。
 
 先实现显式版本，再做类型推导版本。
 
@@ -54,11 +54,11 @@ end
 嵌套 builder 中，内层不应看到外层同组 builder 的成员：
 
 ```oort
-html do
-    body do
-        head do ... end   # 错误：head 属于 html，不属于 body
-    end
-end
+html do {
+    body do {
+        head do { ... }   # 错误：head 属于 html，不属于 body
+    }
+}
 ```
 
 没有隔离时，作用域链会静默找到外层 `head`，产生难以调试的结构错误（Groovy/Gradle 的经典坑）。
@@ -94,6 +94,7 @@ operator "<+>" : 120, left
 
 - 函数显式标记 `infix` 才参与解析（Scala 3 的教训：隐式中缀易误解析）；
 - Pratt 中把 `IDENTIFIER` 作为左结合中缀运算符，默认优先级 500。
+- 当前实现已**关闭**隐式中缀（`a b c` 报错），等本节落地后再启用。
 
 ### 5. 按名参数（惰性）
 
