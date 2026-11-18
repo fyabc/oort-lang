@@ -1,7 +1,7 @@
 # 解析器实现
 
 词法与语法分析由 [ANTLR4](https://www.antlr.org/) 生成（`grammars/Oort.g4`），
-表达式部分交给手写的 **Pratt 解析器**（见 `frontend/ast_builder.py`）。
+表达式部分交给手写的 **Pratt 解析器**（见 `parser/ast_builder.py`）。
 
 ## 前端流水线
 
@@ -16,7 +16,7 @@
 
 ## 为什么用 Pratt
 
-- 优先级与结合性集中在一张表里（`frontend/operator_defs.py`），增删运算符
+- 优先级与结合性集中在一张表里（`parser/operator_defs.py`），增删运算符
   不需要改文法。
 - 使用整数 binding power（左结合取 `p + 1`，右结合取 `p`），不再用浮点
   epsilon；非结合运算符（比较）通过 `Associativity.NONE` 标记，链式写作
@@ -54,7 +54,7 @@ lexer 动作，把换行/括号处理移到 token 后处理层，并同步重构
 `**kwargs` / `&block` 的位置、重复参数名、默认值后置规则与裸 `*` 后必须有
 关键字限定参数。调用实参的 `identifier = expression` 被标记为
 `ArgumentKind.KEYWORD`；尾随 lambda 标记为 `ArgumentKind.BLOCK`。
-绑定语义不在前端实现，见 `ast_interpreter/signature.py`（OP 0011）。
+绑定语义不在前端实现，见 `runtime/signature.py`（OP 0011）。
 
 ## 错误报告
 

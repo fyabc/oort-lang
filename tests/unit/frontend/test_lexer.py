@@ -4,7 +4,7 @@
 
 from antlr4 import InputStream
 
-from oort_lang.grammar.OortLexer import OortLexer
+from oort_lang.parser.grammar.OortLexer import OortLexer
 
 
 def _tokens(text: str) -> list[tuple[str, str]]:

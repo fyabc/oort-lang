@@ -5,7 +5,7 @@ from enum import Enum
 
 from antlr4 import ParserRuleContext, Token
 
-from ...support.source_position import SourcePosition
+from ...source.source_position import SourcePosition
 from ..ast_visitor import ASTVisitor
 from .base import ASTNode
 

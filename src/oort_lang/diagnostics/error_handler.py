@@ -4,9 +4,9 @@ import logging
 import re
 import sys
 
-from ..exceptions import OortException, OortSyntaxWarning
-from ..support.input_info import InputInfo
-from ..support.source_position import AbstractSourcePosition
+from ..source.input_info import InputInfo
+from ..source.source_position import AbstractSourcePosition
+from . import OortException, OortSyntaxWarning
 
 logger = logging.getLogger(__name__)
 

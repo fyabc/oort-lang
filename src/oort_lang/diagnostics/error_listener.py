@@ -3,9 +3,9 @@
 from antlr4 import Token
 from antlr4.error.ErrorListener import ErrorListener
 
-from ..exceptions import OortSyntaxError
-from ..support.input_info import InputInfo
-from ..support.source_position import SourcePosition
+from ..source.input_info import InputInfo
+from ..source.source_position import SourcePosition
+from . import OortSyntaxError
 from .error_handler import CompilerErrorHandler
 
 

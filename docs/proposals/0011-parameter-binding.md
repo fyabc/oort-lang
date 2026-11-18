@@ -13,7 +13,7 @@
 目标是让所有用户可调用对象（`def`、lambda、方法、类构造、
 `super.__init__`）共用一套确定性的绑定算法，并把所有歧义变成显式错误。
 
-> 实现（2026-11-19）：`ast_interpreter/signature.py` 的 `Signature` 与
+> 实现（2026-11-19）：`runtime/signature.py` 的 `Signature` 与
 > `build_call_env` 已接入 `OortFunction` / `OortMethod` / `OortType`；
 > `Pass1Analyzer` 已开放默认值、关键字实参和全部参数种类，并增加
 > 参数顺序、默认值前向引用与调用实参布局校验。

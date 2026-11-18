@@ -22,7 +22,7 @@ uv sync --extra build-grammar
 python scripts/build_grammar.py   # or: make build-grammar
 ```
 
-Do not hand-edit files in `src/oort_lang/grammar/`; they are generated.
+Do not hand-edit files in `src/oort_lang/parser/grammar/`; they are generated.
 
 ## Where things live
 
@@ -31,8 +31,13 @@ Do not hand-edit files in `src/oort_lang/grammar/`; they are generated.
 | `docs/spec/` | Normative language reference (must match the implementation) |
 | `docs/proposals/` | PEP/RFC-style design proposals |
 | `docs/implementation/` | Compiler implementation notes |
-| `src/oort_lang/frontend/` | ANTLR parse tree → AST (Pratt), semantic analysis |
-| `src/oort_lang/ast_interpreter/` | Tree-walking runtime and object model |
+| `src/oort_lang/source/` | Source text, positions and input abstractions |
+| `src/oort_lang/diagnostics/` | Exceptions, error handler and ANTLR error listener |
+| `src/oort_lang/ast/` | AST nodes, visitor, typed bindings and printer |
+| `src/oort_lang/parser/` | Grammar, Pratt parser and AST builder |
+| `src/oort_lang/semantics/` | Name resolution and semantic checks |
+| `src/oort_lang/runtime/` | Tree-walking runtime and object model |
+| `src/oort_lang/driver/` | Compiler, REPL and CLI entry point |
 | `tests/unit/`, `tests/integration/` | Unit tests, CLI/REPL/example tests |
 
 ## Rules for language changes
@@ -40,7 +45,7 @@ Do not hand-edit files in `src/oort_lang/grammar/`; they are generated.
 1. **Open a proposal first** for anything non-trivial (new syntax, semantics,
    type-system changes). Copy `docs/proposals/0000-template.md`.
 2. **No half-features.** If a construct is parsed but not implemented, it must be
-   rejected with `UnsupportedSyntax` in `src/oort_lang/frontend/pass1.py`, and
+   rejected with `UnsupportedSyntax` in `src/oort_lang/semantics/pass1.py`, and
    listed in `docs/spec/06-conformance.md`.
 3. **Update the spec and tests together.** A feature is not done until
    `docs/spec/` and `tests/` reflect it.

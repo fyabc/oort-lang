@@ -71,10 +71,10 @@ target/
 /.claude/
 
 # Generated grammar files.
-/src/oort_lang/grammar/Oort.interp
-/src/oort_lang/grammar/Oort.tokens
-/src/oort_lang/grammar/OortLexer.interp
-/src/oort_lang/grammar/OortLexer.tokens
+/src/oort_lang/parser/grammar/Oort.interp
+/src/oort_lang/parser/grammar/Oort.tokens
+/src/oort_lang/parser/grammar/OortLexer.interp
+/src/oort_lang/parser/grammar/OortLexer.tokens
 
 # Some local files.
 /private

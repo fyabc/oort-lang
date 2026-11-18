@@ -1,0 +1,443 @@
+#! /usr/bin/env python
+
+"""Per-runtime type system and built-in operators."""
+
+import operator
+from collections.abc import Callable
+from contextlib import AbstractContextManager
+
+from .call_args import ArgumentBindingError
+from .context import activate_runtime
+from .functions import (
+    OortCallableMixin,
+    OortFunction,
+    OortFunctionMixin,
+    OortMethod,
+    OortMethodMixin,
+    OortNativeFunction,
+)
+from .objects import (
+    OortBool,
+    OortDict,
+    OortFloat,
+    OortInstance,
+    OortInt,
+    OortList,
+    OortNull,
+    OortObject,
+    OortSet,
+    OortSlice,
+    OortString,
+    OortSuperProxy,
+    OortTuple,
+)
+
+
+class OortType(OortInstance, OortCallableMixin):
+    """Oort type objects."""
+
+    def __init__(
+        self, name: str, fields: dict | None = None, bases: list["OortType"] | None = None
+    ):
+        super().__init__(type_=None)  # type: ignore[arg-type]  # Lazy init.
+
+        self.name = name
+        if fields:
+            self.fields.update(fields)
+        self.bases: list[OortType] = bases or []
+        self._mro_cache: list[OortType] | None = None
+        self._has_class_method: bool = False
+        # Operator methods, keyed by (symbol, operand count).
+        self.operators: dict[tuple[str, int], OortObject] = {}
+
+    def __repr__(self):
+        return f"<Type {self.name!r}>"
+
+    def get(self, name: str) -> "OortObject | None":
+        """Look up class attributes.
+
+        Class objects need two lookup domains: the class MRO (ordinary
+        attributes and methods, returned unbound) and the metaclass MRO
+        (class methods, bound to the class). `OortObject.get` only knows
+        about the latter, so handle the class MRO here first.
+        """
+        for mro_type in self.mro():
+            value = mro_type.fields.get(name, None)
+            if value is not None:
+                return value
+        return super().get(name)
+
+    def _find_defining_type(self, name: str) -> "OortType | None":
+        """Find the type in the MRO that defines `name`."""
+        for mro_type in self.mro():
+            if name in mro_type.fields:
+                return mro_type
+        return None
+
+    @classmethod
+    def create_type_object(
+        cls,
+        name: str,
+        fields: dict | None = None,
+        bases: list | None = None,
+        metaclass: "OortType | None" = None,
+    ):
+        """Create type object, resolve bases and metaclass."""
+        type_obj = cls(name=name, fields=fields, bases=bases)
+
+        # Calculate correct metaclass.
+        winner = metaclass or cls.get_type_object()
+        for base_type in type_obj.mro()[1:]:
+            base_metatype = base_type.type
+            if winner.is_subclass_of(base_metatype):
+                continue
+            if base_metatype.is_subclass_of(winner):
+                winner = base_metatype
+                continue
+            raise TypeError(
+                "Metaclass conflict: the metaclass of a derived class must be a (non-strict) "
+                "subclass of the metaclasses of all its bases."
+            )
+        type_obj.type = winner
+        return type_obj
+
+    def set_operator(self, symbol: str, operand_count: int, value: OortObject):
+        """Register an operator method (`def operator "<sym>"`)."""
+        self.operators[(symbol, operand_count)] = value
+
+    def set_class_field(self, name: str, value: OortObject):
+        """Set class-level fields, create metaclass if not exist."""
+        if not self._has_class_method:
+            new_type = OortType(name=f"{self.name}#Meta", fields={name: value}, bases=[self.type])
+            new_type.type = self.type
+            self.type = new_type
+            self._has_class_method = True
+        else:
+            self.type.set(name, value)
+
+    @property
+    def arity(self) -> int:
+        init_func = self.get("__init__")
+        if init_func is None:
+            return 0
+        assert isinstance(init_func, OortFunction)
+        return init_func.arity
+
+    def __call__(self, interpreter, args):
+        instance = OortInstance(type_=self)
+
+        # Call initializer.
+        init_func = self.get("__init__")
+        if init_func is None:
+            if args:
+                raise ArgumentBindingError(
+                    f"{self.name}() takes 0 arguments but {len(args)} were given"
+                )
+            return instance
+
+        assert isinstance(init_func, OortFunction)
+        init_method = OortMethod(
+            this=instance,
+            node=init_func.node,
+            closure=init_func.closure,
+            defining_type=self._find_defining_type("__init__"),
+        )
+        init_method(interpreter, args)
+        return instance
+
+    def mro(self) -> list["OortType"]:
+        if not self._mro_cache:
+            self._build_mro()
+        assert self._mro_cache is not None
+        return self._mro_cache
+
+    def _build_mro(self):
+        """Build MRO cache, using C3-linear algorithm."""
+        if not self.bases:
+            self._mro_cache = [self, OortObject.get_type_object()]
+            return
+        parent_mros = [list(base.mro()) for base in self.bases]
+        parent_mros.append(list(self.bases))
+
+        self._mro_cache = [self, *self._c3_merge(parent_mros)]
+        if self._mro_cache[-1] != OortObject.get_type_object():
+            self._mro_cache.append(OortObject.get_type_object())
+
+    @staticmethod
+    def _c3_merge(sequences: list[list["OortType"]]) -> list["OortType"]:
+        """C3 merge algorithm."""
+        result: list[OortType] = []
+        while True:
+            sequences = [seq for seq in sequences if seq]
+            if not sequences:
+                return result
+
+            for seq in sequences:
+                candidate = seq[0]
+                if not any(candidate in s[1:] for s in sequences):
+                    result.append(candidate)
+                    for s in sequences:
+                        if s and s[0] == candidate:
+                            s.pop(0)
+                    break
+            else:
+                raise TypeError(
+                    "Cannot create a consistent method resolution order (MRO) for bases."
+                )
+
+    def is_subclass_of(self, other: "OortType") -> bool:
+        """Check if `self` is subclass of `other`."""
+        return other in self.mro()
+
+    @property
+    def is_metaclass(self) -> bool:
+        return self.get_type_object() in self.mro()
+
+
+class TypeSystem:
+    """Per-runtime built-in type registry."""
+
+    def __init__(self, runtime: "Runtime"):
+        self.runtime = runtime
+        # Make the registry visible to object constructors used below.
+        runtime.types = self
+        self.by_class: dict[type, OortType] = {}
+
+        # Bootstrap `Type` and `Object` without resolving their MROs, which
+        # would recurse back into the type system.
+        t_type = OortType(name="Type")
+        t_type.type = t_type
+        t_object = OortType(name="Object")
+        t_object.type = t_type
+        t_type._mro_cache = [t_type, t_object]
+        t_object._mro_cache = [t_object]
+        self.by_class[OortType] = t_type
+        self.by_class[OortObject] = t_object
+        self.type_type = t_type
+        self.object_type = t_object
+
+        self.function_type = self._add_basic_type("Function", OortFunctionMixin)
+        self.method_type = self._add_basic_type("Method", OortMethodMixin)
+        self.super_proxy_type = self._add_basic_type("SuperProxy", OortSuperProxy)
+        self.null_type = self._add_basic_type("Null", OortNull)
+        self.int_type = self._add_basic_type("Int", OortInt)
+        # Bool is deliberately not a subtype of Int. `true + true` and
+        # `true == 1` should not silently work just because Python's bool is int.
+        self.bool_type = self._add_basic_type("Bool", OortBool)
+        self.float_type = self._add_basic_type("Float", OortFloat)
+        self.string_type = self._add_basic_type("String", OortString)
+        self.list_type = self._add_basic_type("List", OortList)
+        self.tuple_type = self._add_basic_type("Tuple", OortTuple)
+        self.dict_type = self._add_basic_type("Dict", OortDict)
+        self.set_type = self._add_basic_type("Set", OortSet)
+        self.slice_type = self._add_basic_type("Slice", OortSlice)
+
+        _setup_native_operators(
+            t_object=t_object,
+            t_null=self.null_type,
+            t_bool=self.bool_type,
+            t_int=self.int_type,
+            t_float=self.float_type,
+            t_string=self.string_type,
+            t_list=self.list_type,
+            t_tuple=self.tuple_type,
+            t_dict=self.dict_type,
+            t_set=self.set_type,
+        )
+
+    def _add_basic_type(
+        self, name: str, cls: type, bases: list["OortType"] | None = None
+    ) -> "OortType":
+        t_name = OortType(name=name)
+        t_name.type = self.type_type
+        t_name.bases = bases or [self.object_type]
+        t_name._mro_cache = [t_name]
+        for base in t_name.bases:
+            for base_type in base.mro():
+                if base_type not in t_name._mro_cache:
+                    t_name._mro_cache.append(base_type)
+        self.by_class[cls] = t_name
+        return t_name
+
+    def for_class(self, cls: type) -> "OortType":
+        """Find the built-in type for a Python storage class."""
+        for base in cls.__mro__:
+            type_obj = self.by_class.get(base)
+            if type_obj is not None:
+                return type_obj
+        raise KeyError(f"No Oort type registered for {cls.__name__}")
+
+
+class Runtime:
+    """Type system and singleton values owned by one interpreter."""
+
+    def __init__(self):
+        with self.activate():
+            self.types: TypeSystem = TypeSystem(self)
+            self.null: OortNull = OortNull()
+            self.true: OortBool = OortBool(True)
+            self.false: OortBool = OortBool(False)
+
+    def activate(self) -> AbstractContextManager["Runtime"]:
+        """Make this runtime current for object construction and dispatch."""
+        return activate_runtime(self)
+
+
+def _install_operators(
+    type_obj: "OortType",
+    unary: dict[str, Callable] | None = None,
+    binary: dict[str, Callable] | None = None,
+):
+    """Install native operator implementations on a built-in type."""
+    for symbol, func in (unary or {}).items():
+        type_obj.operators[(symbol, 1)] = OortNativeFunction(func, name=f"operator {symbol}")
+    for symbol, func in (binary or {}).items():
+        type_obj.operators[(symbol, 2)] = OortNativeFunction(func, name=f"operator {symbol}")
+
+
+def _setup_native_operators(
+    t_object: "OortType",
+    t_null: "OortType",
+    t_bool: "OortType",
+    t_int: "OortType",
+    t_float: "OortType",
+    t_string: "OortType",
+    t_list: "OortType",
+    t_tuple: "OortType",
+    t_dict: "OortType",
+    t_set: "OortType",
+):
+    """Define built-in operators as methods, like user-defined ones.
+
+    Native operator functions receive Python values (`this.py_value` and the
+    operands' `py_value`), because `OortNativeMethod` unwraps them before the
+    call. Results are wrapped again by the interpreter.
+    """
+    comparisons = {
+        "==": operator.eq,
+        "<": operator.lt,
+        "<=": operator.le,
+        ">": operator.gt,
+        ">=": operator.ge,
+    }
+    # `!=` and `!in` are derived from `==` and `in` unless a type overrides
+    # them explicitly.
+
+    def _bool_eq(lhs, rhs):
+        # `False == 0` in Python; Oort keeps booleans and integers distinct.
+        return isinstance(lhs, bool) and isinstance(rhs, bool) and lhs == rhs
+
+    def _numeric_eq(lhs, rhs):
+        if isinstance(lhs, bool) or isinstance(rhs, bool):
+            return False
+        return lhs == rhs
+
+    def _numeric_binop(op):
+        def wrapped(lhs, rhs):
+            if isinstance(lhs, bool) or isinstance(rhs, bool):
+                raise TypeError("Bool values are not numbers")
+            return op(lhs, rhs)
+
+        return wrapped
+
+    def _numeric_cmp(op):
+        def wrapped(lhs, rhs):
+            if isinstance(lhs, bool) or isinstance(rhs, bool):
+                raise TypeError("Bool values are not ordered with numbers")
+            return op(lhs, rhs)
+
+        return wrapped
+
+    def _strict_equal(lhs, rhs):
+        if isinstance(lhs, bool) != isinstance(rhs, bool):
+            return False
+        return lhs == rhs
+
+    def _contains(container, item):
+        return any(_strict_equal(element, item) for element in container)
+
+    numeric_comparisons = {
+        "==": _numeric_eq,
+        "<": _numeric_cmp(operator.lt),
+        "<=": _numeric_cmp(operator.le),
+        ">": _numeric_cmp(operator.gt),
+        ">=": _numeric_cmp(operator.ge),
+    }
+
+    _install_operators(t_object, binary={"==": operator.eq})
+    _install_operators(t_null, binary={"==": operator.eq})
+    _install_operators(t_bool, binary={"==": _bool_eq})
+
+    _install_operators(
+        t_int,
+        unary={"+": operator.pos, "-": operator.neg, "~": operator.inv},
+        binary={
+            "+": _numeric_binop(operator.add),
+            "-": _numeric_binop(operator.sub),
+            "*": _numeric_binop(operator.mul),
+            "/": _numeric_binop(operator.truediv),
+            "//": _numeric_binop(operator.floordiv),
+            "%": _numeric_binop(operator.mod),
+            "**": _numeric_binop(operator.pow),
+            "<<": _numeric_binop(operator.lshift),
+            ">>": _numeric_binop(operator.rshift),
+            "&": _numeric_binop(operator.and_),
+            "|": _numeric_binop(operator.or_),
+            "^": _numeric_binop(operator.xor),
+            **numeric_comparisons,
+        },
+    )
+    _install_operators(
+        t_float,
+        unary={"+": operator.pos, "-": operator.neg},
+        binary={
+            "+": _numeric_binop(operator.add),
+            "-": _numeric_binop(operator.sub),
+            "*": _numeric_binop(operator.mul),
+            "/": _numeric_binop(operator.truediv),
+            "//": _numeric_binop(operator.floordiv),
+            "%": _numeric_binop(operator.mod),
+            "**": _numeric_binop(operator.pow),
+            **numeric_comparisons,
+        },
+    )
+    _install_operators(
+        t_string,
+        binary={
+            "+": operator.add,
+            "*": operator.mul,
+            "%": operator.mod,
+            "in": lambda text, part: part in text,
+            **comparisons,
+        },
+    )
+    for type_obj in (t_list, t_tuple):
+        _install_operators(
+            type_obj,
+            binary={
+                "+": operator.add,
+                "*": operator.mul,
+                "in": _contains,
+                **comparisons,
+            },
+        )
+    _install_operators(
+        t_dict,
+        binary={
+            # Keys are wrapped OortObjects, so Python's dict lookup is already
+            # Bool/Int-strict and stays O(1).
+            "in": lambda mapping, key: key in mapping,
+            **comparisons,
+        },
+    )
+    _install_operators(
+        t_set,
+        binary={
+            "&": operator.and_,
+            "|": operator.or_,
+            "^": operator.xor,
+            "-": operator.sub,
+            "in": _contains,
+            **comparisons,
+        },
+    )

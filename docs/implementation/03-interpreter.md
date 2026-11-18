@@ -1,6 +1,6 @@
 # 树遍历解释器
 
-当前唯一的执行后端是 `src/oort_lang/ast_interpreter/` 中的树遍历解释器，
+当前唯一的执行后端是 `src/oort_lang/runtime/` 中的树遍历解释器，
 入口参数 `-t eval`（默认）。
 
 选择树遍历而不是字节码，是为了先稳定**语义**：在语言特性仍然快速变化时，
@@ -72,7 +72,7 @@ print(fs[0](), fs[1]())   # 1 2
 
 ## 参数绑定
 
-`ast_interpreter/signature.py` 的 `Signature` 把 `FunctionDef.params` 分为
+`runtime/signature.py` 的 `Signature` 把 `FunctionDef.params` 分为
 位置限定、位置或关键字、`*args`、关键字限定、`**kwargs` 与 `&block` 六组。
 `visit_call` 先按源代码顺序求值所有实参（带 `keyword` / `BLOCK` 元数据），
 再由 `Signature.bind` 完成绑定：

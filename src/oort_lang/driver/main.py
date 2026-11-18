@@ -2,10 +2,10 @@
 
 import sys
 
-from oort_lang.support.arguments import get_main_parser, parse_main_args
-from oort_lang.support.logging_utils import setup_logging
-from oort_lang.top_level.compiler import Compiler, CompilerError
-from oort_lang.top_level.repl import run_repl
+from .arguments import get_main_parser, parse_main_args
+from .compiler import Compiler, CompilerError
+from .logging_utils import setup_logging
+from .repl import run_repl
 
 
 def main():

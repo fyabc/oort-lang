@@ -4,7 +4,7 @@
 
 import pytest
 
-from oort_lang.top_level.compiler import CompilerError
+from oort_lang.driver.compiler import CompilerError
 from tests.helpers import get_compiler
 
 

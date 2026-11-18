@@ -5,7 +5,7 @@
 import pytest
 from rich.console import Console
 
-from oort_lang.top_level.repl import run_repl
+from oort_lang.driver.repl import run_repl
 from tests.helpers import get_compiler
 
 

@@ -55,7 +55,7 @@ Repository = "https://github.com/fyabc/oort-lang.py"
 Issues = "https://github.com/fyabc/oort-lang.py/issues"
 
 [project.scripts]
-oort = "oort_lang.entries.main:main"
+oort = "oort_lang.driver.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/oort_lang"]
@@ -76,7 +76,7 @@ branch = true
 omit = [
     "*/tests/*",
     "*/benchmarks/*",
-    "src/oort_lang/grammar/*",  # ANTLR-generated code
+    "src/oort_lang/parser/grammar/*",  # ANTLR-generated code
 ]
 
 [tool.coverage.report]
@@ -93,7 +93,7 @@ exclude_lines = [
 target-version = "py311"
 line-length = 100
 # ANTLR-generated parser files are not hand-maintained.
-extend-exclude = ["src/oort_lang/grammar"]
+extend-exclude = ["src/oort_lang/parser/grammar"]
 
 [tool.ruff.lint]
 select = [
@@ -149,7 +149,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "ARG", "PLR2004"]
 "benchmarks/**/*.py" = ["S101", "ARG"]
-"src/oort_lang/grammar/*.py" = ["ALL"]  # Generated code
+"src/oort_lang/parser/grammar/*.py" = ["ALL"]  # Generated code
 "**/__init__.py" = ["F401"]  # Re-exports in __init__.py
 
 [tool.ruff.lint.isort]
@@ -165,7 +165,7 @@ line-ending = "auto"
 python_version = "3.11"
 # ANTLR-generated parser/lexer code is not hand-maintained and is not
 # type-checkable as generated.
-exclude = "^src/oort_lang/grammar/"
+exclude = "^src/oort_lang/parser/grammar/"
 check_untyped_defs = true
 no_implicit_optional = true
 strict_optional = true
@@ -181,3 +181,19 @@ follow_imports = "normal"
 [[tool.mypy.overrides]]
 module = "antlr4.*"
 ignore_missing_imports = true
+
+[tool.importlinter]
+root_package = "oort_lang"
+
+[[tool.importlinter.contracts]]
+name = "Layered architecture"
+type = "layers"
+layers = [
+    "oort_lang.driver",
+    "oort_lang.runtime | oort_lang.semantics",
+    "oort_lang.parser",
+    "oort_lang.ast | oort_lang.diagnostics",
+    "oort_lang.source",
+]
+# Annotation-only import for the cached call signature.
+ignore_imports = ["oort_lang.ast.nodes.function_def -> oort_lang.runtime.signature"]

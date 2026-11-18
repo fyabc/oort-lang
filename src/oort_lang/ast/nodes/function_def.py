@@ -5,14 +5,14 @@ from typing import TYPE_CHECKING
 
 from antlr4 import ParserRuleContext
 
-from ...support.source_position import SourcePosition
+from ...source.source_position import SourcePosition
 from ..ast_visitor import ASTVisitor
 from .base import ASTNode
 from .declarations import Parameter, TypeParameter
 from .expressions import BlockExpr, StmtExpr
 
 if TYPE_CHECKING:
-    from ...ast_interpreter.signature import Signature
+    from ...runtime.signature import Signature
 
 _OPERATOR_NAME_PREFIX = "operator "
 

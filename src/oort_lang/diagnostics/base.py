@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-from ..support.source_position import SourcePosition
+from ..source.source_position import SourcePosition
 
 
 class OortException(Exception):

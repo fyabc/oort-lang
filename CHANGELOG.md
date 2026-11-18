@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The package is reorganized into `source/`, `diagnostics/`, `ast/`,
+  `parser/`, `semantics/`, `runtime/` and `driver/` layers. `objects.py`,
+  `ast_builder.py` and `pass1.py` are split by responsibility, and an
+  import-linter contract keeps the layer boundaries enforced.
 - Name resolution now attaches a typed `Binding` (scope depth plus slot
   index) to AST name nodes instead of writing untyped `metadata` keys; scope
   layouts are shared with the future slot/upvalue backend.

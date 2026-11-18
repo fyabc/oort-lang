@@ -4,7 +4,7 @@
 
 import pytest
 
-from oort_lang.frontend.dialect import (
+from oort_lang.parser.dialect import (
     DEFAULT_DIALECT,
     OORT_CORE,
     OORT_OBJECT,
@@ -12,7 +12,7 @@ from oort_lang.frontend.dialect import (
     lookup_dialect,
     parse_lang_directive,
 )
-from oort_lang.frontend.operator_defs import Arity
+from oort_lang.parser.operator_defs import Arity
 from tests.helpers import get_compiler
 
 

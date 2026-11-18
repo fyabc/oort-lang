@@ -1,8 +1,8 @@
 #! /usr/bin/env python
 
 
-from ..ast.ast_visitor import ASTVisitor
-from ..ast.nodes import ASTNode
+from .ast_visitor import ASTVisitor
+from .nodes import ASTNode
 
 
 def _name_line(node: ASTNode) -> str:

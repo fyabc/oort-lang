@@ -1,55 +1,24 @@
 #! /usr/bin/env python
 
-from enum import Enum
 from typing import TypeVar
 
 from ..ast import nodes
 from ..ast.ast_visitor import ASTVisitor
-from ..ast.binding import Binding
-from ..ast.nodes.declarations import ParameterKind
-from ..exceptions import OortSyntaxError
-from ..exceptions.runtime_errors import OortNameError
-from ..exceptions.syntax_errors import UnsupportedSyntax
-from ..frontend.dialect import DEFAULT_DIALECT, DialectConfig
-from ..frontend.error_handler import CompilerErrorHandler
-from ..frontend.names import anonymous_param_index
-from ..frontend.operator_defs import validate_operator_definition
-from ..frontend.scope import ScopeLayout
-from ..support.input_info import InputInfo
-from ..support.source_position import SourcePosition
+from ..diagnostics import OortSyntaxError
+from ..diagnostics.error_handler import CompilerErrorHandler
+from ..diagnostics.runtime_errors import OortNameError
+from ..diagnostics.syntax_errors import UnsupportedSyntax
+from ..parser.dialect import DEFAULT_DIALECT, DialectConfig
+from ..parser.names import anonymous_param_index
+from ..source.input_info import InputInfo
+from .decl import OutsideDeclType
+from .functions import FunctionResolverMixin
+from .resolution import ScopeResolverMixin
 
 T = TypeVar("T")
 
 
-class OutsideDeclType(Enum):
-    """Current outside declaration type."""
-
-    NONE = 0  # global
-    FUNCTION = 1  # free function
-    CLASS = 2  # class
-    METHOD = 3  # method
-    METHOD_INIT = 4  # initializer
-    CLASS_METHOD = 5  # static method
-
-    @property
-    def is_function(self) -> bool:
-        return self in [
-            OutsideDeclType.FUNCTION,
-            OutsideDeclType.METHOD,
-            OutsideDeclType.METHOD_INIT,
-            OutsideDeclType.CLASS_METHOD,
-        ]
-
-    @property
-    def is_method(self) -> bool:
-        return self in [
-            OutsideDeclType.METHOD,
-            OutsideDeclType.METHOD_INIT,
-            OutsideDeclType.CLASS_METHOD,
-        ]
-
-
-class Pass1Analyzer(ASTVisitor[T]):
+class Pass1Analyzer(ScopeResolverMixin, FunctionResolverMixin, ASTVisitor[T]):
     """Pass-1 semantic analyzer.
 
     Including:
@@ -71,7 +40,7 @@ class Pass1Analyzer(ASTVisitor[T]):
         self.dialect = dialect
 
         # All scopes (except <global>)
-        self.scopes: list[ScopeLayout] = []
+        self.scopes = []
 
         self._current_decl = OutsideDeclType.NONE
         self._current_func: nodes.FunctionDef | None = None
@@ -258,63 +227,6 @@ class Pass1Analyzer(ASTVisitor[T]):
                 self.input_info,
             )
 
-    def visit_function_def(self, node: nodes.FunctionDef) -> T | None:
-        if node.type_params:
-            self._unsupported("Generic functions are not implemented yet.", node)
-        if node.is_class_method and self._current_decl != OutsideDeclType.CLASS:
-            self._unsupported("Class methods must be defined inside a class.", node)
-            return None
-        if (
-            len(node.names) > 1
-            and not node.is_class_method
-            and self._current_decl != OutsideDeclType.CLASS
-        ):
-            self._unsupported("Extension methods are not implemented yet.", node)
-            return None
-        if node.is_operator:
-            self._check_operator_definition(node)
-
-        if not node.is_lambda:
-            # TODO: Allow function redefinition in local scopes to support overloading.
-            self.declare(self._declaration_name(node), node.name_position)
-            self.define(self._declaration_name(node))  # Define eagerly for recursion.
-        self.resolve_function(node)
-
-    @staticmethod
-    def _declaration_name(node: nodes.FunctionDef) -> str:
-        """Name used for duplicate checks; operator arities may coexist."""
-        if node.is_operator:
-            return f"{node.name}#{node.operator_operand_count}"
-        return node.name
-
-    def _check_operator_definition(self, node: nodes.FunctionDef):
-        if self._current_decl != OutsideDeclType.CLASS:
-            self._unsupported("Operator methods must be defined inside a class.", node)
-            return
-        if node.is_class_method:
-            self._unsupported("Class operator methods are not supported yet.", node)
-            return
-
-        assert node.operator_symbol is not None
-        assert node.operator_operand_count is not None
-        message = validate_operator_definition(node.operator_symbol, node.operator_operand_count)
-        if message is not None:
-            self.error_handler.add(
-                OortSyntaxError(message, node.name_position),
-                self.input_info,
-            )
-
-        for param in node.params:
-            if param.default_value is not None or param.kind not in (
-                ParameterKind.DEFAULT,
-                ParameterKind.POS_ONLY,
-            ):
-                self._unsupported(
-                    "Operator methods cannot use default, variadic, keyword-only "
-                    "or block parameters.",
-                    param,
-                )
-
     def visit_for_expr(self, node: nodes.ForExpr) -> T | None:
         node.iterator.accept(self)
 
@@ -367,127 +279,3 @@ class Pass1Analyzer(ASTVisitor[T]):
                 OortNameError("Can't access 'this' outside method.", node.position),
                 self.input_info,
             )
-
-    def begin_scope(self):
-        self.scopes.append(ScopeLayout())
-
-    def end_scope(self):
-        self.scopes.pop()
-
-    def declare(self, name: str, position: SourcePosition):
-        if anonymous_param_index(name) is not None:
-            self.error_handler.add(
-                OortNameError("Anonymous parameter names cannot be declared explicitly.", position),
-                self.input_info,
-            )
-        if not self.scopes:
-            return
-        scope = self.scopes[-1]
-        if name in scope:
-            self.error_handler.add(
-                OortNameError(f"Variable {name} is already defined.", position),
-                self.input_info,
-            )
-        scope.put(name)
-
-    def _declare_anonymous(self, name: str):
-        """Declare a synthesized `$0`, `$1`, ... parameter (bypasses the check)."""
-        if not self.scopes:
-            return
-        self.scopes[-1].put(name)
-
-    def define(self, name: str):
-        if not self.scopes:
-            return
-        self.scopes[-1].set_ready(name)
-
-    def resolve_local(self, node: nodes.ASTNode, name: str) -> Binding:
-        """Resolve a name and attach its typed binding to the AST node."""
-        for depth, scope in enumerate(reversed(self.scopes)):
-            binding = scope.resolve(name, depth)
-            if binding is not None:
-                node.binding = binding
-                return binding
-        binding = Binding.global_binding(name)
-        node.binding = binding
-        return binding
-
-    def _check_default_later_refs(
-        self, node: nodes.ASTNode, later_names: set[str], param_name: str
-    ):
-        """Reject default expressions that reference parameters declared later."""
-        if isinstance(node, (nodes.FunctionDef, nodes.ClassDef)):
-            return
-        if isinstance(node, nodes.Name) and node.id in later_names:
-            self.error_handler.add(
-                OortSyntaxError(
-                    f"Default value of {param_name!r} cannot reference later "
-                    f"parameter {node.id!r}.",
-                    node.position,
-                ),
-                self.input_info,
-            )
-        for _, child in node.named_children():
-            if child is not None:
-                self._check_default_later_refs(child, later_names, param_name)
-
-    def resolve_function(self, node: nodes.FunctionDef):
-        prev_func = self._current_func
-        self._current_func = node
-        prev_decl = self._current_decl
-        # A function boundary also ends any enclosing loop for break/continue.
-        prev_loop = self._current_loop
-        self._current_loop = None
-        if self._current_decl == OutsideDeclType.CLASS:
-            # Check method names.
-            if len(node.names) > 1:
-                if node.is_class_method:
-                    self._current_decl = OutsideDeclType.CLASS_METHOD
-                else:
-                    self.error_handler.add(
-                        OortSyntaxError(
-                            "Cannot define extension method in class scope.", node.name_position
-                        ),
-                        self.input_info,
-                    )
-                    self._current_decl = OutsideDeclType.METHOD
-            elif node.is_lambda:
-                # lambda inside class will be treated as normal function.
-                pass
-            elif node.name == "__init__":
-                self._current_decl = OutsideDeclType.METHOD_INIT
-            else:
-                self._current_decl = OutsideDeclType.METHOD
-        else:
-            self._current_decl = OutsideDeclType.FUNCTION
-
-        self.begin_scope()
-        # Anonymous parameters are synthesized by the AST builder and are not
-        # user declarations, so they bypass the explicit-name check.
-        for index in range(node.anonymous_count):
-            name = f"${index}"
-            self._declare_anonymous(name)
-            self.define(name)
-        for index, param in enumerate(node.params):
-            # Default values of later parameters can use previous parameters. e.g. `def f(a, b=a) {}`
-            self.declare(param.name, node.position)
-            if param.default_value:
-                later_names = {item.name for item in node.params[index + 1 :]}
-                if later_names:
-                    self._check_default_later_refs(param.default_value, later_names, param.name)
-                param.default_value.accept(self)
-            self.define(param.name)
-
-        # special variables in methods.
-        if self._current_decl.is_method:
-            self.declare("this", node.position)
-            self.define("this")
-
-        # visit body will create another new scope, so we visit its statements directly.
-        for stmt in node.body.statements:
-            stmt.accept(self)
-        self.end_scope()
-
-        self._current_func = prev_func
-        self._current_decl = prev_decl
-        self._current_loop = prev_loop

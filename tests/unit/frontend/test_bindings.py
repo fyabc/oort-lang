@@ -6,7 +6,7 @@ import pytest
 
 from oort_lang.ast import nodes
 from oort_lang.ast.binding import Binding
-from oort_lang.frontend.scope import ScopeLayout
+from oort_lang.semantics.scope import ScopeLayout
 from tests.helpers import build_ast
 
 

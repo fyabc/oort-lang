@@ -42,7 +42,7 @@ EOF、错误恢复行为可预测。
 
 ### 2. REPL 依赖 ANTLR 内部字段
 
-`top_level/repl.py` 目前：
+`driver/repl.py` 目前：
 
 - 复用同一个 lexer/parser，通过修改 `lexer.inputStream`、`lexer.line` 来喂新行；
 - 调用 `token_stream.fill()` 后手动 `tokens.pop()`、重置 `fetchedEOF`；
@@ -67,7 +67,7 @@ EOF、错误恢复行为可预测。
 
 ### 2. 词法后处理层
 
-新增 `frontend/token_processor.py`（名称可调整），对 token 序列做纯函数处理：
+新增 `parser/token_processor.py`（名称可调整），对 token 序列做纯函数处理：
 
 ```
 源码 → OortLexer → list[Token] → NewlineFilter → parser token stream

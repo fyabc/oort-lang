@@ -6,21 +6,38 @@ from collections.abc import Iterable
 
 from ..ast import nodes
 from ..ast.ast_visitor import ASTVisitor
-from ..exceptions import OortException, OortSyntaxError, UnsupportedSyntax
-from ..exceptions.runtime_errors import (
+from ..diagnostics import OortException, OortSyntaxError, UnsupportedSyntax
+from ..diagnostics.error_handler import CompilerErrorHandler
+from ..diagnostics.runtime_errors import (
     OortAttributeError,
     OortNameError,
     OortRuntimeError,
     OortTypeError,
 )
-from ..frontend.error_handler import CompilerErrorHandler
-from ..support.source_position import SourcePosition
+from ..source.source_position import SourcePosition
 from .builtins import setup_builtins
 from .call_args import ArgumentBindingError, EvaluatedArgument
 from .control_flow_exceptions import OortBreak, OortContinue, OortReturn
+from .dispatch import _get_operator_from_cls, find_callable_class_member
 from .environment import AssignResult, DefineResult, Entry, Environment
-from .objects import *
-from .objects import OortInstance, _get_operator_from_cls, find_callable_class_member
+from .functions import OortFunction, OortMethod, OortNativeFunction, OortNativeMethod
+from .objects import (
+    OortBool,
+    OortDict,
+    OortFloat,
+    OortInstance,
+    OortInt,
+    OortList,
+    OortNull,
+    OortObject,
+    OortSet,
+    OortSlice,
+    OortString,
+    OortSuperProxy,
+    OortTuple,
+    wrap_value,
+)
+from .type_system import OortType, Runtime
 
 _AUG_OPS = {
     "+=": "+",

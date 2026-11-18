@@ -7,11 +7,12 @@ from typing import Any, NoReturn
 
 from antlr4 import CommonTokenStream
 
-from ..ast_interpreter.ast_interpreter import ASTInterpreter
-from ..exceptions import OortException, OortSyntaxError
-from ..frontend.ast_builder import ASTBuilder, ASTNode
-from ..frontend.ast_printer import ASTPrinter
-from ..frontend.dialect import (
+from ..ast.printer import ASTPrinter
+from ..diagnostics import OortException, OortSyntaxError
+from ..diagnostics.error_handler import CompilerErrorHandler
+from ..diagnostics.error_listener import OortErrorListener
+from ..parser.ast_builder import ASTBuilder, ASTNode
+from ..parser.dialect import (
     DEFAULT_DIALECT,
     DialectConfig,
     LangDirective,
@@ -19,13 +20,12 @@ from ..frontend.dialect import (
     lookup_dialect,
     parse_lang_directive,
 )
-from ..frontend.error_handler import CompilerErrorHandler
-from ..frontend.error_listener import OortErrorListener
-from ..frontend.pass1 import Pass1Analyzer
-from ..grammar.OortLexer import OortLexer
-from ..grammar.OortParser import OortParser
-from ..support.input_info import FileInputInfo, InputInfo, StringInputInfo
-from ..support.source_position import SourcePosition
+from ..parser.grammar.OortLexer import OortLexer
+from ..parser.grammar.OortParser import OortParser
+from ..runtime.interpreter import ASTInterpreter
+from ..semantics.pass1 import Pass1Analyzer
+from ..source.input_info import FileInputInfo, InputInfo, StringInputInfo
+from ..source.source_position import SourcePosition
 
 
 class CompilerError(Exception):

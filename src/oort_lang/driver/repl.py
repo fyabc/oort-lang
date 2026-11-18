@@ -4,13 +4,13 @@ from antlr4 import CommonTokenStream, InputStream
 from rich.console import Console
 
 from .. import __version__
-from ..ast_interpreter.ast_interpreter import ASTInterpreter
-from ..exceptions import OortException
-from ..frontend.error_listener import OortErrorListener
-from ..frontend.pass1 import Pass1Analyzer
-from ..grammar.OortLexer import OortLexer
-from ..grammar.OortParser import OortParser
-from ..support.input_info import ReplInputInfo
+from ..diagnostics import OortException
+from ..diagnostics.error_listener import OortErrorListener
+from ..parser.grammar.OortLexer import OortLexer
+from ..parser.grammar.OortParser import OortParser
+from ..runtime.interpreter import ASTInterpreter
+from ..semantics.pass1 import Pass1Analyzer
+from ..source.input_info import ReplInputInfo
 from .compiler import Compiler
 
 

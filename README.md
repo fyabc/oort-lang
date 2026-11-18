@@ -135,13 +135,14 @@ python scripts/build_grammar.py
 
 ```
 src/oort_lang/
-├── grammar/          # ANTLR 生成的词法/语法分析器（勿手改）
-├── ast/              # AST 节点与 visitor
-├── frontend/         # AST 构建（Pratt）、语义分析、错误报告
-├── ast_interpreter/  # 树遍历解释器、对象模型、内建
-├── top_level/        # 编译器入口与 REPL
-├── support/          # 参数、源码位置、日志
-└── exceptions/
+├── source/           # 源文本、位置与输入抽象
+├── diagnostics/      # 异常、错误报告与 ANTLR 错误监听
+├── ast/              # AST 节点、visitor、Binding 与打印器
+├── parser/           # 语法、Pratt 解析器与 AST 构建
+│   └── grammar/      # ANTLR 生成的词法/语法分析器（勿手改）
+├── semantics/        # 名字解析与语义检查
+├── runtime/          # 树遍历解释器、对象模型、内建
+└── driver/           # 编译器、REPL 与命令行入口
 grammars/Oort.g4      # 语法定义
 tests/                # 单元测试与集成测试
 examples/             # 示例程序

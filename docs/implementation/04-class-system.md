@@ -1,7 +1,8 @@
 # 类系统实现
 
 Oort 的类系统主要来自 Smalltalk / Python：类也是对象，类由元类实例化，
-支持多重继承与 C3 线性化。实现位于 `ast_interpreter/objects.py`。
+支持多重继承与 C3 线性化。类型对象实现位于 `runtime/type_system.py`，
+值对象与属性查找位于 `runtime/objects.py` / `runtime/dispatch.py`。
 
 ## 类作用域
 

@@ -7,7 +7,9 @@ import time
 from collections.abc import Callable
 
 from .environment import Environment
-from .objects import *
+from .functions import OortNativeFunction
+from .objects import OortSuperProxy
+from .type_system import OortType, Runtime
 
 
 def _define_native_function(env: Environment, name: str, func: Callable, **kwargs):

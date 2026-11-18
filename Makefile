@@ -1,4 +1,4 @@
-.PHONY: help install dev test benchmark lint format format-check type-check clean build-grammar check
+.PHONY: help install dev test benchmark lint format format-check type-check imports clean build-grammar check
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -27,6 +27,9 @@ format-check: ## Check formatting without modifying files
 type-check: ## Run type checking
 	uv run mypy src/
 
+imports: ## Check module import boundaries
+	uv run --with "import-linter>=2" lint-imports
+
 clean: ## Clean build artifacts
 	rm -rf build/
 	rm -rf dist/
@@ -41,4 +44,4 @@ clean: ## Clean build artifacts
 build-grammar: ## Rebuild grammar files
 	uv run python scripts/build_grammar.py
 
-check: lint format-check type-check test ## Run all checks (non-mutating)
+check: lint format-check type-check imports test ## Run all checks (non-mutating)

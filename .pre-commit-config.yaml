@@ -3,9 +3,9 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: ^src/oort_lang/grammar/
+        exclude: ^src/oort_lang/parser/grammar/
       - id: end-of-file-fixer
-        exclude: ^src/oort_lang/grammar/
+        exclude: ^src/oort_lang/parser/grammar/
       - id: check-yaml
       - id: check-added-large-files
       - id: check-merge-conflict
@@ -16,9 +16,9 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
-        exclude: ^(docs/|examples/|src/oort_lang/grammar/)
+        exclude: ^(docs/|examples/|src/oort_lang/parser/grammar/)
       - id: ruff-format
-        exclude: ^(docs/|examples/|src/oort_lang/grammar/)
+        exclude: ^(docs/|examples/|src/oort_lang/parser/grammar/)
 
   - repo: local
     hooks:

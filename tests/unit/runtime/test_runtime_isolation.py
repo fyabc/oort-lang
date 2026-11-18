@@ -2,17 +2,11 @@
 
 """Each interpreter owns an isolated type system and runtime singletons."""
 
-from oort_lang.ast_interpreter.ast_interpreter import ASTInterpreter
-from oort_lang.ast_interpreter.objects import (
-    OortBool,
-    OortInt,
-    OortNull,
-    Runtime,
-    get_runtime,
-)
-from oort_lang.frontend.pass1 import Pass1Analyzer
-from oort_lang.support.input_info import StringInputInfo
-from oort_lang.top_level.compiler import Compiler
+from oort_lang.driver.compiler import Compiler
+from oort_lang.runtime import OortBool, OortInt, OortNull, Runtime, get_runtime
+from oort_lang.runtime.interpreter import ASTInterpreter
+from oort_lang.semantics.pass1 import Pass1Analyzer
+from oort_lang.source.input_info import StringInputInfo
 from tests.helpers import get_compiler
 
 

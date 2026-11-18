@@ -5,10 +5,10 @@
 from pathlib import Path
 
 from oort_lang.ast.nodes import ASTNode
-from oort_lang.frontend.pass1 import Pass1Analyzer
-from oort_lang.support.arguments import get_main_parser, parse_main_args
-from oort_lang.support.input_info import StringInputInfo
-from oort_lang.top_level.compiler import Compiler
+from oort_lang.driver.arguments import get_main_parser, parse_main_args
+from oort_lang.driver.compiler import Compiler
+from oort_lang.semantics.pass1 import Pass1Analyzer
+from oort_lang.source.input_info import StringInputInfo
 
 TEST_ASSETS_DIR = Path(__file__).parent / "assets"
 REPO_ROOT = Path(__file__).parent.parent

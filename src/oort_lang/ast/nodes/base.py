@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from antlr4 import ParserRuleContext, Token
 
-from ...support.source_position import SourcePosition
+from ...source.source_position import SourcePosition
 from ..ast_visitor import ASTVisitor, T
 
 if TYPE_CHECKING:

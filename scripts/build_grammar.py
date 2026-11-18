@@ -11,7 +11,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).absolute().parent.parent
 GRAMMAR_FILE_DIR = PROJECT_ROOT / "grammars"
 GRAMMAR_FILENAME = GRAMMAR_FILE_DIR / "Oort.g4"
-GENERATED_DIR = PROJECT_ROOT / "src" / "oort_lang" / "grammar"
+GENERATED_DIR = PROJECT_ROOT / "src" / "oort_lang" / "parser" / "grammar"
 
 _JAVA_EXECUTABLES = ("java.exe", "java")
 

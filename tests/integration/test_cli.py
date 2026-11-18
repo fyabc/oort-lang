@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from oort_lang.entries.main import main
+from oort_lang.driver.main import main
 
 
 def _run_cli(monkeypatch, argv: list[str]) -> int:

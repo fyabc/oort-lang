@@ -50,5 +50,8 @@ jobs:
       - name: Type check
         run: uv run --frozen mypy src/
 
+      - name: Import boundaries
+        run: uv run --frozen --with "import-linter>=2" lint-imports
+
       - name: Test
         run: uv run --frozen pytest tests/ --cov=src/oort_lang --cov-report=term-missing --cov-fail-under=87
