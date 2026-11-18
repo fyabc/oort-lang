@@ -6,8 +6,9 @@ tests/
 ├── helpers.py           # get_compiler、示例/资产路径
 ├── assets/              # 固定的 .ort 源文件与期望 AST
 ├── unit/
-│   ├── frontend/        # 词法、解析、AST、语义分析、拒绝清单
-│   └── runtime/         # 解释器：基础语句、控制流、函数、类、容器、内建
+│   ├── frontend/        # 词法、解析、AST、语义分析、Binding、拒绝清单
+│   └── runtime/         # 解释器：基础语句、控制流、函数、类、容器、内建、参数绑定
+├── property/            # hypothesis 属性测试（CI 用 --with hypothesis）
 └── integration/         # CLI 端到端、全部示例程序
 ```
 
@@ -61,11 +62,15 @@ REPL 按层次测试，不依赖手动输入：
 | 解析与优先级 | `unit/frontend/test_parser.py` |
 | AST 打印 | `unit/frontend/test_ast.py` |
 | 名称解析/作用域 | `unit/frontend/test_semantic.py` |
+| 类型化 Binding / 作用域布局 | `unit/frontend/test_bindings.py` |
 | 未实现特性诊断 | `unit/frontend/test_unsupported.py` |
 | 基础语句/增强赋值 | `unit/runtime/test_basic.py` |
 | 控制流 | `unit/runtime/test_control_flow.py` |
 | 声明与解包 | `unit/runtime/test_declarations.py` |
 | 函数与闭包 | `unit/runtime/test_functions.py` |
+| 匿名 lambda 参数 | `unit/runtime/test_anonymous_params.py` |
+| 默认值/关键字/变长/块参数 | `unit/runtime/test_parameter_binding.py` |
+| 解释器运行时隔离 | `unit/runtime/test_runtime_isolation.py` |
 | 类与继承 | `unit/runtime/test_classes.py` |
 | 运算符重载 | `unit/runtime/test_operators.py` |
 | 容器与切片 | `unit/runtime/test_collections.py` |
@@ -73,3 +78,4 @@ REPL 按层次测试，不依赖手动输入：
 | CLI | `integration/test_cli.py` |
 | REPL | `integration/test_repl.py` |
 | 示例程序 | `integration/test_examples.py` |
+| 属性测试 | `property/test_properties.py`（`uv run --with hypothesis pytest tests/property`） |

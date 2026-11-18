@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Quality infrastructure now includes bandit, pip-audit, deptry, vulture,
+  hypothesis property tests, markdown/actionlint checks and a wheel/sdist
+  installation smoke test in CI.
 - Benchmark infrastructure now covers micro operations, macro workloads,
   startup, memory ceilings and historical Fibonacci, with a CI history
   workflow and profiling instructions.

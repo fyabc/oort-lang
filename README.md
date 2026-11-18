@@ -20,7 +20,7 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 
 开发以**方言垂直切片**为主轴：先完成 `oort-object` 动态方言的 v1，再以薄探针
 验证并实现 `oort-core`；共享字节码后端在两个方言 v1 之后。详见
-[开发计划](docs/DEVELOPMENT_PLAN.md) 与 [OP 0001 §5](docs/proposals/0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受)。
+[路线图](docs/roadmap.md) 与 [OP 0001 §5](docs/proposals/0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受)。
 
 ### 已实现
 
@@ -58,7 +58,7 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 - [提案系统](docs/proposals/README.md) — 语言演进流程
 - [实现笔记](docs/implementation/index.md)
 - [设计知识库](docs/design/00-INDEX.md)
-- [开发计划](docs/DEVELOPMENT_PLAN.md)
+- [路线图](docs/roadmap.md)
 
 ## 安装与使用
 

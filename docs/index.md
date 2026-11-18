@@ -41,7 +41,7 @@ Oort 的语言变更采用类 PEP/RFC 流程：
 
 - [实现笔记](implementation/index.md) — 语法、解析器、解释器、类系统
 - [设计知识库](design/00-INDEX.md) — 调研与备选方案（非规范）
-- [开发计划](DEVELOPMENT_PLAN.md) — 里程碑与当前状态
+- [路线图](roadmap.md) — 里程碑与当前状态
 
 ## 开发
 
