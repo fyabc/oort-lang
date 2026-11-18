@@ -79,6 +79,13 @@ target/
 # Some local files.
 /private
 
+# Benchmark / profile artifacts.
+/benchmark.json
+/baseline.json
+/current.json
+/profile.svg
+/memory.bin
+
 # Modern Python tooling
 .venv/
 .mypy_cache/

@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Benchmark infrastructure now covers micro operations, macro workloads,
+  startup, memory ceilings and historical Fibonacci, with a CI history
+  workflow and profiling instructions.
 - The package is reorganized into `source/`, `diagnostics/`, `ast/`,
   `parser/`, `semantics/`, `runtime/` and `driver/` layers. `objects.py`,
   `ast_builder.py` and `pass1.py` are split by responsibility, and an

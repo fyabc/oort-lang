@@ -48,21 +48,32 @@
 
 ## 4. 当前基准测试
 
-项目当前有 2 个基准测试（`benchmarks/`）：
+`benchmarks/` 使用 pytest-benchmark 覆盖微基准、宏基准、启动与内存：
 
-```python
-# test_recursion: Fibonacci 递归计算
-test_recursion[10-55]     # fib(10) = 55
-test_recursion[20-6765]   # fib(20) = 6765
-```
+| 文件 | 覆盖 |
+|------|------|
+| `test_micro.py` | 算术、局部变量、函数调用、属性、下标、字典 |
+| `test_macro.py` | 递归、循环、方法分派 |
+| `test_startup.py` | 编译器/运行时构造、空程序 |
+| `test_memory.py` | Runtime 与程序的峰值内存上限 |
+| `test_ast_interpreter.py` | 历史 Fibonacci 基线 |
+
+微/宏基准由 `bench_utils.compile_program` 先完成解析、语义分析和解释器
+构造，基准函数只测 `interpreter.run(ast)`；编译开销由启动/空程序基准单独
+度量，避免把解析时间混入每次操作。
+
+回归跟踪由 `.github/workflows/benchmark.yml` 在 `main` 上写入历史，并在
+较基线回退 150% 时告警。运行方式、基线与 profiling 工具
+（py-spy / Scalene / Memray）见 [`benchmarks/README.md`](../../benchmarks/README.md)。
 
 ### 扩展计划
 
-- [ ] 添加闭包创建/调用基准
-- [ ] 添加类实例化基准
-- [ ] 添加属性查找基准
-- [ ] 添加控制流基准 (循环、分支)
+- [x] 添加闭包创建/调用基准
+- [x] 添加类实例化基准
+- [x] 添加属性查找基准
+- [x] 添加控制流基准 (循环、分支)
 - [ ] 添加跨语言对比基准 (与 Python/Lua/Ruby)
+- [ ] 增加 CI 中的机器可读阈值（当前为历史告警）
 
 ## 5. 实现语言选择
 

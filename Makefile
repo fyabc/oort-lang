@@ -1,4 +1,4 @@
-.PHONY: help install dev test benchmark lint format format-check type-check imports clean build-grammar check
+.PHONY: help install dev test benchmark benchmark-json lint format format-check type-check imports clean build-grammar check
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -14,6 +14,9 @@ test: ## Run tests
 
 benchmark: ## Run benchmarks
 	uv run pytest benchmarks/ -v
+
+benchmark-json: ## Run benchmarks and write benchmark.json
+	uv run pytest benchmarks/ --benchmark-json=benchmark.json -q
 
 lint: ## Run linters
 	uv run ruff check src/ tests/ benchmarks/ scripts/
