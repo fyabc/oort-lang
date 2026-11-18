@@ -169,6 +169,7 @@ class Signature:
                 if param.name in provided:
                     value = provided[param.name]
                 else:
+                    assert param.default_value is not None
                     previous_env = interpreter.env
                     try:
                         interpreter.env = env

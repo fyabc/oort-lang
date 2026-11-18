@@ -74,13 +74,16 @@ class ASTInterpreter(ASTVisitor[OortObject]):
 
     def visit_module(self, node: nodes.ModuleNode) -> OortObject:
         # Skip extra scope for `body`.
-        return self.visit_children(node.body)
+        result = self.visit_children(node.body)
+        return OortNull.get_null_value() if result is None else result
 
     def visit_block_expr(self, node: nodes.BlockExpr) -> OortObject:
         block_env = Environment(outer=self.env, name="<block>")
         return self.run_block(node.statements, block_env)
 
     def visit_var_decl(self, node: nodes.VarDecl) -> OortObject:
+        if node.init_value is None:
+            raise OortSyntaxError("Variable declaration requires an initializer", node.position)
         init_value = node.init_value.accept(self)
 
         targets = node.decl_targets
@@ -378,17 +381,18 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                 raise OortTypeError(f"{base.type.name!r} object is not a class", base_node.position)
             bases.append(base)
 
-        metaclass = None
+        metaclass: OortType | None = None
         if node.meta is not None:
-            metaclass = node.meta.accept(self)
-            if not isinstance(metaclass, OortType):
+            metaclass_value = node.meta.accept(self)
+            if not isinstance(metaclass_value, OortType):
                 raise OortTypeError(
-                    f"{metaclass.type.name!r} object is not a class", node.meta.position
+                    f"{metaclass_value.type.name!r} object is not a class", node.meta.position
                 )
-            if not metaclass.is_metaclass:
+            if not metaclass_value.is_metaclass:
                 raise OortTypeError(
-                    f"{metaclass.type.name!r} object is not a metaclass", node.meta.position
+                    f"{metaclass_value.type.name!r} object is not a metaclass", node.meta.position
                 )
+            metaclass = metaclass_value
 
         # Define class name (visible in class body).
         try:
@@ -527,15 +531,19 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         )
 
     def visit_int_constant(self, node: nodes.IntConstant) -> OortInt:
+        assert isinstance(node.value, int)
         return OortInt(node.value)
 
     def visit_float_constant(self, node: nodes.FloatConstant) -> OortFloat:
+        assert isinstance(node.value, float)
         return OortFloat(node.value)
 
     def visit_string_constant(self, node: nodes.StringConstant) -> OortString:
+        assert isinstance(node.value, str)
         return OortString(node.value)
 
     def visit_boolean_constant(self, node: nodes.BooleanConstant) -> OortBool:
+        assert isinstance(node.value, bool)
         return OortBool.get_bool_value(node.value)
 
     def visit_null_constant(self, node: nodes.NullConstant) -> OortNull:

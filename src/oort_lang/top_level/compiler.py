@@ -58,7 +58,9 @@ class Compiler:
             return None
 
         # Semantic analysis.
-        pass1_analyzer = Pass1Analyzer(self.error_handler, input_info, dialect=dialect)
+        pass1_analyzer: Pass1Analyzer = Pass1Analyzer(
+            self.error_handler, input_info, dialect=dialect
+        )
         ast = self.semantic_analyze(ast, pass1_analyzer)
         if not ast:
             raise CompilerError()

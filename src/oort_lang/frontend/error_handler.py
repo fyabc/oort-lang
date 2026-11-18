@@ -96,11 +96,10 @@ class CompilerErrorHandler:
                 r"[^\r\n\t]", " ", start_error_line[: position.start_column]
             )
             marker_start = position.start_column
-            marker_stop = (
-                position.stop_column
-                if position.start_line == position.stop_line
-                else len(start_error_line) - 2  # skip last '\n'
-            )
+            if position.start_line == position.stop_line and position.stop_column is not None:
+                marker_stop = position.stop_column
+            else:
+                marker_stop = len(start_error_line) - 2  # skip last '\n'
             marker = "^" * max(0, marker_stop - marker_start + 1)
             full_msg_lines.append(f"{marker_line_prefix}{marker}")
 

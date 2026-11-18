@@ -3,23 +3,30 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^src/oort_lang/grammar/
       - id: end-of-file-fixer
+        exclude: ^src/oort_lang/grammar/
       - id: check-yaml
       - id: check-added-large-files
       - id: check-merge-conflict
       - id: debug-statements
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
+    rev: v0.17.5
     hooks:
       - id: ruff
         args: [--fix]
+        exclude: ^(docs/|examples/|src/oort_lang/grammar/)
       - id: ruff-format
+        exclude: ^(docs/|examples/|src/oort_lang/grammar/)
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.14.1
+  - repo: local
     hooks:
       - id: mypy
-        additional_dependencies: []
-        args: [--config-file=pyproject.toml]
+        name: mypy
+        # Run in the project environment (uv) so the same mypy version and
+        # dependencies as CI are used.
+        entry: uv run --frozen mypy src/
+        language: system
+        types: [python]
         pass_filenames: false

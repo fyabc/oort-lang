@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from antlr4 import ParserRuleContext
 
@@ -9,6 +10,9 @@ from ..ast_visitor import ASTVisitor
 from .base import ASTNode
 from .declarations import Parameter, TypeParameter
 from .expressions import BlockExpr, StmtExpr
+
+if TYPE_CHECKING:
+    from ...ast_interpreter.signature import Signature
 
 _OPERATOR_NAME_PREFIX = "operator "
 
@@ -36,6 +40,8 @@ class FunctionDef(StmtExpr):
         # Lambdas may omit the parameter list and use `$0`, `$1`, ... instead.
         self.anonymous_count = anonymous_count
         self.has_explicit_param_list = has_explicit_param_list
+        # Cached by `signature.get_signature`.
+        self._signature: Signature | None = None
 
     def named_children(self) -> Iterable[tuple[str, ASTNode | None]]:
         for index, type_param in enumerate(self.type_params):

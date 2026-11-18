@@ -10,10 +10,10 @@ from .base import ASTNode
 
 
 class Declaration(ASTNode):
-    def __init__(self, context: ParserRuleContext, name: str, type_expr: ASTNode):
+    def __init__(self, context: ParserRuleContext, name: str, type_expr: ASTNode | None):
         super().__init__(context)
         self.name = name
-        self.type_expr = type_expr
+        self.type_expr: ASTNode | None = type_expr
 
     def _accept(self, visitor: ASTVisitor):
         raise RuntimeError("Should not be called")
@@ -70,7 +70,7 @@ class Parameter(Declaration):
         self,
         context: ParserRuleContext,
         name: str,
-        type_expr: ASTNode,
+        type_expr: ASTNode | None,
         kind: ParameterKind = ParameterKind.DEFAULT,
         default_value: ASTNode | None = None,
     ):
@@ -104,7 +104,7 @@ class TypeParameter(Declaration):
         self,
         context: ParserRuleContext,
         name: str,
-        type_expr: ASTNode,
+        type_expr: ASTNode | None,
         qualifier: TypeQualifierKind = TypeQualifierKind.DEFAULT,
         default_value: ASTNode | None = None,
     ):

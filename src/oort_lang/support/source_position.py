@@ -80,6 +80,7 @@ class SourcePosition(AbstractSourcePosition):
 
     @property
     def sort_key(self) -> Any:
+        assert self.start is not None
         return self.start.tokenIndex
 
     @property
@@ -87,7 +88,9 @@ class SourcePosition(AbstractSourcePosition):
         if self._filename is None:
             if self.start is None and self.stop is None:
                 self._filename = "<unknown>"
+                return self._filename
             token = self.start or self.stop
+            assert token is not None
             token_stream = token.getInputStream()
             if isinstance(token_stream, FileStream):
                 self._filename = token_stream.fileName
@@ -96,17 +99,21 @@ class SourcePosition(AbstractSourcePosition):
         return self._filename
 
     @property
-    def start_line(self):
+    def start_line(self) -> int:
+        assert self.start is not None
         return self.start.line
 
     @property
-    def start_column(self):
+    def start_column(self) -> int:
+        assert self.start is not None
         return self.start.column
 
     @property
-    def stop_line(self):
+    def stop_line(self) -> int:
+        assert self.stop is not None
         return self.stop.line
 
     @property
-    def stop_column(self):
+    def stop_column(self) -> int:
+        assert self.stop is not None
         return self.stop.column + len(self.stop.text) - 1

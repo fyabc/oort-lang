@@ -26,12 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   compare object identity.
 - Language specification (`docs/spec/`) and a proposal process
   (`docs/proposals/`, OP 0001–0006).
-- CI on Linux and Windows (Python 3.10/3.12): lint, format, type check and
+- CI on Linux and Windows (Python 3.11–3.13): lint, format, type check and a
   coverage gate.
 - Contribution, security and issue/PR templates.
 
 ### Changed
 
+- mypy is now an effective gate: generated parser/lexer code is excluded,
+  hand-written code is checked with `check_untyped_defs` and strict optionals,
+  and pre-commit uses the project's locked tool versions.
 - Operator precedence now follows Python/Rust: bitwise `& ^ |` bind tighter than
   comparisons, and comparisons are non-associative (`a < b < c` is an error).
 - `Bool` is no longer a subtype of `Int`: boolean arithmetic and `true == 1` are

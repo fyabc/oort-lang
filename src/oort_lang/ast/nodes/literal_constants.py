@@ -106,7 +106,7 @@ class SliceLiteral(Literal):
         self,
         context: ParserRuleContext,
         start: ASTNode | None,
-        stop: ASTNode,
+        stop: ASTNode | None,
         step: ASTNode | None,
     ):
         super().__init__(context)
@@ -128,6 +128,8 @@ class SliceLiteral(Literal):
 
 
 class Constant(Literal):
+    value: object
+
     def str_attrs(self) -> str | None:
         return f"value={self.value}"
 
@@ -187,10 +189,7 @@ class BooleanConstant(Constant):
 class NullConstant(Constant):
     def __init__(self, context: ParserRuleContext):
         super().__init__(context)
-
-    @property
-    def value(self):
-        return None
+        self.value = None
 
     @property
     def node_type(self):
@@ -203,10 +202,7 @@ class NullConstant(Constant):
 class EllipsisConstant(Constant):
     def __init__(self, context: ParserRuleContext):
         super().__init__(context)
-
-    @property
-    def value(self):
-        return Ellipsis
+        self.value = Ellipsis
 
     @property
     def node_type(self):

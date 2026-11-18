@@ -104,7 +104,7 @@ def _get_from_cls(name: str, start_type: "OortType", receiver: "OortObject") -> 
 class OortObject:
     """Base class of all Oort objects in AST-interpreter."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, type_: "OortType"):
         self.type = type_
@@ -145,6 +145,12 @@ class OortObject:
         # TODO: missing fallback.
         return None
 
+    def __getitem__(self, item: "OortObject") -> "OortObject":
+        raise TypeError(f"{self.type.name!r} object is not subscriptable")
+
+    def __setitem__(self, key: "OortObject", value: "OortObject"):
+        raise TypeError(f"{self.type.name!r} object does not support item assignment")
+
 
 class OortInstance(OortObject):
     """User-defined objects."""
@@ -171,6 +177,13 @@ class OortNativeMixin(OortObject):
 class OortCallableMixin:
     """Callable objects."""
 
+    TYPE_OBJ: "OortType | None" = None
+
+    @classmethod
+    def get_type_object(cls) -> "OortType":
+        assert cls.TYPE_OBJ is not None
+        return cls.TYPE_OBJ
+
     @property
     def arity(self) -> int:
         """Get arity."""
@@ -183,18 +196,18 @@ class OortCallableMixin:
 class OortType(OortInstance, OortCallableMixin):
     """Oort type objects."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(
         self, name: str, fields: dict | None = None, bases: list["OortType"] | None = None
     ):
-        super().__init__(type_=None)  # Lazy init.
+        super().__init__(type_=None)  # type: ignore[arg-type]  # Lazy init.
 
         self.name = name
         if fields:
             self.fields.update(fields)
         self.bases: list[OortType] = bases or []
-        self._mro_cache = None
+        self._mro_cache: list[OortType] | None = None
         self._has_class_method: bool = False
         # Operator methods, keyed by (symbol, operand count).
         self.operators: dict[tuple[str, int], OortObject] = {}
@@ -297,6 +310,7 @@ class OortType(OortInstance, OortCallableMixin):
     def mro(self) -> list["OortType"]:
         if not self._mro_cache:
             self._build_mro()
+        assert self._mro_cache is not None
         return self._mro_cache
 
     def _build_mro(self):
@@ -312,9 +326,9 @@ class OortType(OortInstance, OortCallableMixin):
             self._mro_cache.append(OortObject.get_type_object())
 
     @staticmethod
-    def _c3_merge(sequences):
+    def _c3_merge(sequences: list[list["OortType"]]) -> list["OortType"]:
         """C3 merge algorithm."""
-        result = []
+        result: list[OortType] = []
         while True:
             sequences = [seq for seq in sequences if seq]
             if not sequences:
@@ -343,10 +357,11 @@ class OortType(OortInstance, OortCallableMixin):
 
 
 class OortFunctionMixin(OortCallableMixin):
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, name: str = "<lambda>"):
-        super().__init__(type_=self.get_type_object())
+        # Cooperative init: the next class in the concrete MRO is an OortObject.
+        super().__init__(type_=self.get_type_object())  # type: ignore[call-arg]
         self.name = name
 
 
@@ -399,10 +414,11 @@ class OortFunction(OortFunctionMixin, OortInstance):
 
 
 class OortMethodMixin(OortCallableMixin):
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, this: OortObject, name: str = "<lambda>"):
-        super().__init__(type_=self.get_type_object())
+        # Cooperative init: the next class in the concrete MRO is an OortObject.
+        super().__init__(type_=self.get_type_object())  # type: ignore[call-arg]
         self.this = this
         self.name = name
 
@@ -507,7 +523,7 @@ def find_callable_class_member(name: str, start_type: "OortType") -> "OortObject
 class OortSuperProxy(OortNativeMixin, OortObject):
     """Oort super proxy object."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, cls: "OortType", receiver: OortObject):
         super().__init__(type_=self.get_type_object())
@@ -540,7 +556,7 @@ class OortSuperProxy(OortNativeMixin, OortObject):
 class OortNull(OortNativeMixin, OortObject):
     """Oort null object."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
     NULL_V = None
 
     def __init__(self):
@@ -568,7 +584,7 @@ class OortNull(OortNativeMixin, OortObject):
 class OortBool(OortNativeMixin, OortObject):
     """Oort boolean object."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
     TRUE_V = None
     FALSE_V = None
 
@@ -613,7 +629,7 @@ class OortBool(OortNativeMixin, OortObject):
 class OortInt(OortNativeMixin, OortObject):
     """Oort integer object."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, value: int):
         super().__init__(type_=self.get_type_object())
@@ -637,7 +653,7 @@ class OortInt(OortNativeMixin, OortObject):
 class OortFloat(OortNativeMixin, OortObject):
     """Oort float object."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, value: float):
         super().__init__(type_=self.get_type_object())
@@ -661,7 +677,7 @@ class OortFloat(OortNativeMixin, OortObject):
 class OortString(OortNativeMixin, OortObject):
     """Oort string object."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, value: str):
         super().__init__(type_=self.get_type_object())
@@ -701,7 +717,7 @@ class OortString(OortNativeMixin, OortObject):
 class OortList(OortObject):
     """Oort list object."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, value: list[OortObject]):
         super().__init__(type_=self.get_type_object())
@@ -741,7 +757,7 @@ class OortList(OortObject):
 class OortTuple(OortObject):
     """Oort tuple object (immutable)."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, value: tuple[OortObject, ...]):
         super().__init__(type_=self.get_type_object())
@@ -785,7 +801,7 @@ class OortTuple(OortObject):
 class OortDict(OortObject):
     """Oort dictionary object."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, value: dict[OortObject, OortObject] | None = None):
         super().__init__(type_=self.get_type_object())
@@ -828,7 +844,7 @@ class OortDict(OortObject):
 class OortSet(OortObject):
     """Oort set object."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, value: set[OortObject] | None = None):
         super().__init__(type_=self.get_type_object())
@@ -865,7 +881,7 @@ class OortSet(OortObject):
 class OortSlice(OortObject):
     """Oort slice object, used as a subscript argument."""
 
-    TYPE_OBJ: "OortType" = None
+    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, start: OortObject | None, stop: OortObject | None, step: OortObject | None):
         super().__init__(type_=self.get_type_object())

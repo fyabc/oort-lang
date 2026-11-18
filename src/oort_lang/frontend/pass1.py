@@ -315,6 +315,8 @@ class Pass1Analyzer(ASTVisitor[T]):
             self._unsupported("Class operator methods are not supported yet.", node)
             return
 
+        assert node.operator_symbol is not None
+        assert node.operator_operand_count is not None
         message = validate_operator_definition(node.operator_symbol, node.operator_operand_count)
         if message is not None:
             self.error_handler.add(

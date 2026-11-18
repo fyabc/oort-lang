@@ -1,10 +1,11 @@
 #! /usr/bin/env python
 
 import logging
+from typing import Any
 
 
 def setup_logging(level=logging.INFO, rich_logging: bool = True):
-    kwargs = {}
+    kwargs: dict[str, Any] = {}
 
     if rich_logging:
         try:

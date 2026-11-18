@@ -39,7 +39,7 @@ class FileInputInfo(InputInfo):
         # stripped so it cannot be mistaken for part of the first token.
         self.encoding = encoding
 
-        self._lines = None
+        self._lines: list[str] | None = None
 
     def get_input_stream(self):
         logging.debug(f"Loading input from {self.input_file} ...")
@@ -73,7 +73,7 @@ class StringInputInfo(InputInfo):
             input_string = input_string[1:]
         self.input_string = input_string
         self.name = name
-        self._lines = None
+        self._lines: list[str] | None = None
         self._hash = None
 
     def get_input_stream(self) -> InputStream:
@@ -103,7 +103,7 @@ class ReplInputInfo(InputInfo):
     """Repl input information."""
 
     def __init__(self):
-        self._lines = []
+        self._lines: list[str] = []
 
     def get_input_stream(self) -> InputStream:
         raise RuntimeError("Not supported.")

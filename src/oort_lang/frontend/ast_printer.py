@@ -25,7 +25,8 @@ class ASTPrinter(ASTVisitor[list[str]]):
         self.show_metadata = show_metadata
 
     def parse(self, node: ASTNode) -> str:
-        return "\n".join(node.accept(self))
+        lines: list[str] = node.accept(self)
+        return "\n".join(lines)
 
     def visit_children(self, node: ASTNode) -> list[str]:
         return self._visit_children(node, None, False)
@@ -56,7 +57,7 @@ class ASTPrinter(ASTVisitor[list[str]]):
             if child is None:
                 child_lines = ["NULL"]
             else:
-                child_lines = self.visit(child)
+                child_lines = self.visit(child) or ["NULL"]
             child_lines[0] = f"({name}): {child_lines[0]}"
             lines.extend(self._indent_lines(child_lines))
 

@@ -33,7 +33,7 @@ Type 'ctrl + C' to exit.[/]""")
     parser.removeErrorListeners()
     parser.addErrorListener(OortErrorListener(compiler.error_handler, input_info))
 
-    pass1_analyzer = Pass1Analyzer(compiler.error_handler, input_info)
+    pass1_analyzer: Pass1Analyzer = Pass1Analyzer(compiler.error_handler, input_info)
     ast_interpreter = ASTInterpreter(compiler.error_handler)
 
     stmt_count = 0
@@ -80,7 +80,10 @@ Type 'ctrl + C' to exit.[/]""")
             lexer = None
 
             ast = compiler.build_ast(parser, input_info, exit_on_error=False, summary=False)
-            ast = compiler.semantic_analyze(ast, pass1_analyzer, exit_on_error=False, summary=False)
+            if ast is not None:
+                ast = compiler.semantic_analyze(
+                    ast, pass1_analyzer, exit_on_error=False, summary=False
+                )
             if ast:
                 try:
                     result = ast_interpreter.run(ast)

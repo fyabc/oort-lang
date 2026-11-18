@@ -5,6 +5,7 @@
 import ast
 import re
 import reprlib
+from typing import cast
 
 from antlr4 import ParserRuleContext, Token
 from antlr4.tree.Tree import ParseTree, TerminalNodeImpl
@@ -46,7 +47,9 @@ def _parse_string_literal(ctx: ParserRuleContext | Token) -> str:
     Python (which would execute arbitrary code at parse time).
     """
     text = ctx.getText()
-    prefix = _STRING_PREFIX_RE.match(text).group(1).lower()
+    prefix_match = _STRING_PREFIX_RE.match(text)
+    assert prefix_match is not None
+    prefix = prefix_match.group(1).lower()
     position = (
         SourcePosition.from_context(ctx)
         if isinstance(ctx, ParserRuleContext)
@@ -74,10 +77,10 @@ class ASTBuilder(OortVisitor):
 
         # Pratt parser states.
         self._op_table = dialect.new_operator_table()
-        self._p_items = []
+        self._p_items: list[ParseTree] = []
         self._p_pos = 0
 
-    def parse(self, tree: ParserRuleContext) -> ASTNode:
+    def parse(self, tree: ParserRuleContext) -> ASTNode | None:
         try:
             return tree.accept(self)
         except OortException as e:
@@ -118,7 +121,7 @@ class ASTBuilder(OortVisitor):
 
     def visitVariableDecl(self, ctx: OortParser.VariableDeclContext):
         init_exprs = ctx.expressionList().expression()
-        mutable = ctx.kind.type == OortParser.VAR
+        mutable = ctx.VAR() is not None
         decl_targets = self.parseDeclTarget(ctx.declTarget())
 
         if len(init_exprs) == 1:
@@ -168,23 +171,26 @@ class ASTBuilder(OortVisitor):
     def parseImportAliasEntry(
         self, ctx: OortParser.ImportAliasEntryContext
     ) -> tuple[str, str | None]:
-        src = ctx.src.getText()
-        dst = ctx.dst.getText() if ctx.dst else None
+        identifiers = ctx.identifier()
+        src = identifiers[0].getText()
+        dst = identifiers[1].getText() if len(identifiers) > 1 else None
         return src, dst
 
     def visitAssignStmt(self, ctx: OortParser.AssignStmtContext) -> Assignment:
-        lhs_exprs = ctx.lhs.expression()
-        rhs_exprs = ctx.rhs.expression()
+        lhs_ctx = ctx.expressionList(0)
+        rhs_ctx = ctx.expressionList(1)
+        lhs_exprs = lhs_ctx.expression()
+        rhs_exprs = rhs_ctx.expression()
 
         if len(lhs_exprs) == 1:
             lhs = self._parse_assign_target(lhs_exprs[0])
         else:
-            lhs = TupleLiteral(ctx.lhs, [self._parse_assign_target(expr) for expr in lhs_exprs])
+            lhs = TupleLiteral(lhs_ctx, [self._parse_assign_target(expr) for expr in lhs_exprs])
 
         if len(rhs_exprs) == 1:
             rhs = self.visit(rhs_exprs[0])
         else:
-            rhs = TupleLiteral(ctx.rhs, [self.visit(expr) for expr in rhs_exprs])
+            rhs = TupleLiteral(rhs_ctx, [self.visit(expr) for expr in rhs_exprs])
 
         return Assignment(ctx, ctx.op, lhs=lhs, rhs=rhs)
 
@@ -238,8 +244,8 @@ class ASTBuilder(OortVisitor):
 
         while not self._p_at_end():
             item = self._p_peek()
-
-            # atomExpr (unexpected)
+            assert item is not None
+            op_name = item.getText()
             if isinstance(item, OortParser.AtomExprContext) and not isinstance(
                 item, OortParser.IdExprContext
             ):
@@ -256,7 +262,6 @@ class ASTBuilder(OortVisitor):
                 self._p_pos = len(self._p_items)
                 continue
 
-            op_name = item.getText()
             if isinstance(item, OortParser.IdExprContext):
                 # Infix call (e.g. `a plus b`). Infix calls must be declared
                 # explicitly; implicit infix is disabled until OP 0002.
@@ -319,6 +324,7 @@ class ASTBuilder(OortVisitor):
 
                 # Infix operator (e.g. `a + b`).
                 op_def = self._op_table.get(op_name, Arity.INFIX, default=True)
+                assert op_def is not None
                 if op_def.precedence >= min_bp:
                     self._p_advance()
                     if self._p_at_end():
@@ -330,8 +336,9 @@ class ASTBuilder(OortVisitor):
                             self.input_info,
                         )
 
-                        # Missing rhs, set to None.
-                        rhs = None
+                        # Missing rhs. Diagnosis is recorded and compilation
+                        # stops before evaluation, so a placeholder is enough.
+                        rhs = cast("ASTNode", None)
                         position = SourcePosition(lhs.position.start, item.symbol)
                     else:
                         if op_def.associativity == Associativity.NONE:
@@ -391,6 +398,7 @@ class ASTBuilder(OortVisitor):
         assert isinstance(item, TerminalNodeImpl)
         op_name = item.getText()
         op_def = self._op_table.get(op_name, Arity.PREFIX, default=True)
+        assert op_def is not None
 
         # Parse operand, then create AST node.
         operand = self._parse_expr(op_def.precedence)
@@ -607,21 +615,20 @@ class ASTBuilder(OortVisitor):
         var_kw_idx: int | None = None
         block_idx: int | None = None
         bare_star_idx: int | None = None
-        bare_star_ctx = None
+        bare_star_ctx: ParserRuleContext | None = None
 
-        def _make_error(msg: str, param_ctx: OortParser.ParameterContext):
+        def _make_error(msg: str, param_ctx: ParserRuleContext):
             self.error_handler.add(
                 ParameterError(msg, SourcePosition.from_context(param_ctx)),
                 self.input_info,
             )
 
-        params = []
-        related_params_ctx = []
+        params: list[Parameter] = []
+        related_params_ctx: list[ParserRuleContext] = []
         for param_ctx in params_ctx:
             # Process markers.
             if isinstance(param_ctx, OortParser.ParameterMarkerContext):
-                marker = param_ctx.marker
-                if marker.type == OortParser.DIV:
+                if param_ctx.DIV() is not None:
                     if pos_only_flag:
                         _make_error("Positional-only parameter flag redefinition", param_ctx)
                     if not params:
@@ -638,7 +645,7 @@ class ASTBuilder(OortVisitor):
                     pos_only_flag = True
                     pos_only_idx = len(params)
                     continue
-                elif marker.type == OortParser.MUL:
+                elif param_ctx.MUL() is not None:
                     if kw_only_flag:
                         _make_error("Keyword-only parameter flag redefinition", param_ctx)
                     if var_kw_idx is not None or block_idx is not None:
@@ -652,7 +659,7 @@ class ASTBuilder(OortVisitor):
                     bare_star_ctx = param_ctx
                     continue
                 else:
-                    raise RuntimeError(f"Unknown marker type {marker.type}")
+                    raise RuntimeError(f"Unknown parameter marker: {param_ctx.getText()}")
 
             param = self.visit(param_ctx)
             assert isinstance(param, Parameter)
@@ -714,6 +721,7 @@ class ASTBuilder(OortVisitor):
                 param.kind == ParameterKind.KW_ONLY for param in params[bare_star_idx:]
             )
             if not has_keyword_only:
+                assert bare_star_ctx is not None
                 _make_error(
                     "Bare '*' must be followed by at least one keyword-only parameter",
                     bare_star_ctx,

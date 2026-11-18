@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 
 from collections.abc import Iterable
-from typing import Optional
+from typing import Any, Optional
 
 from antlr4 import ParserRuleContext, Token
 
@@ -20,7 +20,7 @@ class ASTNode:
         assert isinstance(position, SourcePosition)
         self.position = position
 
-        self.metadata = {
+        self.metadata: dict[str, Any] = {
             # How many scopes between current scope and the scope of definition of the name.
             # - Only used in name nodes
             # - `Optional[int]`

@@ -20,7 +20,7 @@ def test_recursion(benchmark, n: int, expected: int):
     compiler = get_compiler("NOT_EXIST -t eval")
     test_string = (
         """\
-def fib n {
+def fib(n) {
     if n <= 1: return n
     fib(n - 1) + fib(n - 2)
 }

@@ -108,7 +108,7 @@ class BreakExpr(StmtExpr):
 
 
 class YieldExpr(StmtExpr):
-    def __init__(self, context: ParserRuleContext, value: ASTNode):
+    def __init__(self, context: ParserRuleContext, value: ASTNode | None):
         super().__init__(context)
         self.value = value
 

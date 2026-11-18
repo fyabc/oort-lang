@@ -32,13 +32,15 @@ class Environment:
 
     def __init__(self, outer: Optional["Environment"] = None, name: str = GLOBAL_ENV_NAME):
         self.values: dict[str, Entry] = {}
-        self.outer = outer
+        self.outer: Environment | None = outer
         self.name = name
 
     def _ancestor(self, depth: int) -> "Environment":
-        env = self
+        env: Environment | None = self
         for _ in range(depth):
+            assert env is not None
             env = env.outer
+        assert env is not None
         return env
 
     def get(self, name: str) -> Entry | None:
@@ -67,7 +69,7 @@ class Environment:
 
     def assign(self, name: str, value: OortObject) -> AssignResult:
         """Assign a value to a name."""
-        env = self
+        env: Environment | None = self
         while env is not None and name not in env.values:
             env = env.outer
         if env is None:
@@ -91,7 +93,7 @@ class Environment:
     def pprint(self):
         """Pretty print current environment."""
         env_chain = []
-        env = self
+        env: Environment | None = self
         while env is not None:
             env_chain.append(env)
             env = env.outer

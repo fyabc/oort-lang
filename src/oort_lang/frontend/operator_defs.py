@@ -98,12 +98,12 @@ class OperatorTable:
         Arity.INFIX: OperatorDef("<DEFAULT>", Arity.INFIX, 500, Associativity.LEFT),
     }
 
-    def __init__(self, parent: "OperatorTable" = None):
+    def __init__(self, parent: "OperatorTable | None" = None):
         self.parent = parent
         self.operators: dict[tuple[str, Arity], OperatorDef] = {}
 
     def get(self, symbol: str, arity: Arity, default: bool = False) -> OperatorDef | None:
-        table = self
+        table: OperatorTable | None = self
         while table:
             op_def = table.operators.get((symbol, arity), None)
             if op_def:
