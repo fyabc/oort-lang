@@ -47,7 +47,6 @@ jobs:
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -m "chore: initialize benchmark history"
           git push origin gh-pages
-          git checkout -
 
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
