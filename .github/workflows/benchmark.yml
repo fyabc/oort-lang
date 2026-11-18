@@ -34,6 +34,21 @@ jobs:
           uv run --frozen pytest benchmarks/
           --benchmark-json=benchmark.json -q
 
+      - name: Ensure benchmark history branch
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            exit 0
+          fi
+          git checkout --orphan gh-pages
+          git rm -rf .
+          printf '# Benchmark history\n' > README.md
+          git add README.md
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "chore: initialize benchmark history"
+          git push origin gh-pages
+          git checkout -
+
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
