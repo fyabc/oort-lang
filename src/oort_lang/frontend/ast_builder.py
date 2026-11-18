@@ -19,9 +19,23 @@ from ..support.input_info import InputInfo
 from ..support.source_position import SourcePosition
 from .dialect import DEFAULT_DIALECT, DialectConfig
 from .error_handler import CompilerErrorHandler
+from .names import anonymous_param_index
 from .operator_defs import Arity, Associativity
 
 _STRING_PREFIX_RE = re.compile(r"^([A-Za-z]*)")
+
+
+def _collect_anonymous_params(node: ASTNode, found: set[int]):
+    """Collect `$n` uses in one lambda body, without entering nested scopes."""
+    if isinstance(node, (FunctionDef, ClassDef)):
+        return
+    if isinstance(node, Name):
+        index = anonymous_param_index(node.id)
+        if index is not None:
+            found.add(index)
+    for _, child in node.named_children():
+        if child is not None:
+            _collect_anonymous_params(child, found)
 
 
 def _parse_string_literal(ctx: ParserRuleContext | Token) -> str:
@@ -737,6 +751,7 @@ class ASTBuilder(OortVisitor):
         ret_type = (
             None if ctx.returnTypeDef() is None else self.visitReturnTypeDef(ctx.returnTypeDef())
         )
+        body = self.visitBlockBody(ctx.blockBody())
 
         return FunctionDef(
             ctx,
@@ -744,8 +759,9 @@ class ASTBuilder(OortVisitor):
             type_params,
             params,
             ret_type,
-            self.visitBlockBody(ctx.blockBody()),
+            body,
             name_position=SourcePosition.from_context(func_name_ctx),
+            has_explicit_param_list=ctx.parameterDef() is not None,
         )
 
     def parseFuncName(self, ctx: OortParser.FuncNameContext) -> list[str]:
@@ -779,6 +795,15 @@ class ASTBuilder(OortVisitor):
         ret_type = (
             None if ctx.returnTypeDef() is None else self.visitReturnTypeDef(ctx.returnTypeDef())
         )
+        body = self.visitBlockBody(ctx.blockBody())
+        has_explicit_param_list = ctx.parameterDef() is not None
+
+        anonymous_count = 0
+        if not has_explicit_param_list:
+            found: set[int] = set()
+            _collect_anonymous_params(body, found)
+            if found:
+                anonymous_count = max(found) + 1
 
         return FunctionDef(
             ctx,
@@ -786,8 +811,10 @@ class ASTBuilder(OortVisitor):
             type_params,
             params,
             ret_type,
-            self.visitBlockBody(ctx.blockBody()),
+            body,
             name_position=SourcePosition.from_token(ctx.DO()),
+            anonymous_count=anonymous_count,
+            has_explicit_param_list=has_explicit_param_list,
         )
 
     def visitMacroDef(self, ctx: OortParser.MacroDefContext) -> MacroDef:

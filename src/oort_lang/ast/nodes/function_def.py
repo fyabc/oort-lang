@@ -23,6 +23,8 @@ class FunctionDef(StmtExpr):
         ret_type: ASTNode | None,
         body: BlockExpr,
         name_position: SourcePosition,
+        anonymous_count: int = 0,
+        has_explicit_param_list: bool = False,
     ):
         super().__init__(context)
         self.names = [name for name in names]
@@ -31,6 +33,9 @@ class FunctionDef(StmtExpr):
         self.ret_type = ret_type
         self.body = body
         self.name_position = name_position
+        # Lambdas may omit the parameter list and use `$0`, `$1`, ... instead.
+        self.anonymous_count = anonymous_count
+        self.has_explicit_param_list = has_explicit_param_list
 
     def named_children(self) -> Iterable[tuple[str, ASTNode | None]]:
         for index, type_param in enumerate(self.type_params):
@@ -61,6 +66,11 @@ class FunctionDef(StmtExpr):
     @property
     def is_lambda(self) -> bool:
         return not self.names
+
+    @property
+    def param_count(self) -> int:
+        """Number of call arguments accepted by the function."""
+        return self.anonymous_count if self.anonymous_count else len(self.params)
 
     @property
     def is_class_method(self) -> bool:

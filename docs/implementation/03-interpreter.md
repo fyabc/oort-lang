@@ -25,6 +25,8 @@
   `List`/`Dict`/`Set` 不可哈希。
 - `Bool` 不是 `Int` 的子类型；`Bool` 只登记 `==` / `!=`，不参与算术、位运算
   或大小比较。容器成员测试也对 `Bool`/`Int` 做严格区分。
+- lambda 的匿名参数 `$0` / `$1` 在调用时按位置绑定到 `OortFunction` 的调用
+  环境；arity 由 `FunctionDef.param_count` 提供。
 - `py_value` 提供与 Python 原生值的转换，供内建函数与运算符使用。
 - 运算符通过 `OortType.operators` 表调度，键为 `(符号, 操作数个数)`：
   - 用户类在类体中用 `def operator "<sym>"` 定义，解释器在

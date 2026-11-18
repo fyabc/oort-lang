@@ -31,6 +31,7 @@
 | [0007](0007-oort-object-object-model.md) | `oort-object` 动态对象模型 | Implemented |
 | [0008](0008-lexer-postprocessing-and-repl.md) | 词法后处理层与 REPL 重构 | Proposed |
 | [0009](0009-expression-and-surface-cleanup.md) | 表达式语义与语法表面积清理 | Implemented |
+| [0010](0010-token-responsibilities-and-anonymous-parameters.md) | Token 职责与匿名 lambda 参数 | Implemented |
 
 ## 流程
 
@@ -61,6 +62,8 @@
 | 2026-11-18 | 位运算高于比较；比较非结合；`Bool` 不再 `<: Int` | [OP 0009](0009-expression-and-surface-cleanup.md)（Implemented） |
 | 2026-11-18 | 移除标识符 `!` 后缀；所有形参列表必须带括号；关闭隐式中缀；拒绝 `def C.f` / `class A.B` / 显式 `super(...)` | [OP 0009](0009-expression-and-surface-cleanup.md)（Implemented） |
 | 2026-11-18 | 支持 `break expr`、行首 `.` 续行、`//=`；Dict/Set 使用 Oort 字面量显示 | [OP 0009](0009-expression-and-surface-cleanup.md)（Implemented） |
+| 2026-11-18 | 固定 token 职责：`:` 标签/体、`=` 绑定/命名实参、`->` 返回类型、`=>` 延迟/映射 | [OP 0010](0010-token-responsibilities-and-anonymous-parameters.md)（Implemented） |
+| 2026-11-18 | 实现匿名 lambda 参数 `$0` / `$1`；仅允许无显式参数列表的 lambda | [OP 0010](0010-token-responsibilities-and-anonymous-parameters.md)（Implemented） |
 
 ## 设计原则（所有提案必须满足）
 

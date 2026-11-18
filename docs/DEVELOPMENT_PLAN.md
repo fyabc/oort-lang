@@ -183,6 +183,8 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
 | `Bool` 语义 | 不是 `Int` 子类型；只支持 `==` / `!=` | [OP 0009](proposals/0009-expression-and-surface-cleanup.md) |
 | 形参语法 | 所有形参列表必须带括号 | [OP 0009](proposals/0009-expression-and-surface-cleanup.md) |
 | 语法表面积 | 关闭隐式中缀；拒绝 `def C.f` / `class A.B` / 显式 `super(...)` | [OP 0009](proposals/0009-expression-and-surface-cleanup.md) |
+| Token 职责 | `:` 标签/体、`=` 绑定/命名实参、`->` 返回类型、`=>` 延迟/映射 | [OP 0010](proposals/0010-token-responsibilities-and-anonymous-parameters.md) |
+| 小型 lambda | `$0` / `$1` 仅用于无显式参数列表的 lambda | [OP 0010](proposals/0010-token-responsibilities-and-anonymous-parameters.md) |
 | 导入语义 | 急切，模块级缓存 | [OP 0006](proposals/0006-modules-and-imports.md) |
 | 错误处理 | `Result`/`Option`（`oort-core`） | [OP 0005](proposals/0005-type-system.md) |
 | 多线程 / ABI | 暂无稳定 ABI；优先 C FFI | [设计 07](design/07-concurrency-abi-design.md) |

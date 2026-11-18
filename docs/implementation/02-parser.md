@@ -41,6 +41,13 @@ Oort 语句末尾不需要分号，因此需要区分“语句结束换行”与
 计划按 [OP 0008](../proposals/0008-lexer-postprocessing-and-repl.md) 移除全部
 lexer 动作，把换行/括号处理移到 token 后处理层，并同步重构 REPL。
 
+## 匿名参数
+
+`$0` / `$1` 不需要改文法（`AnonymousParameter` 已经是 `IDENTIFIER` 的一部分）。
+`ASTBuilder` 在构建无显式参数列表的 `do` lambda 时扫描 body，跳过嵌套函数/类，
+以最大下标推断参数个数并记录到 `FunctionDef.anonymous_count`；
+`Pass1Analyzer` 再合成 `$i` 绑定并拒绝显式声明。
+
 ## 错误报告
 
 ANTLR 默认错误信息不够详细。`OortErrorListener` 把词法/语法错误交给

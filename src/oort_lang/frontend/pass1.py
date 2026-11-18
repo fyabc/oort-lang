@@ -1,7 +1,6 @@
 #! /usr/bin/env python
 
 import dataclasses
-import re
 from collections import UserDict
 from enum import Enum
 from typing import TypeVar
@@ -14,13 +13,12 @@ from ..exceptions.runtime_errors import OortNameError
 from ..exceptions.syntax_errors import UnsupportedSyntax
 from ..frontend.dialect import DEFAULT_DIALECT, DialectConfig
 from ..frontend.error_handler import CompilerErrorHandler
+from ..frontend.names import anonymous_param_index
 from ..frontend.operator_defs import validate_operator_definition
 from ..support.input_info import InputInfo
 from ..support.source_position import SourcePosition
 
 T = TypeVar("T")
-
-_ANONYMOUS_PARAMETER_RE = re.compile(r"\$(\d*)")
 
 
 @dataclasses.dataclass
@@ -336,10 +334,6 @@ class Pass1Analyzer(ASTVisitor[T]):
         self._current_loop = prev_loop
 
     def visit_name(self, node: nodes.Name) -> T | None:
-        if _ANONYMOUS_PARAMETER_RE.fullmatch(node.id):
-            self._unsupported(
-                "Anonymous parameters (`$0`, `$1`, ...) are not implemented yet.", node
-            )
         if self.scopes:
             entry = self.scopes[-1].get(node.id, None)
             if entry and entry.is_ready is False:
@@ -351,6 +345,17 @@ class Pass1Analyzer(ASTVisitor[T]):
                     self.input_info,
                 )
         self.resolve_local(node, node.id)
+
+        if anonymous_param_index(node.id) is not None and node.metadata["name_depth"] is None:
+            if self._current_func is None:
+                message = "Anonymous parameters are only allowed inside a lambda."
+            elif not self._current_func.is_lambda:
+                message = "Anonymous parameters are only allowed in lambdas."
+            elif self._current_func.has_explicit_param_list:
+                message = "Anonymous parameters cannot be combined with an explicit parameter list."
+            else:
+                message = "Anonymous parameter is not available in this scope."
+            self.error_handler.add(OortNameError(message, node.position), self.input_info)
 
         if node.id == "this" and node.metadata["name_depth"] is None:
             self.error_handler.add(
@@ -365,6 +370,11 @@ class Pass1Analyzer(ASTVisitor[T]):
         self.scopes.pop()
 
     def declare(self, name: str, position: SourcePosition):
+        if anonymous_param_index(name) is not None:
+            self.error_handler.add(
+                OortNameError("Anonymous parameter names cannot be declared explicitly.", position),
+                self.input_info,
+            )
         if not self.scopes:
             return
         scope = self.scopes[-1]
@@ -374,6 +384,12 @@ class Pass1Analyzer(ASTVisitor[T]):
                 self.input_info,
             )
         scope.put(name)
+
+    def _declare_anonymous(self, name: str):
+        """Declare a synthesized `$0`, `$1`, ... parameter (bypasses the check)."""
+        if not self.scopes:
+            return
+        self.scopes[-1].put(name)
 
     def define(self, name: str):
         if not self.scopes:
@@ -423,6 +439,12 @@ class Pass1Analyzer(ASTVisitor[T]):
             self._current_decl = OutsideDeclType.FUNCTION
 
         self.begin_scope()
+        # Anonymous parameters are synthesized by the AST builder and are not
+        # user declarations, so they bypass the explicit-name check.
+        for index in range(node.anonymous_count):
+            name = f"${index}"
+            self._declare_anonymous(name)
+            self.define(name)
         for param in node.params:
             # Default values of later parameters can use previous parameters. e.g. `def f(a, b=a) {}`
             self.declare(param.name, node.position)

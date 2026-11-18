@@ -18,7 +18,8 @@
 - `do` 引导闭包，消除了 Ruby `do ... end` 与 `{}` 的绑定歧义；
 - `{: :}` / `{. .}` 把数据字面量与代码块分开；
 - `def operator "+"` 用字符串命名运算符，无歧义；
-- `$0` 简写参数让短 lambda 更紧凑。
+- `$0` 简写参数让短 lambda 更紧凑（已实现，见
+  [OP 0010](0010-token-responsibilities-and-anonymous-parameters.md)）。
 
 但缺少真正决定 DSL 体验的语义层机制：**接收者绑定**与**作用域隔离**。
 

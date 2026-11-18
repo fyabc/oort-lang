@@ -48,7 +48,8 @@
 - 首字符为 ASCII 字母、`_` 或非 ASCII 字母（含中文，但排除中文标点）。
 - 后续字符可为字母、数字、`_`。
 - `!` **不**属于标识符；`a!=b`、`x!in xs`、`a!is b` 无需空格即可正确分词。
-- `$0`、`$1`、…… 是匿名形参的保留形式；当前实现会显式拒绝。
+- `$0`、`$1`、…… 是匿名 lambda 参数；只能在无显式参数列表的 lambda 中
+  使用（[OP 0010](../proposals/0010-token-responsibilities-and-anonymous-parameters.md)）。
 
 ## 关键字
 

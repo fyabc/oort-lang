@@ -14,7 +14,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 字面量 | 整数、浮点、字符串（含 `r`、三引号）、布尔、`null`、List/Tuple/Dict/Set、切片 |
 | 表达式 | 全部内建运算符、运算符重载（`def operator "<sym>"`）、位运算高于比较、比较非结合、`Bool` 与 `Int` 严格区分、`and`/`or` 短路、属性、下标、调用、尾随 lambda、块、`if`/`while`/`for` 表达式、行首 `.` 方法链续行 |
 | 语句 | `var`/`val`（含多目标解包）、赋值（含 `//=` 等增强赋值、元组交换）、`if`/`elif`/`else`、`while`、`for`、`return`、`break expr`、`continue` |
-| 函数 | `def`、`do` lambda、闭包、递归、精确位置参数、尾随闭包；所有形参列表都使用括号 |
+| 函数 | `def`、`do` lambda、闭包、递归、精确位置参数、尾随闭包；所有显式形参列表都使用括号；lambda 支持 `$0`/`$1` 匿名参数 |
 | 类 | 定义、实例化、`__init__`、方法、类方法、单/多重继承、C3 MRO、元类、`this`/`super`；开放字段袋、方法遮蔽检查、身份相等/哈希 |
 | 内建 | `print`、`clock`、`type`、`super`（仅 `super.method` / `super.__init__`）、`len`、`range`、`str`、`repr`、`int`、`float`、`bool` |
 
@@ -32,7 +32,6 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 关键字参数 | `f(x=1)` | Keyword arguments are not implemented yet. |
 | `*args` / `**kwargs` / 仅关键字 / 块参数 | `def f(*a)` | Parameter kind ... is not implemented yet. |
 | 泛型函数/类 | `def f[T](a)`、`class C[T]` | Generic functions/classes are not implemented yet. |
-| 匿名形参 | `$0` | Anonymous parameters ... are not implemented yet. |
 | 编译器属性 | `@[]` | Compiler attributes are not implemented yet. |
 | 格式化字符串 | `f"..."` | Formatted string literals are not implemented yet. |
 | 字典展开 | `{: **d :}` | Dictionary unpacking is not supported yet. |
@@ -67,6 +66,8 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
   `Cannot shadow method 'name' with an instance field`。
 - 默认相等与哈希使用对象身份；缺失字段读取抛 `OortAttributeError`。
 - 自定义 `==` 不会改变哈希，相关字典键/集合元素行为尚未定义。
+- 匿名参数 `$0` / `$1` 只允许出现在无显式参数列表的 lambda 中；
+  `def`、`do()`、`do(x)` 以及显式声明 `$n` 都会报错。
 
 ## 已知的实现约定
 
@@ -80,6 +81,6 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 ## 测试对应关系
 
 - 单元测试：`tests/unit/frontend/`（词法、解析、AST、语义、诊断）、
-  `tests/unit/runtime/`（解释器、类、函数、容器、内建）。
+  `tests/unit/runtime/`（解释器、类、函数、容器、内建、匿名参数）。
 - 集成测试：`tests/integration/`（CLI、全部示例程序）。
 - 每个已实现特性至少有一个测试；拒绝清单由 `test_unsupported.py` 参数化覆盖。

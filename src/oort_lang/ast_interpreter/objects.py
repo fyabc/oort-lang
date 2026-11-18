@@ -380,18 +380,22 @@ class OortFunction(OortFunctionMixin, OortInstance):
 
     @property
     def arity(self) -> int:
-        return len(self.node.params)
+        return self.node.param_count
 
     def __call__(self, interpreter, args):
         from .environment import Environment
 
         call_env = Environment(outer=self.closure, name=self.name)
-        if len(args) != len(self.node.params):
+        if len(args) != self.node.param_count:
             raise TypeError(
-                f"{self.name}() takes {len(self.node.params)} arguments but {len(args)} were given"
+                f"{self.name}() takes {self.node.param_count} arguments but {len(args)} were given"
             )
-        for param, arg in zip(self.node.params, args, strict=False):
-            call_env.define(param.name, arg)
+        if self.node.anonymous_count:
+            for index in range(self.node.anonymous_count):
+                call_env.define(f"${index}", args[index])
+        else:
+            for param, arg in zip(self.node.params, args, strict=False):
+                call_env.define(param.name, arg)
         try:
             result = interpreter.run_block(self.node.body, call_env)
         except OortReturn as e:
@@ -456,18 +460,22 @@ class OortMethod(OortMethodMixin, OortInstance):
 
     @property
     def arity(self) -> int:
-        return len(self.node.params)
+        return self.node.param_count
 
     def __call__(self, interpreter, args):
         from .environment import Environment
 
         call_env = Environment(outer=self.closure, name=self.name)
-        if len(args) != len(self.node.params):
+        if len(args) != self.node.param_count:
             raise TypeError(
-                f"{self.name}() takes {len(self.node.params)} arguments but {len(args)} were given"
+                f"{self.name}() takes {self.node.param_count} arguments but {len(args)} were given"
             )
-        for param, arg in zip(self.node.params, args, strict=False):
-            call_env.define(param.name, arg)
+        if self.node.anonymous_count:
+            for index in range(self.node.anonymous_count):
+                call_env.define(f"${index}", args[index])
+        else:
+            for param, arg in zip(self.node.params, args, strict=False):
+                call_env.define(param.name, arg)
 
         # Add `this` into the local environment.
         call_env.define("this", self.this)

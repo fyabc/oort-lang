@@ -86,7 +86,8 @@ repeat do { print("Hello") }
 val doubled = map(ints) do(i): i * 2
 ```
 
-- `$0`、`$1` 匿名形参**尚未实现**（会显式报错）。
+- `$0`、`$1` 匿名形参只用于无显式参数列表的 lambda：
+  `do: $0 * 2`、`do: $0 + $1`（见 [OP 0010](../proposals/0010-token-responsibilities-and-anonymous-parameters.md)）。
 
 ## 函数式与对象式的边界
 

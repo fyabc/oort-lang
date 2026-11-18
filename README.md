@@ -27,7 +27,7 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 - 类 C 语法；换行分隔语句，括号内可自由换行
 - 整数/浮点/字符串/布尔/`null`
 - List、Tuple、Dict、Set 字面量与下标、切片
-- 一等函数、`do` lambda、闭包、尾随闭包调用
+- 一等函数、`do` lambda、闭包、尾随闭包调用；匿名参数 `do: $0 * 2`
 - `if` / `elif` / `else`、`while`、`for ... in`（含解包）、`break expr`
 - `var` / `val`、多目标声明与元组解包、增强赋值（含 `//=`）
 - 类、方法、类方法、多重继承（C3 MRO）、元类、`this` / `super`

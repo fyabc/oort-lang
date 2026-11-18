@@ -34,6 +34,7 @@ Oort 的语言变更采用类 PEP/RFC 流程：
 - [OP 0007: `oort-object` 动态对象模型](proposals/0007-oort-object-object-model.md)（已实现）
 - [OP 0008: 词法后处理层与 REPL 重构](proposals/0008-lexer-postprocessing-and-repl.md)
 - [OP 0009: 表达式语义与语法表面积清理](proposals/0009-expression-and-surface-cleanup.md)（已实现）
+- [OP 0010: Token 职责与匿名 lambda 参数](proposals/0010-token-responsibilities-and-anonymous-parameters.md)（已实现）
 
 ## 实现与设计
 
