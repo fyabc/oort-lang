@@ -6,7 +6,9 @@ import operator
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from .call_args import ArgumentBindingError
 from .control_flow_exceptions import OortReturn
+from .signature import build_call_env
 
 if TYPE_CHECKING:
     from ..ast import nodes
@@ -275,16 +277,21 @@ class OortType(OortInstance, OortCallableMixin):
 
         # Call initializer.
         init_func = self.get("__init__")
-        if init_func is not None:
-            assert isinstance(init_func, OortFunction)
-            init_method = OortMethod(
-                this=instance,
-                node=init_func.node,
-                closure=init_func.closure,
-                defining_type=self._find_defining_type("__init__"),
-            )
-            init_method(interpreter, args)
+        if init_func is None:
+            if args:
+                raise ArgumentBindingError(
+                    f"{self.name}() takes 0 arguments but {len(args)} were given"
+                )
+            return instance
 
+        assert isinstance(init_func, OortFunction)
+        init_method = OortMethod(
+            this=instance,
+            node=init_func.node,
+            closure=init_func.closure,
+            defining_type=self._find_defining_type("__init__"),
+        )
+        init_method(interpreter, args)
         return instance
 
     def mro(self) -> list["OortType"]:
@@ -383,19 +390,7 @@ class OortFunction(OortFunctionMixin, OortInstance):
         return self.node.param_count
 
     def __call__(self, interpreter, args):
-        from .environment import Environment
-
-        call_env = Environment(outer=self.closure, name=self.name)
-        if len(args) != self.node.param_count:
-            raise TypeError(
-                f"{self.name}() takes {self.node.param_count} arguments but {len(args)} were given"
-            )
-        if self.node.anonymous_count:
-            for index in range(self.node.anonymous_count):
-                call_env.define(f"${index}", args[index])
-        else:
-            for param, arg in zip(self.node.params, args, strict=False):
-                call_env.define(param.name, arg)
+        call_env = build_call_env(self.node, interpreter, args, self.closure, self.name)
         try:
             result = interpreter.run_block(self.node.body, call_env)
         except OortReturn as e:
@@ -463,21 +458,10 @@ class OortMethod(OortMethodMixin, OortInstance):
         return self.node.param_count
 
     def __call__(self, interpreter, args):
-        from .environment import Environment
+        call_env = build_call_env(self.node, interpreter, args, self.closure, self.name)
 
-        call_env = Environment(outer=self.closure, name=self.name)
-        if len(args) != self.node.param_count:
-            raise TypeError(
-                f"{self.name}() takes {self.node.param_count} arguments but {len(args)} were given"
-            )
-        if self.node.anonymous_count:
-            for index in range(self.node.anonymous_count):
-                call_env.define(f"${index}", args[index])
-        else:
-            for param, arg in zip(self.node.params, args, strict=False):
-                call_env.define(param.name, arg)
-
-        # Add `this` into the local environment.
+        # `this` is bound after defaults; default expressions cannot depend on
+        # the instance (OP 0011 D7).
         call_env.define("this", self.this)
 
         prev_method = getattr(interpreter, "_current_method", None)

@@ -70,6 +70,8 @@ def doubleInt(a: Int): a * 2
   函数体之间的歧义。
 - 函数体最后一条语句的值即返回值（除非用 `return` 提前返回）。
 - 返回类型用 `->`，动态方言中仅作标注。
+- 支持默认值、关键字实参、`/`、`*`、`*args`、`**kwargs` 与 `&block`
+  （[OP 0011](../proposals/0011-parameter-binding.md)）。
 - 匿名函数用 `do` 引导：
 
 ```oort

@@ -116,6 +116,8 @@ Rect(3, 4).area()   # 12
 - 实例化使用函数调用语法，没有 `new`。
 - `__init__` 在实例创建后调用；不允许在其中 `return` 值。
 - 子类未定义 `__init__` 时继承父类的初始化器。
+- `__init__` 的默认值/关键字实参走 [OP 0011](../proposals/0011-parameter-binding.md)
+  的统一 binder；默认值求值时 `this` 尚未绑定。
 
 ## 已知限制
 

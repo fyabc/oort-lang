@@ -606,6 +606,8 @@ class ASTBuilder(OortVisitor):
         kw_only_idx: int | None = None
         var_kw_idx: int | None = None
         block_idx: int | None = None
+        bare_star_idx: int | None = None
+        bare_star_ctx = None
 
         def _make_error(msg: str, param_ctx: OortParser.ParameterContext):
             self.error_handler.add(
@@ -622,6 +624,11 @@ class ASTBuilder(OortVisitor):
                 if marker.type == OortParser.DIV:
                     if pos_only_flag:
                         _make_error("Positional-only parameter flag redefinition", param_ctx)
+                    if not params:
+                        _make_error(
+                            "Positional-only parameter flag must follow at least one parameter",
+                            param_ctx,
+                        )
                     if kw_only_flag or var_kw_idx is not None or block_idx is not None:
                         _make_error(
                             "Positional-only parameter flag must come before keyword-only "
@@ -641,6 +648,8 @@ class ASTBuilder(OortVisitor):
                         )
                     kw_only_flag = True
                     kw_only_idx = len(params)
+                    bare_star_idx = len(params)
+                    bare_star_ctx = param_ctx
                     continue
                 else:
                     raise RuntimeError(f"Unknown marker type {marker.type}")
@@ -700,6 +709,32 @@ class ASTBuilder(OortVisitor):
                 if param.kind == ParameterKind.DEFAULT:
                     param.kind = ParameterKind.KW_ONLY
 
+        if bare_star_idx is not None:
+            has_keyword_only = any(
+                param.kind == ParameterKind.KW_ONLY for param in params[bare_star_idx:]
+            )
+            if not has_keyword_only:
+                _make_error(
+                    "Bare '*' must be followed by at least one keyword-only parameter",
+                    bare_star_ctx,
+                )
+
+        seen_default = False
+        seen_names: set[str] = set()
+        for idx, param in enumerate(params):
+            if param.name in seen_names:
+                _make_error(f"Duplicate parameter name {param.name!r}", related_params_ctx[idx])
+            seen_names.add(param.name)
+
+            if param.kind in (ParameterKind.POS_ONLY, ParameterKind.DEFAULT):
+                if param.default_value is not None:
+                    seen_default = True
+                elif seen_default:
+                    _make_error(
+                        "Parameter without a default follows parameter with a default",
+                        related_params_ctx[idx],
+                    )
+
         return params
 
     def _visit_parameter(self, ctx, kind: ParameterKind) -> Parameter:
@@ -736,6 +771,7 @@ class ASTBuilder(OortVisitor):
         return Argument(
             ctx,
             value=self.visit(ctx.expression()),
+            kind=ArgumentKind.DEFAULT if keyword is None else ArgumentKind.KEYWORD,
             keyword=keyword,
         )
 

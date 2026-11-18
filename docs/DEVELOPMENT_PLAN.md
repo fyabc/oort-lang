@@ -58,7 +58,7 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
 |------|------|
 | 方言契约 | 已完成（2026-11-18）：`#lang oort-object`（默认 + 显式）、`DialectConfig`、按方言构造 Pratt 表、`DialectFeatures` 门控；未知/未实现方言与非首行声明显式报错 |
 | 动态对象模型 | 已完成（2026-11-18）：开放字段袋、类体 `var`/`val` 拒绝、实例字段禁止遮蔽方法与类方法、缺失属性诊断、身份相等/哈希；槽仍归 `oort-core` |
-| 参数绑定 | 默认参数与关键字参数统一设计，避免后续特批 |
+| 参数绑定 | 已完成（2026-11-19）：默认值调用时求值、关键字实参、位置/关键字限定、`*args` Tuple、`**kwargs` Dict、`&block` 尾随/按名；见 [OP 0011](proposals/0011-parameter-binding.md) |
 | 运算符重载 | 已完成（2026-11-18）；下标/属性重载另立提案 |
 | 表达式/表面积清理 | 已完成（2026-11-18）：优先级、`Bool`、`!` 后缀、形参括号、隐式中缀关闭、半成品拒绝、`break value`、`.` 续行、`//=`、容器显示（[OP 0009](proposals/0009-expression-and-surface-cleanup.md)） |
 
@@ -147,7 +147,8 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
   并负责显式拒绝未实现特性。类型检查尚未开始。
 - **解释器**：动态核心基本可用，函数、闭包、类、继承、元类、容器、循环都有测试。
   运算符重载已闭环（用户类与内建类型共用方法表）；`break value`、行首 `.`
-  方法链续行、`//=` 已实现；默认/关键字参数、用户迭代器、下标/属性重载仍未实现。
+  方法链续行、`//=` 与完整参数绑定（默认值、关键字、变长参数、块参数）已实现；
+  用户迭代器、下标/属性重载仍未实现。
 - **动态对象模型**：开放字段袋、类体 `var`/`val` 拒绝、方法遮蔽检查、缺失属性
   诊断、身份相等/哈希均已完成（[OP 0007](proposals/0007-oort-object-object-model.md)）。
 - **方言**：`#lang oort-object` 已实现（缺省 + 显式）；其他方言仍为占位。
@@ -185,6 +186,9 @@ Oort 是用于学习编译原理与编程语言设计的玩具语言。Python �
 | 语法表面积 | 关闭隐式中缀；拒绝 `def C.f` / `class A.B` / 显式 `super(...)` | [OP 0009](proposals/0009-expression-and-surface-cleanup.md) |
 | Token 职责 | `:` 标签/体、`=` 绑定/命名实参、`->` 返回类型、`=>` 延迟/映射 | [OP 0010](proposals/0010-token-responsibilities-and-anonymous-parameters.md) |
 | 小型 lambda | `$0` / `$1` 仅用于无显式参数列表的 lambda | [OP 0010](proposals/0010-token-responsibilities-and-anonymous-parameters.md) |
+| 参数默认值 | 调用时求值；可见更早参数，不含 `this`/更晚参数 | [OP 0011](proposals/0011-parameter-binding.md) |
+| 关键字实参 | `f(x = 1)`；位置限定名可被 `**kwargs` 捕获 | [OP 0011](proposals/0011-parameter-binding.md) |
+| 变长/块参数 | `*args` 为 Tuple，`**kwargs` 为 Dict；`&block` 缺省 null | [OP 0011](proposals/0011-parameter-binding.md) |
 | 导入语义 | 急切，模块级缓存 | [OP 0006](proposals/0006-modules-and-imports.md) |
 | 错误处理 | `Result`/`Option`（`oort-core`） | [OP 0005](proposals/0005-type-system.md) |
 | 多线程 / ABI | 暂无稳定 ABI；优先 C FFI | [设计 07](design/07-concurrency-abi-design.md) |

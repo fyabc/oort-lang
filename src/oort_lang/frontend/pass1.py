@@ -146,9 +146,28 @@ class Pass1Analyzer(ASTVisitor[T]):
         self._unsupported("Async/await is not implemented yet.", node)
 
     def visit_call(self, node: nodes.Call) -> T | None:
+        seen_keyword = False
+        seen_keywords: set[str] = set()
         for arg in node.args:
-            if arg.keyword is not None:
-                self._unsupported("Keyword arguments are not implemented yet.", arg)
+            if arg.keyword is None:
+                if arg.kind != nodes.ArgumentKind.BLOCK and seen_keyword:
+                    self.error_handler.add(
+                        OortSyntaxError(
+                            "Positional argument follows keyword argument.", arg.position
+                        ),
+                        self.input_info,
+                    )
+            else:
+                seen_keyword = True
+                if arg.keyword in seen_keywords:
+                    self.error_handler.add(
+                        OortSyntaxError(
+                            f"Keyword argument {arg.keyword!r} is given more than once.",
+                            arg.position,
+                        ),
+                        self.input_info,
+                    )
+                seen_keywords.add(arg.keyword)
             arg.accept(self)
         node.func.accept(self)
 
@@ -274,13 +293,6 @@ class Pass1Analyzer(ASTVisitor[T]):
             return None
         if node.is_operator:
             self._check_operator_definition(node)
-        for param in node.params:
-            if param.default_value is not None:
-                self._unsupported("Default parameter values are not implemented yet.", param)
-            if param.kind not in (ParameterKind.DEFAULT, ParameterKind.POS_ONLY):
-                self._unsupported(
-                    f"Parameter kind {param.kind.name} is not implemented yet.", param
-                )
 
         if not node.is_lambda:
             # TODO: Allow function redefinition in local scopes to support overloading.
@@ -309,6 +321,17 @@ class Pass1Analyzer(ASTVisitor[T]):
                 OortSyntaxError(message, node.name_position),
                 self.input_info,
             )
+
+        for param in node.params:
+            if param.default_value is not None or param.kind not in (
+                ParameterKind.DEFAULT,
+                ParameterKind.POS_ONLY,
+            ):
+                self._unsupported(
+                    "Operator methods cannot use default, variadic, keyword-only "
+                    "or block parameters.",
+                    param,
+                )
 
     def visit_for_expr(self, node: nodes.ForExpr) -> T | None:
         node.iterator.accept(self)
@@ -408,6 +431,25 @@ class Pass1Analyzer(ASTVisitor[T]):
             # Assume it in global.
             node.metadata["name_depth"] = None
 
+    def _check_default_later_refs(
+        self, node: nodes.ASTNode, later_names: set[str], param_name: str
+    ):
+        """Reject default expressions that reference parameters declared later."""
+        if isinstance(node, (nodes.FunctionDef, nodes.ClassDef)):
+            return
+        if isinstance(node, nodes.Name) and node.id in later_names:
+            self.error_handler.add(
+                OortSyntaxError(
+                    f"Default value of {param_name!r} cannot reference later "
+                    f"parameter {node.id!r}.",
+                    node.position,
+                ),
+                self.input_info,
+            )
+        for _, child in node.named_children():
+            if child is not None:
+                self._check_default_later_refs(child, later_names, param_name)
+
     def resolve_function(self, node: nodes.FunctionDef):
         prev_func = self._current_func
         self._current_func = node
@@ -445,10 +487,13 @@ class Pass1Analyzer(ASTVisitor[T]):
             name = f"${index}"
             self._declare_anonymous(name)
             self.define(name)
-        for param in node.params:
+        for index, param in enumerate(node.params):
             # Default values of later parameters can use previous parameters. e.g. `def f(a, b=a) {}`
             self.declare(param.name, node.position)
             if param.default_value:
+                later_names = {item.name for item in node.params[index + 1 :]}
+                if later_names:
+                    self._check_default_later_refs(param.default_value, later_names, param.name)
                 param.default_value.accept(self)
             self.define(param.name)
 

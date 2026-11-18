@@ -48,6 +48,14 @@ lexer 动作，把换行/括号处理移到 token 后处理层，并同步重构
 以最大下标推断参数个数并记录到 `FunctionDef.anonymous_count`；
 `Pass1Analyzer` 再合成 `$i` 绑定并拒绝显式声明。
 
+## 参数形状
+
+`ASTBuilder.parseParameterList` 负责参数布局：`/` 与 `*` 标记、`*args` /
+`**kwargs` / `&block` 的位置、重复参数名、默认值后置规则与裸 `*` 后必须有
+关键字限定参数。调用实参的 `identifier = expression` 被标记为
+`ArgumentKind.KEYWORD`；尾随 lambda 标记为 `ArgumentKind.BLOCK`。
+绑定语义不在前端实现，见 `ast_interpreter/signature.py`（OP 0011）。
+
 ## 错误报告
 
 ANTLR 默认错误信息不够详细。`OortErrorListener` 把词法/语法错误交给

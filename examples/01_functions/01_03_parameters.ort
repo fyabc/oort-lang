@@ -1,0 +1,11 @@
+# 默认值、关键字实参、*args、**kwargs 与 &block
+def connect(host, port = 80, /, timeout = 30, *headers, retries = 2, **options, &block) {
+    print(host, port, timeout, headers, retries, options)
+    if block != null: block()
+}
+
+connect("a.example")
+connect("a.example", 443, timeout = 10)
+connect("a.example", 443, 5, "x", "y", retries = 1, color = "red") do {
+    print("connected")
+}

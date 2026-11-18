@@ -16,6 +16,7 @@ from ..exceptions.runtime_errors import (
 from ..frontend.error_handler import CompilerErrorHandler
 from ..support.source_position import SourcePosition
 from .builtins import setup_builtins
+from .call_args import ArgumentBindingError, EvaluatedArgument
 from .control_flow_exceptions import OortBreak, OortContinue, OortReturn
 from .environment import AssignResult, DefineResult, Entry, Environment
 from .objects import *
@@ -217,36 +218,36 @@ class ASTInterpreter(ASTVisitor[OortObject]):
     def visit_call(self, node: nodes.Call) -> OortObject:
         func = node.func.accept(self)
 
-        args = [arg.accept(self) for arg in node.args]
+        # Evaluate every argument exactly once, in source order. Keyword and
+        # trailing-block metadata is carried into the binder.
+        evaluated = [
+            EvaluatedArgument(
+                value=arg.accept(self),
+                keyword=arg.keyword,
+                kind=arg.kind,
+            )
+            for arg in node.args
+        ]
 
         if isinstance(func, (OortNativeFunction, OortNativeMethod)):
-            # Native functions.
+            # Native functions have no parameter names; keywords are rejected.
+            if any(arg.keyword is not None for arg in evaluated):
+                raise OortTypeError(
+                    f"Built-in function {func.name!r} does not accept keyword arguments",
+                    node.position,
+                )
+            values = [arg.value for arg in evaluated]
             try:
-                return func(self, args)
+                return func(self, values)
             except TypeError as e:
                 raise OortTypeError(f"{e}", node.position)
             except Exception as e:
                 raise OortRuntimeError(f"{e}", node.position)
-        elif isinstance(func, (OortFunction, OortMethod)):
-            # User-defined functions.
-            arity = func.arity
-            # TODO: Add more complicated argument checks, and apply to all other call types (add signature to functions).
-            if len(node.args) != arity:
-                raise OortTypeError(
-                    f"{func.name}() takes {arity} arguments but {len(node.args)} were given",
-                    node.position,
-                )
-            return func(self, args)
-        elif isinstance(func, OortType):
-            # Class instantiation.
-            arity = func.arity
-            # TODO: Add more complicated argument checks, and apply to all other call types (add signature to functions).
-            if len(node.args) != arity:
-                raise OortTypeError(
-                    f"{func.name}.__init__() takes {arity} arguments but {len(node.args)} were given",
-                    node.position,
-                )
-            return func(self, args)
+        elif isinstance(func, (OortFunction, OortMethod, OortType)):
+            try:
+                return func(self, evaluated)
+            except ArgumentBindingError as e:
+                raise OortTypeError(str(e), node.position) from e
         else:
             assert isinstance(func, OortObject)
             raise OortTypeError(f"{func.type.name} object is not callable", node.func.position)

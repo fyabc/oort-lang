@@ -12,6 +12,12 @@ EXPECTED_OUTPUTS = {
     "00_basic/00_02_lang_directive.ort": "oort-object\n",
     "01_functions/01_01_call_with_block.ort": "Before call\nHello, Oort!\nAfter call\nOort!\n",
     "01_functions/01_02_closure.ort": "1\n2\n3\n",
+    "01_functions/01_03_parameters.ort": (
+        "a.example 80 30 () 2 {:}\n"
+        "a.example 443 10 () 2 {:}\n"
+        "a.example 443 5 (x, y) 1 {: color: red :}\n"
+        "connected\n"
+    ),
     "02_collections/02_00_literals.ort": (
         "(1, 2)\n{: a: 1, b: 2 :}\n3 true\n[2, 3]\nello\n[0, 2, 4]\n"
     ),

@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   icon and grammar tests.
 - Anonymous lambda parameters `$0` / `$1` for lambdas without an explicit
   parameter list (`do: $0 * 2`, `do: $0 + $1`).
+- Full parameter binding: call-time default values, keyword arguments,
+  positional-only (`/`) and keyword-only (`*`) parameters, `*args` as a Tuple,
+  `**kwargs` as a Dict, and `&block` with trailing-block or keyword syntax.
 - Dialect contract: an optional first-line `#lang oort-object` directive,
   `DialectConfig` (feature gates and a per-compilation Pratt operator table),
   and explicit diagnostics for unknown, unimplemented (`oort-core`) or

@@ -67,6 +67,21 @@ print(fs[0](), fs[1]())   # 1 2
 - `break value` 使循环表达式返回该值；裸 `break` 或正常结束返回 `null`。
 - 块的值是最后一条语句的值；函数体返回值同理。
 
+## 参数绑定
+
+`ast_interpreter/signature.py` 的 `Signature` 把 `FunctionDef.params` 分为
+位置限定、位置或关键字、`*args`、关键字限定、`**kwargs` 与 `&block` 六组。
+`visit_call` 先按源代码顺序求值所有实参（带 `keyword` / `BLOCK` 元数据），
+再由 `Signature.bind` 完成绑定：
+
+- 默认值在绑定阶段按声明顺序求值，求值环境包含闭包与更早的参数；
+  `this` 在默认值之后才写入方法调用环境。
+- `*args` 构造成 Tuple，`**kwargs` 构造成 String 键 Dict。
+- 尾随块在函数有 `&block` 时绑定到块参数；没有时保持位置实参行为。
+- 绑定错误由 `ArgumentBindingError` 转换为 `OortTypeError`，位置取调用表达式。
+
+原生内建函数仍走位置参数路径；`visit_call` 在进入原生函数前拒绝关键字实参。
+
 ## 内建函数与类型
 
 `builtins.py` 注册：
