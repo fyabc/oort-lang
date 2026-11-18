@@ -2,8 +2,10 @@
 
 """Internal representation of Oort objects in AST-interpreter."""
 
+import contextlib
+import contextvars
 import operator
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
 
 from .call_args import ArgumentBindingError
@@ -36,7 +38,9 @@ __all__ = [
     "OortSuperProxy",
     "OortTuple",
     "OortType",
-    "setup_type_system",
+    "Runtime",
+    "TypeSystem",
+    "get_runtime",
     "wrap_value",
 ]
 
@@ -104,8 +108,6 @@ def _get_from_cls(name: str, start_type: "OortType", receiver: "OortObject") -> 
 class OortObject:
     """Base class of all Oort objects in AST-interpreter."""
 
-    TYPE_OBJ: "OortType | None" = None
-
     def __init__(self, type_: "OortType"):
         self.type = type_
 
@@ -123,9 +125,8 @@ class OortObject:
 
     @classmethod
     def get_type_object(cls) -> "OortType":
-        """Get the unique type object of this type."""
-        assert cls.TYPE_OBJ is not None
-        return cls.TYPE_OBJ
+        """Get the type object of this class in the active runtime."""
+        return get_runtime().types.for_class(cls)
 
     def get(self, name: str) -> "OortObject | None":
         # Search from instance-level fields.
@@ -177,12 +178,9 @@ class OortNativeMixin(OortObject):
 class OortCallableMixin:
     """Callable objects."""
 
-    TYPE_OBJ: "OortType | None" = None
-
     @classmethod
     def get_type_object(cls) -> "OortType":
-        assert cls.TYPE_OBJ is not None
-        return cls.TYPE_OBJ
+        return get_runtime().types.for_class(cls)
 
     @property
     def arity(self) -> int:
@@ -195,8 +193,6 @@ class OortCallableMixin:
 
 class OortType(OortInstance, OortCallableMixin):
     """Oort type objects."""
-
-    TYPE_OBJ: "OortType | None" = None
 
     def __init__(
         self, name: str, fields: dict | None = None, bases: list["OortType"] | None = None
@@ -357,8 +353,6 @@ class OortType(OortInstance, OortCallableMixin):
 
 
 class OortFunctionMixin(OortCallableMixin):
-    TYPE_OBJ: "OortType | None" = None
-
     def __init__(self, name: str = "<lambda>"):
         # Cooperative init: the next class in the concrete MRO is an OortObject.
         super().__init__(type_=self.get_type_object())  # type: ignore[call-arg]
@@ -414,8 +408,6 @@ class OortFunction(OortFunctionMixin, OortInstance):
 
 
 class OortMethodMixin(OortCallableMixin):
-    TYPE_OBJ: "OortType | None" = None
-
     def __init__(self, this: OortObject, name: str = "<lambda>"):
         # Cooperative init: the next class in the concrete MRO is an OortObject.
         super().__init__(type_=self.get_type_object())  # type: ignore[call-arg]
@@ -523,8 +515,6 @@ def find_callable_class_member(name: str, start_type: "OortType") -> "OortObject
 class OortSuperProxy(OortNativeMixin, OortObject):
     """Oort super proxy object."""
 
-    TYPE_OBJ: "OortType | None" = None
-
     def __init__(self, cls: "OortType", receiver: OortObject):
         super().__init__(type_=self.get_type_object())
         self.cls = cls
@@ -556,18 +546,13 @@ class OortSuperProxy(OortNativeMixin, OortObject):
 class OortNull(OortNativeMixin, OortObject):
     """Oort null object."""
 
-    TYPE_OBJ: "OortType | None" = None
-    NULL_V = None
-
     def __init__(self):
         super().__init__(type_=self.get_type_object())
 
     @classmethod
     def get_null_value(cls):
-        """Get null value."""
-        if cls.NULL_V is None:
-            cls.NULL_V = cls()
-        return cls.NULL_V
+        """Get the null value of the active runtime."""
+        return get_runtime().null
 
     def __repr__(self):
         return "null"
@@ -584,27 +569,19 @@ class OortNull(OortNativeMixin, OortObject):
 class OortBool(OortNativeMixin, OortObject):
     """Oort boolean object."""
 
-    TYPE_OBJ: "OortType | None" = None
-    TRUE_V = None
-    FALSE_V = None
-
     def __init__(self, value: bool):
         super().__init__(type_=self.get_type_object())
         self.value = value
 
     @classmethod
     def get_true_value(cls):
-        """Get true value."""
-        if cls.TRUE_V is None:
-            cls.TRUE_V = cls(value=True)
-        return cls.TRUE_V
+        """Get the true value of the active runtime."""
+        return get_runtime().true
 
     @classmethod
     def get_false_value(cls):
-        """Get false value."""
-        if cls.FALSE_V is None:
-            cls.FALSE_V = cls(value=False)
-        return cls.FALSE_V
+        """Get the false value of the active runtime."""
+        return get_runtime().false
 
     @classmethod
     def get_bool_value(cls, value: bool):
@@ -629,8 +606,6 @@ class OortBool(OortNativeMixin, OortObject):
 class OortInt(OortNativeMixin, OortObject):
     """Oort integer object."""
 
-    TYPE_OBJ: "OortType | None" = None
-
     def __init__(self, value: int):
         super().__init__(type_=self.get_type_object())
         self.value = value
@@ -653,8 +628,6 @@ class OortInt(OortNativeMixin, OortObject):
 class OortFloat(OortNativeMixin, OortObject):
     """Oort float object."""
 
-    TYPE_OBJ: "OortType | None" = None
-
     def __init__(self, value: float):
         super().__init__(type_=self.get_type_object())
         self.value = value
@@ -676,8 +649,6 @@ class OortFloat(OortNativeMixin, OortObject):
 
 class OortString(OortNativeMixin, OortObject):
     """Oort string object."""
-
-    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, value: str):
         super().__init__(type_=self.get_type_object())
@@ -717,8 +688,6 @@ class OortString(OortNativeMixin, OortObject):
 class OortList(OortObject):
     """Oort list object."""
 
-    TYPE_OBJ: "OortType | None" = None
-
     def __init__(self, value: list[OortObject]):
         super().__init__(type_=self.get_type_object())
         self.value = value
@@ -756,8 +725,6 @@ class OortList(OortObject):
 
 class OortTuple(OortObject):
     """Oort tuple object (immutable)."""
-
-    TYPE_OBJ: "OortType | None" = None
 
     def __init__(self, value: tuple[OortObject, ...]):
         super().__init__(type_=self.get_type_object())
@@ -801,8 +768,6 @@ class OortTuple(OortObject):
 class OortDict(OortObject):
     """Oort dictionary object."""
 
-    TYPE_OBJ: "OortType | None" = None
-
     def __init__(self, value: dict[OortObject, OortObject] | None = None):
         super().__init__(type_=self.get_type_object())
         self.value = {} if value is None else value
@@ -844,8 +809,6 @@ class OortDict(OortObject):
 class OortSet(OortObject):
     """Oort set object."""
 
-    TYPE_OBJ: "OortType | None" = None
-
     def __init__(self, value: set[OortObject] | None = None):
         super().__init__(type_=self.get_type_object())
         self.value = set() if value is None else value
@@ -881,8 +844,6 @@ class OortSet(OortObject):
 class OortSlice(OortObject):
     """Oort slice object, used as a subscript argument."""
 
-    TYPE_OBJ: "OortType | None" = None
-
     def __init__(self, start: OortObject | None, stop: OortObject | None, step: OortObject | None):
         super().__init__(type_=self.get_type_object())
         self.start = start
@@ -902,59 +863,111 @@ class OortSlice(OortObject):
         return f"slice({self.start}, {self.stop}, {self.step})"
 
 
-def setup_type_system():
-    """Setup type system (skip MRO resolution to avoid endless recursion)."""
-    t_type = OortType(name="Type")
-    t_type.type = t_type
-    OortType.TYPE_OBJ = t_type
+class TypeSystem:
+    """Per-runtime built-in type registry."""
 
-    t_object = OortType(name="Object")
-    t_object.type = t_type
-    OortObject.TYPE_OBJ = t_object
+    def __init__(self, runtime: "Runtime"):
+        self.runtime = runtime
+        # Make the registry visible to object constructors used below.
+        runtime.types = self
+        self.by_class: dict[type, OortType] = {}
 
-    t_type._mro_cache = [t_type, t_object]
-    t_object._mro_cache = [t_object]
+        # Bootstrap `Type` and `Object` without resolving their MROs, which
+        # would recurse back into the type system.
+        t_type = OortType(name="Type")
+        t_type.type = t_type
+        t_object = OortType(name="Object")
+        t_object.type = t_type
+        t_type._mro_cache = [t_type, t_object]
+        t_object._mro_cache = [t_object]
+        self.by_class[OortType] = t_type
+        self.by_class[OortObject] = t_object
+        self.type_type = t_type
+        self.object_type = t_object
 
-    def _setup_basic_type(name: str, cls, bases: list["OortType"] | None = None):
+        self.function_type = self._add_basic_type("Function", OortFunctionMixin)
+        self.method_type = self._add_basic_type("Method", OortMethodMixin)
+        self.super_proxy_type = self._add_basic_type("SuperProxy", OortSuperProxy)
+        self.null_type = self._add_basic_type("Null", OortNull)
+        self.int_type = self._add_basic_type("Int", OortInt)
+        # Bool is deliberately not a subtype of Int. `true + true` and
+        # `true == 1` should not silently work just because Python's bool is int.
+        self.bool_type = self._add_basic_type("Bool", OortBool)
+        self.float_type = self._add_basic_type("Float", OortFloat)
+        self.string_type = self._add_basic_type("String", OortString)
+        self.list_type = self._add_basic_type("List", OortList)
+        self.tuple_type = self._add_basic_type("Tuple", OortTuple)
+        self.dict_type = self._add_basic_type("Dict", OortDict)
+        self.set_type = self._add_basic_type("Set", OortSet)
+        self.slice_type = self._add_basic_type("Slice", OortSlice)
+
+        _setup_native_operators(
+            t_object=t_object,
+            t_null=self.null_type,
+            t_bool=self.bool_type,
+            t_int=self.int_type,
+            t_float=self.float_type,
+            t_string=self.string_type,
+            t_list=self.list_type,
+            t_tuple=self.tuple_type,
+            t_dict=self.dict_type,
+            t_set=self.set_type,
+        )
+
+    def _add_basic_type(
+        self, name: str, cls: type, bases: list["OortType"] | None = None
+    ) -> "OortType":
         t_name = OortType(name=name)
-        t_name.type = t_type
-        t_name.bases = bases or [t_object]
+        t_name.type = self.type_type
+        t_name.bases = bases or [self.object_type]
         t_name._mro_cache = [t_name]
         for base in t_name.bases:
             for base_type in base.mro():
                 if base_type not in t_name._mro_cache:
                     t_name._mro_cache.append(base_type)
-        cls.TYPE_OBJ = t_name
+        self.by_class[cls] = t_name
         return t_name
 
-    _setup_basic_type("Function", OortFunctionMixin)
-    _setup_basic_type("Method", OortMethodMixin)
-    _setup_basic_type("SuperProxy", OortSuperProxy)
-    t_null = _setup_basic_type("Null", OortNull)
-    t_int = _setup_basic_type("Int", OortInt)
-    # Bool is deliberately not a subtype of Int. `true + true` and
-    # `true == 1` should not silently work just because Python's bool is int.
-    t_bool = _setup_basic_type("Bool", OortBool)
-    t_float = _setup_basic_type("Float", OortFloat)
-    t_string = _setup_basic_type("String", OortString)
-    t_list = _setup_basic_type("List", OortList)
-    t_tuple = _setup_basic_type("Tuple", OortTuple)
-    t_dict = _setup_basic_type("Dict", OortDict)
-    t_set = _setup_basic_type("Set", OortSet)
-    _setup_basic_type("Slice", OortSlice)
+    def for_class(self, cls: type) -> "OortType":
+        """Find the built-in type for a Python storage class."""
+        for base in cls.__mro__:
+            type_obj = self.by_class.get(base)
+            if type_obj is not None:
+                return type_obj
+        raise KeyError(f"No Oort type registered for {cls.__name__}")
 
-    _setup_native_operators(
-        t_object=t_object,
-        t_null=t_null,
-        t_bool=t_bool,
-        t_int=t_int,
-        t_float=t_float,
-        t_string=t_string,
-        t_list=t_list,
-        t_tuple=t_tuple,
-        t_dict=t_dict,
-        t_set=t_set,
-    )
+
+class Runtime:
+    """Type system and singleton values owned by one interpreter."""
+
+    def __init__(self):
+        with self.activate():
+            self.types: TypeSystem = TypeSystem(self)
+            self.null: OortNull = OortNull()
+            self.true: OortBool = OortBool(True)
+            self.false: OortBool = OortBool(False)
+
+    @contextlib.contextmanager
+    def activate(self) -> Iterator["Runtime"]:
+        """Make this runtime current for object construction and dispatch."""
+        token = _CURRENT_RUNTIME.set(self)
+        try:
+            yield self
+        finally:
+            _CURRENT_RUNTIME.reset(token)
+
+
+_CURRENT_RUNTIME: "contextvars.ContextVar[Runtime | None]" = contextvars.ContextVar(
+    "oort_runtime", default=None
+)
+
+
+def get_runtime() -> Runtime:
+    """Get the active runtime, or fail loudly outside an evaluation."""
+    runtime = _CURRENT_RUNTIME.get()
+    if runtime is None:
+        raise RuntimeError("No active Oort runtime")
+    return runtime
 
 
 def _install_operators(

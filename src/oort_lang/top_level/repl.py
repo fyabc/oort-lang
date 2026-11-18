@@ -5,7 +5,6 @@ from rich.console import Console
 
 from .. import __version__
 from ..ast_interpreter.ast_interpreter import ASTInterpreter
-from ..ast_interpreter.objects import OortNull
 from ..exceptions import OortException
 from ..frontend.error_listener import OortErrorListener
 from ..frontend.pass1 import Pass1Analyzer
@@ -93,7 +92,7 @@ Type 'ctrl + C' to exit.[/]""")
                     compiler.error_handler.report(exit_on_error=False, clear=True, summary=False)
                 else:
                     # Skip null values.
-                    if result is not OortNull.get_null_value():
+                    if result is not ast_interpreter.runtime.null:
                         output = repr(result)
                         console.print(f"[red]Out[{stmt_count}]:[/]", output)
 

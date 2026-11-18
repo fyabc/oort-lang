@@ -15,13 +15,12 @@ def _define_native_function(env: Environment, name: str, func: Callable, **kwarg
     env.define(name, OortNativeFunction(func, name=name, **kwargs))
 
 
-def setup_builtins(env: Environment):
-    """Setup all builtin names."""
-    setup_type_system()
+def setup_builtins(runtime: Runtime, env: Environment):
+    """Setup all builtin names for one runtime."""
 
     # === Builtin types
     # Type
-    t_type = OortType.get_type_object()
+    t_type = runtime.types.type_type
     t_type.fields = {
         "mro": OortNativeFunction(OortType.mro, name="mro"),
         "__op_le__": OortNativeFunction(lambda t1, t2: t1.is_subclass_of(t2)),
@@ -32,7 +31,7 @@ def setup_builtins(env: Environment):
     env.define(t_type.name, t_type)
 
     # Object
-    t_object = OortObject.get_type_object()
+    t_object = runtime.types.object_type
     t_object.fields = {
         "__op_eq__": OortNativeFunction(operator.eq),
         "__op_ne__": OortNativeFunction(operator.ne),
@@ -42,26 +41,26 @@ def setup_builtins(env: Environment):
     env.define(t_object.name, t_object)
 
     # Function
-    t_function = OortFunction.get_type_object()
+    t_function = runtime.types.function_type
     t_function.bases = []
     t_function.fields = {}
     env.define(t_function.name, t_function)
 
     # Method
-    t_method = OortMethod.get_type_object()
+    t_method = runtime.types.method_type
     t_method.bases = []
     t_method.fields = {}
     env.define(t_method.name, t_method)
 
     # Null
-    t_null = OortNull.get_type_object()
+    t_null = runtime.types.null_type
     t_null.bases = []
     t_null.fields = {}
     env.define(t_null.name, t_null)
-    env.define("null", OortNull.get_null_value())
+    env.define("null", runtime.null)
 
     # Int
-    t_int = OortInt.get_type_object()
+    t_int = runtime.types.int_type
     t_int.bases = []
     t_int.fields = {
         "__op_neg__": OortNativeFunction(operator.neg),
@@ -76,7 +75,7 @@ def setup_builtins(env: Environment):
     env.define(t_int.name, t_int)
 
     # Float
-    t_float = OortFloat.get_type_object()
+    t_float = runtime.types.float_type
     t_float.bases = []
     t_float.fields = {
         "__op_neg__": OortNativeFunction(operator.neg),
@@ -91,14 +90,14 @@ def setup_builtins(env: Environment):
     env.define(t_float.name, t_float)
 
     # Bool
-    t_bool = OortBool.get_type_object()
+    t_bool = runtime.types.bool_type
     t_bool.fields = {}
     env.define(t_bool.name, t_bool)
-    env.define("true", OortBool.get_true_value())
-    env.define("false", OortBool.get_false_value())
+    env.define("true", runtime.true)
+    env.define("false", runtime.false)
 
     # String
-    t_string = OortString.get_type_object()
+    t_string = runtime.types.string_type
     t_string.fields = {
         "__op_add__": OortNativeFunction(operator.add),
         "__op_mul__": OortNativeFunction(operator.mul),
@@ -106,7 +105,7 @@ def setup_builtins(env: Environment):
     env.define(t_string.name, t_string)
 
     # List
-    t_list = OortList.get_type_object()
+    t_list = runtime.types.list_type
     t_list.fields = {
         "length": OortNativeFunction(len),
         "__op_getitem__": OortNativeFunction(operator.getitem),
@@ -118,7 +117,7 @@ def setup_builtins(env: Environment):
     env.define(t_list.name, t_list)
 
     # Tuple
-    t_tuple = OortTuple.get_type_object()
+    t_tuple = runtime.types.tuple_type
     t_tuple.fields = {
         "length": OortNativeFunction(len),
         "__op_getitem__": OortNativeFunction(operator.getitem),
@@ -128,7 +127,7 @@ def setup_builtins(env: Environment):
     env.define(t_tuple.name, t_tuple)
 
     # Dict
-    t_dict = OortDict.get_type_object()
+    t_dict = runtime.types.dict_type
     t_dict.fields = {
         "length": OortNativeFunction(len),
         "__op_getitem__": OortNativeFunction(operator.getitem),
@@ -139,7 +138,7 @@ def setup_builtins(env: Environment):
     env.define(t_dict.name, t_dict)
 
     # Set
-    t_set = OortSet.get_type_object()
+    t_set = runtime.types.set_type
     t_set.fields = {
         "length": OortNativeFunction(len),
         "__op_contains__": OortNativeFunction(operator.contains),

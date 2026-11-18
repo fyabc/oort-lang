@@ -51,11 +51,14 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         self._global_env = Environment(name="<global>")
         self.env = self._global_env
         self._current_method = None
-        setup_builtins(self.env)
+        self.runtime = Runtime()
+        with self.runtime.activate():
+            setup_builtins(self.runtime, self.env)
 
     def run(self, node: nodes.ASTNode) -> OortObject:
-        result = node.accept(self)
-        return OortNull.get_null_value() if result is None else result
+        with self.runtime.activate():
+            result = node.accept(self)
+            return self.runtime.null if result is None else result
 
     def run_block(self, statements: Iterable[nodes.ASTNode], env: Environment) -> OortObject:
         """Run the block with given environment.

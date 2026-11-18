@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Each interpreter now owns an isolated `Runtime` with its own built-in type
+  table and `null`/`true`/`false` singletons, so multiple interpreters can
+  share a process without overwriting each other's types.
 - mypy is now an effective gate: generated parser/lexer code is excluded,
   hand-written code is checked with `check_untyped_defs` and strict optionals,
   and pre-commit uses the project's locked tool versions.

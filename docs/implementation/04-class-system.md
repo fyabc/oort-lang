@@ -97,7 +97,7 @@ class C < A, B {
 - 查找沿类的 MRO 进行，找到后绑定为 `OortMethod`（记录 `defining_type`）或
   `OortNativeMethod`，与普通方法调用一致。
 - 语义分析阶段校验符号、参数个数与定义位置；内建类型在
-  `setup_type_system` 中登记原生运算符实现。
+  `TypeSystem` 中登记原生运算符实现。
 - 详见 [规范：运算符重载](../spec/02-expressions.md#运算符重载)。
 
 ## 初始化器
