@@ -1,12 +1,15 @@
 #! /usr/bin/env python
 
 from collections.abc import Iterable
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from antlr4 import ParserRuleContext, Token
 
 from ...support.source_position import SourcePosition
 from ..ast_visitor import ASTVisitor, T
+
+if TYPE_CHECKING:
+    from ..binding import Binding
 
 
 class ASTNode:
@@ -20,21 +23,10 @@ class ASTNode:
         assert isinstance(position, SourcePosition)
         self.position = position
 
-        self.metadata: dict[str, Any] = {
-            # How many scopes between current scope and the scope of definition of the name.
-            # - Only used in name nodes
-            # - `Optional[int]`
-            # - `None` means the name is defined in global.
-            # "name_depth": None
-            # Slot index of the name.
-            # - Only used in name nodes
-            # - int
-            # "name_index": 1
-            # Captured implicit class depth of `super`.
-            # - Only used in implicit super nodes
-            # - int
-            # "super_depth": 1
-        }
+        # Filled in by pass 1 for name-like nodes (`Name`, `ImplicitSuperExpr`).
+        self.binding: Binding | None = None
+
+        self.metadata: dict[str, Any] = {}
 
     @property
     def node_type(self):

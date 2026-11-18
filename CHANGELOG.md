@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Name resolution now attaches a typed `Binding` (scope depth plus slot
+  index) to AST name nodes instead of writing untyped `metadata` keys; scope
+  layouts are shared with the future slot/upvalue backend.
 - Each interpreter now owns an isolated `Runtime` with its own built-in type
   table and `null`/`true`/`false` singletons, so multiple interpreters can
   share a process without overwriting each other's types.

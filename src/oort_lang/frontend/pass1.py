@@ -1,12 +1,11 @@
 #! /usr/bin/env python
 
-import dataclasses
-from collections import UserDict
 from enum import Enum
 from typing import TypeVar
 
 from ..ast import nodes
 from ..ast.ast_visitor import ASTVisitor
+from ..ast.binding import Binding
 from ..ast.nodes.declarations import ParameterKind
 from ..exceptions import OortSyntaxError
 from ..exceptions.runtime_errors import OortNameError
@@ -15,30 +14,11 @@ from ..frontend.dialect import DEFAULT_DIALECT, DialectConfig
 from ..frontend.error_handler import CompilerErrorHandler
 from ..frontend.names import anonymous_param_index
 from ..frontend.operator_defs import validate_operator_definition
+from ..frontend.scope import ScopeLayout
 from ..support.input_info import InputInfo
 from ..support.source_position import SourcePosition
 
 T = TypeVar("T")
-
-
-@dataclasses.dataclass
-class ScopeEntry:
-    """Scope entry."""
-
-    index: int  # Slot index.
-    is_ready: bool  # Whether the name is ready (distinguish between declaration and definition).
-
-
-class Scope(UserDict[str, ScopeEntry]):
-    def __delitem__(self, key):
-        raise TypeError("Cannot delete name from scope")
-
-    def put(self, name: str):
-        index = len(self.data)
-        self.data[name] = ScopeEntry(index, False)
-
-    def set_ready(self, name: str):
-        self.data[name].is_ready = True
 
 
 class OutsideDeclType(Enum):
@@ -91,7 +71,7 @@ class Pass1Analyzer(ASTVisitor[T]):
         self.dialect = dialect
 
         # All scopes (except <global>)
-        self.scopes: list[Scope] = []
+        self.scopes: list[ScopeLayout] = []
 
         self._current_decl = OutsideDeclType.NONE
         self._current_func: nodes.FunctionDef | None = None
@@ -228,8 +208,8 @@ class Pass1Analyzer(ASTVisitor[T]):
             node.value.accept(self)
 
     def visit_implicit_super_expr(self, node: nodes.ImplicitSuperExpr) -> T | None:
-        self.resolve_local(node, "this")
-        if node.metadata["name_depth"] is None:
+        binding = self.resolve_local(node, "this")
+        if binding.is_global:
             self.error_handler.add(
                 OortNameError("Can't use implicit 'super' outside method.", node.position),
                 self.input_info,
@@ -369,9 +349,9 @@ class Pass1Analyzer(ASTVisitor[T]):
                     ),
                     self.input_info,
                 )
-        self.resolve_local(node, node.id)
+        binding = self.resolve_local(node, node.id)
 
-        if anonymous_param_index(node.id) is not None and node.metadata["name_depth"] is None:
+        if anonymous_param_index(node.id) is not None and binding.is_global:
             if self._current_func is None:
                 message = "Anonymous parameters are only allowed inside a lambda."
             elif not self._current_func.is_lambda:
@@ -382,14 +362,14 @@ class Pass1Analyzer(ASTVisitor[T]):
                 message = "Anonymous parameter is not available in this scope."
             self.error_handler.add(OortNameError(message, node.position), self.input_info)
 
-        if node.id == "this" and node.metadata["name_depth"] is None:
+        if node.id == "this" and binding.is_global:
             self.error_handler.add(
                 OortNameError("Can't access 'this' outside method.", node.position),
                 self.input_info,
             )
 
     def begin_scope(self):
-        self.scopes.append(Scope())
+        self.scopes.append(ScopeLayout())
 
     def end_scope(self):
         self.scopes.pop()
@@ -421,17 +401,16 @@ class Pass1Analyzer(ASTVisitor[T]):
             return
         self.scopes[-1].set_ready(name)
 
-    def resolve_local(self, node: nodes.ASTNode, name: str):
-        """Resolve local variable, calculate its name_depth."""
-        for i, scope in enumerate(reversed(self.scopes)):
-            entry = scope.get(name, None)
-            if entry:
-                node.metadata["name_depth"] = i
-                node.metadata["name_index"] = entry.index
-                break
-        else:
-            # Assume it in global.
-            node.metadata["name_depth"] = None
+    def resolve_local(self, node: nodes.ASTNode, name: str) -> Binding:
+        """Resolve a name and attach its typed binding to the AST node."""
+        for depth, scope in enumerate(reversed(self.scopes)):
+            binding = scope.resolve(name, depth)
+            if binding is not None:
+                node.binding = binding
+                return binding
+        binding = Binding.global_binding(name)
+        node.binding = binding
+        return binding
 
     def _check_default_later_refs(
         self, node: nodes.ASTNode, later_names: set[str], param_name: str

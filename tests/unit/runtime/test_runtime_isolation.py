@@ -10,6 +10,7 @@ from oort_lang.ast_interpreter.objects import (
     Runtime,
     get_runtime,
 )
+from oort_lang.frontend.pass1 import Pass1Analyzer
 from oort_lang.support.input_info import StringInputInfo
 from oort_lang.top_level.compiler import Compiler
 from tests.helpers import get_compiler
@@ -19,6 +20,8 @@ def _run_source(compiler: Compiler, interpreter: ASTInterpreter, source: str):
     input_info = StringInputInfo(source)
     parser = compiler._build_parser(input_info)
     ast = compiler.build_ast(parser, input_info)
+    assert ast is not None
+    ast = compiler.semantic_analyze(ast, Pass1Analyzer(compiler.error_handler, input_info))
     assert ast is not None
     return interpreter.run(ast)
 

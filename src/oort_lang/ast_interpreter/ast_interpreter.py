@@ -165,11 +165,12 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             return
 
         if isinstance(lhs, nodes.Name):
-            depth = lhs.metadata.get("name_depth", None)
-            if depth is None:
+            binding = lhs.binding
+            assert binding is not None and binding.name == lhs.id
+            if binding.depth is None:
                 assign_result = self._global_env.assign(lhs.id, rhs)
             else:
-                assign_result = self.env.assign_at(lhs.id, rhs, depth)
+                assign_result = self.env.assign_at(lhs.id, rhs, binding.depth)
             if assign_result == AssignResult.NOT_FOUND:
                 raise OortNameError(f"Name {lhs.id!r} is not defined", lhs.position)
             elif assign_result == AssignResult.IMMUTABLE:
@@ -563,8 +564,9 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             raise AssertionError("Unreachable code")
 
     def lookup_variable(self, name: str, node: nodes.ASTNode) -> Entry | None:
-        """Lookup variable with AST metadata."""
-        depth = node.metadata.get("name_depth", None)
-        if depth is None:
+        """Lookup a variable through the binding attached by pass 1."""
+        binding = node.binding
+        assert binding is not None and binding.name == name, "Name node was not resolved"
+        if binding.depth is None:
             return self._global_env.get(name)
-        return self.env.get_at(name, depth)
+        return self.env.get_at(name, binding.depth)
