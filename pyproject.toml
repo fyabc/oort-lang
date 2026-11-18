@@ -197,3 +197,14 @@ layers = [
 ]
 # Annotation-only import for the cached call signature.
 ignore_imports = ["oort_lang.ast.nodes.function_def -> oort_lang.runtime.signature"]
+
+[tool.bandit]
+exclude_dirs = ["src/oort_lang/parser/grammar"]
+skips = ["B101"]
+
+[tool.deptry]
+extend_exclude = ["src/oort_lang/parser/grammar"]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["antlr4-tools", "mypy", "pre-commit", "pytest-benchmark", "pytest-cov", "ruff"]
+DEP003 = ["oort_lang"]

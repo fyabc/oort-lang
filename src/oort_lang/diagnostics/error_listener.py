@@ -16,7 +16,7 @@ class OortErrorListener(ErrorListener):
         self.error_handler = error_handler
         self.input_info = input_info
 
-    def syntaxError(self, recognizer, offendingSymbol: Token, line: int, column: int, msg: str, e):
+    def syntaxError(self, _recognizer, offendingSymbol: Token, line: int, column: int, msg: str, e):
         if msg.startswith("no viable alternative at input"):
             # Replace useless error message.
             msg = "Invalid syntax"

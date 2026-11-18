@@ -1,0 +1,10 @@
+config:
+  MD013: false  # Long prose and tables are common in the spec.
+  MD022: false  # Headings may directly precede lists in notes.
+  MD024: false  # Repeated "对 Oort 的启示" headings are intentional.
+  MD031: false  # Code fences may follow list items directly.
+  MD032: false  # Lists may follow prose without a blank line in design notes.
+  MD033: false  # Inline HTML is used for anchors.
+  MD040: false  # Some diagrams have no language tag.
+  MD041: false  # Some proposal files start with a title directly.
+  MD058: false  # Tables may directly follow a heading.

@@ -1,4 +1,4 @@
-.PHONY: help install dev test benchmark benchmark-json lint format format-check type-check imports clean build-grammar check
+.PHONY: help install dev test benchmark benchmark-json lint format format-check type-check imports security audit deps dead-code property markdown quality clean build-grammar check
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -32,6 +32,26 @@ type-check: ## Run type checking
 
 imports: ## Check module import boundaries
 	uv run --with "import-linter>=2" lint-imports
+
+security: ## Run bandit security scan
+	uv run --with bandit bandit -c pyproject.toml -r src/oort_lang -q
+
+audit: ## Audit installed dependencies for known vulnerabilities
+	uv run --with pip-audit pip-audit
+
+deps: ## Check dependency hygiene
+	uv run --with deptry deptry .
+
+dead-code: ## Find unused code
+	uv run --with vulture vulture src/oort_lang --exclude src/oort_lang/parser/grammar --min-confidence 80
+
+property: ## Run property-based tests
+	uv run --with hypothesis pytest tests/property -q
+
+markdown: ## Lint Markdown documents
+	npx --yes markdownlint-cli2@0.18.1 "README.md" "CONTRIBUTING.md" "docs/**/*.md" "benchmarks/README.md" "tests/README.md"
+
+quality: security audit deps dead-code property markdown ## Run optional quality/security gates
 
 clean: ## Clean build artifacts
 	rm -rf build/

@@ -276,7 +276,7 @@ def process(data: Int32) -> Int32:
 ## 7. 参考资料
 
 1. **Dart VM 源码** — `runtime/vm/object.h`、`runtime/vm/raw_object.h`（Tagged Pointer 实现）
-2. **V8 Blog: Pointer Compression** — https://v8.dev/blog/pointer-compression
+2. **V8 Blog: Pointer Compression** — <https://v8.dev/blog/pointer-compression>
 3. **Racket Contracts** — *Gradual Typing for Functional Languages* (Siek & Taha, 2006)；Typed Racket 边界机制
 4. **PyPy Escape Analysis** — PyPy 项目的逃逸分析与拆箱优化
 5. **LuaJIT Source** — NaN-boxing 实现参考

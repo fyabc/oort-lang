@@ -12,7 +12,7 @@ class ASTVisitor(Generic[T]):
     def default_result(self) -> T | None:
         return None
 
-    def aggregate_result(self, aggregate: T | None, next_result: T | None) -> T | None:
+    def aggregate_result(self, _aggregate: T | None, next_result: T | None) -> T | None:
         return next_result
 
     def pre_process(self, node):

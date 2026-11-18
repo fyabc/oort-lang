@@ -59,7 +59,25 @@ Do not hand-edit files in `src/oort_lang/parser/grammar/`; they are generated.
 - Add or extend tests under `tests/unit/` for the subsystem you touch.
 - CLI/REPL/example behavior belongs in `tests/integration/`.
 - New examples must be registered in `tests/integration/test_examples.py`.
-- Core code is expected to stay above the CI coverage threshold (80%).
+- Core code is expected to stay above the CI coverage threshold (87%).
+
+## Quality gates
+
+`make check` runs lint, formatting, mypy, import boundaries and tests. The
+following optional gates run in the `quality` CI job or via `make quality`:
+
+| Gate | Tool | Command |
+|------|------|---------|
+| Security | bandit | `make security` |
+| Dependency CVEs | pip-audit | `make audit` |
+| Dependency hygiene | deptry | `make deps` |
+| Dead code | vulture | `make dead-code` |
+| Property tests | hypothesis | `make property` |
+| Markdown | markdownlint-cli2 | `make markdown` |
+
+Mutmut/`cosmic-ray` mutation testing is an occasional local check rather than
+a per-push gate; run it against `src/oort_lang/runtime` when changing the
+interpreter core.
 
 ## Commits and pull requests
 

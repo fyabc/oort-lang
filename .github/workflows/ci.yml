@@ -55,3 +55,77 @@ jobs:
 
       - name: Test
         run: uv run --frozen pytest tests/ --cov=src/oort_lang --cov-report=term-missing --cov-fail-under=87
+
+  quality:
+    name: Quality and security
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev --python 3.13
+
+      - name: Security scan
+        run: uv run --frozen --with bandit bandit -c pyproject.toml -r src/oort_lang -q
+
+      - name: Dependency audit
+        run: uv run --frozen --with pip-audit pip-audit
+
+      - name: Dependency hygiene
+        run: uv run --frozen --with deptry deptry .
+
+      - name: Dead code
+        run: >-
+          uv run --frozen --with vulture vulture src/oort_lang
+          --exclude src/oort_lang/parser/grammar --min-confidence 80
+
+      - name: Property tests
+        run: uv run --frozen --with hypothesis pytest tests/property -q
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Markdown lint
+        run: >-
+          npx --yes markdownlint-cli2@0.18.1
+          "README.md" "CONTRIBUTING.md" "docs/**/*.md"
+          "benchmarks/README.md" "tests/README.md"
+
+      - name: Workflow lint
+        uses: raven-actions/actionlint@v2
+
+  package:
+    name: Package smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Build wheel and sdist
+        run: uv build
+
+      - name: Install the built wheel
+        run: |
+          uv venv .smoke
+          uv pip install --python .smoke/bin/python dist/*.whl
+
+      - name: Run the installed entry point
+        run: .smoke/bin/oort examples/00_basic/00_01_control_flow.ort
+
+      - name: Import the installed package
+        run: .smoke/bin/python -c "import oort_lang; print(oort_lang.__version__)"
