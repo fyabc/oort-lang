@@ -55,6 +55,29 @@ def test_repl_ctrl_c_discards_pending_multiline_input(monkeypatch, capsys):
     assert "1\n" in out
 
 
+@pytest.mark.parametrize("command", ["exit", "quit", "  exit  "])
+def test_repl_exit_commands(monkeypatch, capsys, command: str):
+    assert _run_repl(monkeypatch, [command, "print(1)"]) == 0
+    assert "1\n" not in capsys.readouterr().out
+
+
+def test_repl_ctrl_c_during_evaluation_returns_to_prompt(monkeypatch, capsys):
+    original = ReplSession.feed_line
+    state = {"calls": 0}
+
+    def fake_feed(self, line):
+        if state["calls"] == 0:
+            state["calls"] += 1
+            raise KeyboardInterrupt
+        return original(self, line)
+
+    monkeypatch.setattr(ReplSession, "feed_line", fake_feed)
+    assert _run_repl(monkeypatch, ["1 + 2", "print(5)"]) == 0
+    out = capsys.readouterr().out
+    assert "Interrupted." in out
+    assert "5\n" in out
+
+
 def test_repl_banner_uses_package_version(monkeypatch, capsys):
     assert _run_repl(monkeypatch, []) == 0
     assert f"Oort {__version__}" in capsys.readouterr().out

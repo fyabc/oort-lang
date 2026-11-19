@@ -88,8 +88,9 @@ print(
   正常求值。测试可替换为任意实现。
 
 行为：EOF（Unix Ctrl-D；Windows Ctrl-Z + Enter；或管道结束）正常退出并返回
-0；Ctrl-C 始终取消当前输入与待提交缓冲区并回到新提示符（与 Python/IPython
-一致）；语法/运行时错误只清空当前缓冲区，REPL 继续运行。会话不修改 ANTLR 的 `lexer.inputStream` / `token_stream.tokens` /
+0；Ctrl-C 在输入阶段取消当前行与待提交缓冲区，在执行阶段中断当前语句，均回到
+新提示符（与 Python/IPython 一致）；空闲时整行 `exit` / `quit` 由 REPL 层
+拦截退出；语法/运行时错误只清空当前缓冲区，REPL 继续运行。会话不修改 ANTLR 的 `lexer.inputStream` / `token_stream.tokens` /
 `fetchedEOF`，也不复用 parser 实例。
 
 ## 文法清理记录

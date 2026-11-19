@@ -29,6 +29,11 @@ if TYPE_CHECKING:
     from ..runtime.objects import OortObject
     from .compiler import Compiler
 
+# REPL-level commands, intercepted before parsing. They are only recognized
+# when the whole line is a command and no multi-line buffer is pending, so
+# `exit` can still be used as an ordinary name inside expressions.
+_EXIT_COMMANDS = frozenset({"exit", "quit"})
+
 
 class ReplAction(Enum):
     EMPTY = auto()
@@ -66,8 +71,12 @@ class ReplSession:
         return bool(self._pending)
 
     def cancel(self) -> None:
-        """Discard the pending multi-line input (Ctrl-C semantics)."""
+        """Discard the pending multi-line input (Ctrl-C at the prompt)."""
         self._reset_buffer()
+
+    def interrupt(self) -> None:
+        """Discard a partially evaluated submission (Ctrl-C during evaluation)."""
+        self._finish()
 
     def flush(self) -> ReplResult | None:
         """Parse a still-incomplete buffer at EOF so diagnostics are not lost."""
@@ -142,8 +151,8 @@ class ConsoleIO:
         self.console.rule("Welcome to Oort REPL!")
         self.console.print(
             f"[white]Oort {__version__}\n"
-            "Exit with Ctrl-D (Unix) or Ctrl-Z then Enter (Windows); "
-            "Ctrl-C cancels the current input.[/]"
+            "Exit with Ctrl-D (Unix), Ctrl-Z then Enter (Windows), or 'exit'/'quit'; "
+            "Ctrl-C cancels the current input or running statement.[/]"
         )
 
     def input(self, count: int, continuing: bool) -> str:
@@ -161,6 +170,9 @@ class ConsoleIO:
 
     def cancelled(self) -> None:
         self.console.print("[yellow]Input cancelled.[/]")
+
+    def interrupted(self) -> None:
+        self.console.print("[yellow]Interrupted.[/]")
 
     def goodbye(self) -> None:
         self.console.print("[yellow]Exit.[/]")
@@ -185,7 +197,16 @@ def run_repl(compiler: Compiler, console_io: ConsoleIO | None = None) -> int:
             io.cancelled()
             continue
 
-        result = session.feed_line(line)
+        if not session.is_continuing and line.strip() in _EXIT_COMMANDS:
+            break
+
+        try:
+            result = session.feed_line(line)
+        except KeyboardInterrupt:
+            session.interrupt()
+            io.interrupted()
+            continue
+
         if result.action is ReplAction.EVALUATED and result.value is not None:
             io.result(result.index, repr(result.value))
 

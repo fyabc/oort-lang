@@ -50,10 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   post-processor (`parser/token_processor.py`), and the lexer always emits
   `NEWLINE`.
 - The REPL is now `ReplSession` + `ConsoleIO`: each submission reparses its
-  buffer instead of mutating ANTLR lexer/parser internals. Ctrl-C always
-  cancels the current input (including a pending multi-line buffer), prompts
+  buffer instead of mutating ANTLR lexer/parser internals. Ctrl-C cancels the
+  current input or interrupts a running statement without exiting; prompts
   are hidden for non-TTY input, and EOF exits cleanly. On Windows, EOF is
-  Ctrl-Z followed by Enter.
+  Ctrl-Z followed by Enter; `exit` / `quit` also close the REPL.
 
 ### Fixed
 

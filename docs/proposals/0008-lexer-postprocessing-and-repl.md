@@ -102,9 +102,9 @@ EOF、错误恢复行为可预测。
 
 - 每次提交重新解析完整缓冲区，不修改 lexer/parser 内部状态；
 - 语法错误后清空当前缓冲区并保留解释器环境，REPL 继续运行；
-- EOF（Ctrl-D 或管道结束）正常退出并返回 0；
-- Ctrl-C 语义需要明确：建议“取消当前多行输入，清空缓冲区；在空提示符下再按
-  Ctrl-C 退出”，与常见 REPL 一致；若实现成本高，可先保持“退出”并在帮助文本中说明；
+- EOF（Ctrl-D、Windows Ctrl-Z + Enter，或管道结束）正常退出并返回 0；
+- Ctrl-C 在输入阶段取消当前输入，在执行阶段中断当前语句，均不退出；
+- `exit` / `quit` 在空闲提示符下显式退出；
 - 非 TTY（管道/重定向）下仍可工作；是否隐藏提示符另行决定，但必须有
   subprocess 冒烟测试覆盖。
 
@@ -162,10 +162,14 @@ REPL 建议按层次测试，而不是只靠手动输入：
 
 ## 已决问题（2026-11-20）
 
-- **Ctrl-C**：始终取消当前输入（包括待提交的多行缓冲区）并回到新提示符，
-  与 Python/IPython 一致；退出使用 EOF。
+- **Ctrl-C**：输入阶段取消当前行与待提交的多行缓冲区；执行阶段中断当前语句
+  （`KeyboardInterrupt`）并回到提示符；两种情况下环境保留已发生的副作用。
+  与 CPython/IPython/IRB/GHCi/Julia 一致，不采用 Node 的“双击 Ctrl-C 退出”。
 - **退出键**：Unix 为 Ctrl-D；Windows 控制台为 Ctrl-Z 后按 Enter（Python
   `input()` 的 EOF 约定，PowerShell 同样适用）。
+- **显式退出**：整行恰为 `exit` 或 `quit` 时由 REPL 层拦截（仅在没有待提交
+  多行输入时），不进入语言语义；与 Python/IPython/Ruby/Bash 的显式退出命令
+  对齐，也为 Windows 用户提供可发现的退出方式。
 - **非 TTY**：隐藏 `In [n]` / `Out[n]` 提示符，但仍正常求值；管道 EOF 正常
   退出并返回 0。
 - **历史/行编辑**：本版不做，依赖终端自身；后续如需再引入 `prompt_toolkit`。
