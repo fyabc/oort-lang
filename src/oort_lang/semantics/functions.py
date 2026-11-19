@@ -16,6 +16,11 @@ from .decl import OutsideDeclType
 from .scope import ScopeLayout
 
 
+def _is_special_method_name(name: str) -> bool:
+    """True for dunder names such as `__init__` or `__op_add__`."""
+    return len(name) > 4 and name.startswith("__") and name.endswith("__")
+
+
 class FunctionResolverMixin(ASTVisitor):
     error_handler: CompilerErrorHandler
     input_info: InputInfo
@@ -45,16 +50,26 @@ class FunctionResolverMixin(ASTVisitor):
     def visit_function_def(self, node: nodes.FunctionDef) -> None:
         if node.type_params:
             self._unsupported("Generic functions are not implemented yet.", node)
+
+        if len(node.names) > 2:
+            message = (
+                "Class method names must use 'def class.name'."
+                if node.has_class_prefix
+                else "Extension methods must name exactly one receiver type ('def C.f')."
+            )
+            self.error_handler.add(OortSyntaxError(message, node.name_position), self.input_info)
+            return None
+
         if node.is_class_method and self._current_decl != OutsideDeclType.CLASS:
             self._unsupported("Class methods must be defined inside a class.", node)
             return None
-        if (
-            len(node.names) > 1
-            and not node.is_class_method
-            and self._current_decl != OutsideDeclType.CLASS
-        ):
-            self._unsupported("Extension methods are not implemented yet.", node)
+
+        if node.is_extension:
+            if self._check_extension_definition(node):
+                # Extensions are not ordinary names: do not declare or define them.
+                self.resolve_function(node)
             return None
+
         if node.is_operator:
             self._check_operator_definition(node)
 
@@ -63,6 +78,30 @@ class FunctionResolverMixin(ASTVisitor):
             self.declare(self._declaration_name(node), node.name_position)
             self.define(self._declaration_name(node))  # Define eagerly for recursion.
         self.resolve_function(node)
+
+    def _check_extension_definition(self, node: nodes.FunctionDef) -> bool:
+        """Validate an extension declaration; False means an error was reported."""
+        if self._current_decl == OutsideDeclType.CLASS:
+            self.error_handler.add(
+                OortSyntaxError(
+                    "Cannot define extension method in class scope.", node.name_position
+                ),
+                self.input_info,
+            )
+            return False
+        if node.is_operator:
+            self._unsupported("Extension operator methods are not supported yet.", node)
+            return False
+        if _is_special_method_name(node.name):
+            self.error_handler.add(
+                OortSyntaxError(
+                    f"Extension methods cannot define special method {node.name!r}.",
+                    node.name_position,
+                ),
+                self.input_info,
+            )
+            return False
+        return True
 
     @staticmethod
     def _declaration_name(node: nodes.FunctionDef) -> str:
@@ -145,6 +184,8 @@ class FunctionResolverMixin(ASTVisitor):
                 self._current_decl = OutsideDeclType.METHOD_INIT
             else:
                 self._current_decl = OutsideDeclType.METHOD
+        elif node.is_extension:
+            self._current_decl = OutsideDeclType.EXTENSION_METHOD
         else:
             self._current_decl = OutsideDeclType.FUNCTION
 

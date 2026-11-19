@@ -20,8 +20,18 @@ from ..source.source_position import SourcePosition
 from .builtins import setup_builtins
 from .call_args import ArgumentBindingError, EvaluatedArgument
 from .control_flow_exceptions import OortBreak, OortContinue, OortReturn
-from .dispatch import _get_operator_from_cls, find_callable_class_member
-from .environment import AssignResult, DefineResult, Entry, Environment
+from .dispatch import (
+    _bind_extension_method,
+    _get_operator_from_cls,
+    find_callable_class_member,
+)
+from .environment import (
+    AssignResult,
+    DefineResult,
+    Entry,
+    Environment,
+    ExtensionLookup,
+)
 from .functions import (
     OortCallableMixin,
     OortFunction,
@@ -417,11 +427,35 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         value = node.value.accept(self)
 
         result = value.get(node.attribute)
-        if result is None:
+        if result is not None:
+            return result
+
+        # `super` searches class members only; extensions are never a fallback.
+        if isinstance(value, OortSuperProxy):
             raise OortAttributeError(
-                f"{value.type.name!r} object has no attribute {node.attribute!r}", node.position
+                f"Type {value.receiver.type.name!r} has no super attribute {node.attribute!r}",
+                node.position,
             )
-        return result
+
+        lookup = self.env.lookup_extension(value.type, node.attribute)
+        if lookup.ambiguous:
+            raise OortAttributeError(self._ambiguous_extension_message(lookup), node.position)
+        if lookup.match is not None:
+            return _bind_extension_method(value, lookup.match.func, lookup.match.target)
+
+        raise OortAttributeError(
+            f"{value.type.name!r} object has no attribute {node.attribute!r}", node.position
+        )
+
+    @staticmethod
+    def _ambiguous_extension_message(lookup: ExtensionLookup) -> str:
+        names = sorted({match.func.closure.module_root.name for match in lookup.ambiguous})
+        target = lookup.ambiguous[0].target.name
+        name = lookup.ambiguous[0].func.name
+        origins = " and ".join(repr(origin) for origin in names)
+        return (
+            f"Ambiguous extension method {name!r} for type {target!r}: candidates from {origins}."
+        )
 
     def visit_subscript(self, node: nodes.Subscript) -> OortObject:
         value = node.value.accept(self)
@@ -651,6 +685,32 @@ class ASTInterpreter(ASTVisitor[OortObject]):
 
     def visit_function_def(self, node: nodes.FunctionDef) -> OortFunction:
         func = OortFunction(node, closure=self.env)
+        if node.is_extension:
+            receiver_name = node.extension_receiver
+            assert receiver_name is not None
+            entry = self.env.get(receiver_name)
+            if entry is None:
+                raise OortNameError(
+                    f"Extension receiver {receiver_name!r} is not defined.",
+                    node.name_position,
+                )
+            receiver = entry.value
+            if not isinstance(receiver, OortType):
+                raise OortTypeError(
+                    f"Extension receiver {receiver_name!r} is not a type.",
+                    node.name_position,
+                )
+            # Extension operator support arrives in the next commit; Pass 1
+            # currently rejects it before execution.
+            result = self.env.register_extension(receiver, node.name, func)
+            if result == DefineResult.REDEFINED:
+                raise OortSyntaxError(
+                    f"Extension method {receiver.name!r}.{node.name} is already "
+                    f"defined in this scope.",
+                    node.name_position,
+                )
+            return func
+
         self.env.define(node.name, func, mutable=False)
         return func
 

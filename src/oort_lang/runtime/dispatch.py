@@ -35,6 +35,22 @@ def _get_operator_from_cls(
     return None
 
 
+def _bind_extension_method(
+    receiver: "OortObject", func: OortFunction, defining_type: "OortType"
+) -> OortMethod:
+    """Bind an extension function to a receiver as a method.
+
+    `defining_type` is the type the extension matched on (not necessarily the
+    receiver's dynamic type); `super` resumes after that type.
+    """
+    return OortMethod(
+        this=receiver,
+        node=func.node,
+        closure=func.closure,
+        defining_type=defining_type,
+    )
+
+
 def _get_from_cls(name: str, start_type: "OortType", receiver: "OortObject") -> "OortObject | None":
     """Search method from class MRO and metaclass MRO."""
 

@@ -2,7 +2,8 @@
 
 import pytest
 
-from tests.helpers import TEST_ASSETS_DIR, get_compiler
+from oort_lang.ast.nodes import ClassDef, FunctionDef, ModuleNode
+from tests.helpers import TEST_ASSETS_DIR, build_ast, get_compiler
 
 
 def test_ast_string(capsys: pytest.CaptureFixture):
@@ -41,6 +42,36 @@ def test_ast_file(file_name: str, capsys: pytest.CaptureFixture):
         ast_string = f.read()
     captured = capsys.readouterr()
     assert captured.out == ast_string
+
+
+def test_extension_function_def_properties():
+    ast = build_ast(
+        """\
+class C { def class.make: 1 }
+def C.f: 1
+def f: 1
+"""
+    )
+    assert isinstance(ast, ModuleNode)
+    class_def, extension, plain = ast.body.statements
+    assert isinstance(class_def, ClassDef)
+    assert isinstance(extension, FunctionDef)
+    assert extension.names == ["C", "f"]
+    assert extension.is_extension
+    assert extension.extension_receiver == "C"
+    assert not extension.has_class_prefix
+    assert not extension.is_class_method
+
+    class_method = class_def.body.statements[0]
+    assert isinstance(class_method, FunctionDef)
+    assert class_method.is_class_method
+    assert class_method.has_class_prefix
+    assert not class_method.is_extension
+    assert class_method.extension_receiver is None
+
+    assert isinstance(plain, FunctionDef)
+    assert not plain.is_extension
+    assert plain.extension_receiver is None
 
 
 def test_macro_expr(capsys: pytest.CaptureFixture):

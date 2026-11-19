@@ -148,6 +148,8 @@ class OortSuperProxy(OortNativeMixin, OortObject):
         # Search from super classes.
         mro = self.receiver.type.mro()
         start_idx = mro.index(self.cls) + 1
+        if start_idx >= len(mro):
+            return None
         start_type = mro[start_idx]
 
         value = _get_from_cls(name=name, start_type=start_type, receiver=self.receiver)

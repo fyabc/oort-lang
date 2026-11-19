@@ -79,8 +79,22 @@ class FunctionDef(StmtExpr):
         return self.anonymous_count if self.anonymous_count else len(self.params)
 
     @property
+    def has_class_prefix(self) -> bool:
+        return bool(self.names) and self.names[0] == "class"
+
+    @property
     def is_class_method(self) -> bool:
         return len(self.names) == 2 and self.names[0] == "class"
+
+    @property
+    def is_extension(self) -> bool:
+        """True for `def C.f` and `def C.operator "<sym>"`."""
+        return len(self.names) == 2 and self.names[0] != "class"
+
+    @property
+    def extension_receiver(self) -> str | None:
+        """Receiver name of an extension method, else None."""
+        return self.names[0] if self.is_extension else None
 
     @property
     def operator_symbol(self) -> str | None:

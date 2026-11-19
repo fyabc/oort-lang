@@ -1,11 +1,18 @@
 #! /usr/bin/env python
 
+from __future__ import annotations
+
 import dataclasses
 import logging
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Any
 
-from .objects import OortObject
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from .functions import OortFunction
+    from .objects import OortObject
+    from .type_system import OortType
 
 GLOBAL_ENV_NAME = "<global>"
 
@@ -27,12 +34,28 @@ class AssignResult(Enum):
     IMMUTABLE = 3
 
 
+@dataclasses.dataclass(frozen=True)
+class ExtensionMatch:
+    """One extension method candidate."""
+
+    target: OortType  # The MRO type the extension was defined on.
+    func: OortFunction
+
+
+@dataclasses.dataclass(frozen=True)
+class ExtensionLookup:
+    """Result of an extension lookup: one match, ambiguity, or nothing."""
+
+    match: ExtensionMatch | None = None
+    ambiguous: tuple[ExtensionMatch, ...] = ()
+
+
 class Environment:
     """Oort environment in AST interpreter."""
 
     def __init__(
         self,
-        outer: Optional["Environment"] = None,
+        outer: Environment | None = None,
         name: str = GLOBAL_ENV_NAME,
         *,
         allow_redefine: bool | None = None,
@@ -53,7 +76,16 @@ class Environment:
         else:
             self.module_root = outer.module_root
 
-    def _ancestor(self, depth: int) -> "Environment":
+        # Extension methods and operators are not values; they live in their
+        # own per-scope tables and are looked up lexically at the use site.
+        self.extensions: dict[tuple[OortType, str], OortFunction] = {}
+        self.extension_operators: dict[tuple[OortType, str, int], OortFunction] = {}
+        # Modules imported by this scope whose top-level extensions are active.
+        # Only the source scope's local tables are consulted, never its own
+        # imported scopes: imports are not transitive.
+        self.imported_extension_scopes: list[Environment] = []
+
+    def _ancestor(self, depth: int) -> Environment:
         env: Environment | None = self
         for _ in range(depth):
             assert env is not None
@@ -106,6 +138,97 @@ class Environment:
             return AssignResult.IMMUTABLE
         entry.value = value
         return AssignResult.OK
+
+    def register_extension(
+        self, target_type: OortType, name: str, func: OortFunction
+    ) -> DefineResult:
+        """Register a local extension method in this scope."""
+        return self._register_extension_in(self.extensions, (target_type, name), func)
+
+    def register_extension_operator(
+        self,
+        target_type: OortType,
+        symbol: str,
+        operand_count: int,
+        func: OortFunction,
+    ) -> DefineResult:
+        """Register a local extension operator in this scope."""
+        return self._register_extension_in(
+            self.extension_operators, (target_type, symbol, operand_count), func
+        )
+
+    def _register_extension_in(
+        self, table: dict[Any, OortFunction], key: tuple[Any, ...], func: OortFunction
+    ) -> DefineResult:
+        if key in table and not self.allow_redefine:
+            return DefineResult.REDEFINED
+        table[key] = func
+        return DefineResult.OK
+
+    def add_imported_extension_scope(self, source: Environment) -> None:
+        """Activate the top-level extensions defined by an imported module."""
+        if not any(scope is source for scope in self.imported_extension_scopes):
+            self.imported_extension_scopes.append(source)
+
+    def lookup_extension(self, receiver_type: OortType, name: str) -> ExtensionLookup:
+        """Find an extension method visible from this scope."""
+        return self._lookup_extension(receiver_type, (name,), operators=False)
+
+    def lookup_extension_operator(
+        self, receiver_type: OortType, symbol: str, operand_count: int
+    ) -> ExtensionLookup:
+        """Find an extension operator visible from this scope."""
+        return self._lookup_extension(receiver_type, (symbol, operand_count), operators=True)
+
+    @staticmethod
+    def _nearest_in(
+        table: Mapping[Any, OortFunction], receiver_type: OortType, suffix: tuple[Any, ...]
+    ) -> tuple[int, ExtensionMatch] | None:
+        """Return the most specific match and its MRO distance."""
+        for index, mro_type in enumerate(receiver_type.mro()):
+            func = table.get((mro_type, *suffix))
+            if func is not None:
+                return index, ExtensionMatch(mro_type, func)
+        return None
+
+    def _lookup_extension(
+        self, receiver_type: OortType, suffix: tuple[Any, ...], *, operators: bool
+    ) -> ExtensionLookup:
+        """Walk the lexical scope chain with local-before-imported sub-tiers."""
+        env: Environment | None = self
+        while env is not None:
+            table = env.extension_operators if operators else env.extensions
+
+            # Local extensions in this scope win unconditionally, even when an
+            # imported extension would match a more derived type.
+            local = self._nearest_in(table, receiver_type, suffix)
+            if local is not None:
+                return ExtensionLookup(match=local[1])
+
+            # Imported scopes form one candidate pool compared by MRO distance.
+            best_index: int | None = None
+            candidates: list[ExtensionMatch] = []
+            for scope in env.imported_extension_scopes:
+                imported = scope.extension_operators if operators else scope.extensions
+                found = self._nearest_in(imported, receiver_type, suffix)
+                if found is None:
+                    continue
+                index, match = found
+                if best_index is None or index < best_index:
+                    best_index, candidates = index, [match]
+                elif index == best_index:
+                    candidates.append(match)
+
+            if candidates:
+                # Importing the same module under several aliases must not
+                # create a false ambiguity.
+                unique = list({id(match.func): match for match in candidates}.values())
+                if len(unique) == 1:
+                    return ExtensionLookup(match=unique[0])
+                return ExtensionLookup(ambiguous=tuple(unique))
+
+            env = env.outer
+        return ExtensionLookup()
 
     def pprint(self):
         """Pretty print current environment."""

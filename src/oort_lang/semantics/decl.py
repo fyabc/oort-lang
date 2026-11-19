@@ -14,6 +14,7 @@ class OutsideDeclType(Enum):
     METHOD = 3  # method
     METHOD_INIT = 4  # initializer
     CLASS_METHOD = 5  # static method
+    EXTENSION_METHOD = 6  # `def C.f` outside a class
 
     @property
     def is_function(self) -> bool:
@@ -22,6 +23,7 @@ class OutsideDeclType(Enum):
             OutsideDeclType.METHOD,
             OutsideDeclType.METHOD_INIT,
             OutsideDeclType.CLASS_METHOD,
+            OutsideDeclType.EXTENSION_METHOD,
         ]
 
     @property
@@ -30,4 +32,5 @@ class OutsideDeclType(Enum):
             OutsideDeclType.METHOD,
             OutsideDeclType.METHOD_INIT,
             OutsideDeclType.CLASS_METHOD,
+            OutsideDeclType.EXTENSION_METHOD,
         ]

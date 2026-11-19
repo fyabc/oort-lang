@@ -21,7 +21,6 @@ UNSUPPORTED_CASES = [
     ("def f { $0 }", "Anonymous parameters"),
     ("@[]", "Compiler attributes"),
     ('print(f"{1}")', "Formatted string"),
-    ("def C.g: 1", "Extension methods are not implemented yet."),
     ("def class.f: 1", "Class methods must be defined inside a class."),
     ("class A.B {}", "Namespaced classes are not implemented yet."),
     (
