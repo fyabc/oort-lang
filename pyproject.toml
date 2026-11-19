@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "oort-lang"
-version = "0.2.0"
+version = "0.3.0"
 authors = [
     { name = "fyabc" },
 ]
@@ -59,6 +59,28 @@ oort = "oort_lang.driver.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/oort_lang"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/oort_lang",
+    "grammars/Oort.g4",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "pyproject.toml",
+]
+# Keep local environments, editor dependencies and generated site material
+# out of the source distribution.
+exclude = [
+    "editors",
+    ".smoke",
+    "site",
+    "dist",
+    "private",
+    "*.vsix",
+]
 
 [tool.pytest.ini_options]
 log_level = "WARNING"

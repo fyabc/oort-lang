@@ -92,6 +92,7 @@ target/
 
 # Modern Python tooling
 .venv/
+.smoke/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/

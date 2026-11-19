@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-20
+
 ### Added
 
 - Module system (OP 0006): `.ort` modules with `import "m" [as x]` and
@@ -39,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `string.ord` / `string.chr`.
 - JSON parser/formatter showcase at `examples/07_showcase/07_00_json.ort`,
   including `\uXXXX`/surrogate handling and a CLI file argument.
+- Documentation site built with MkDocs Material and deployed to GitHub Pages:
+  <https://fyabc.github.io/oort-lang.py/>, with new getting-started and
+  examples pages.
 
 ### Changed
 
