@@ -20,9 +20,11 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 产生错误结果。完整的实现/拒绝清单见
 [规范：实现状态](docs/spec/06-conformance.md)。
 
-开发以**方言垂直切片**为主轴：先完成 `oort-object` 动态方言的 v1，再以薄探针
-验证并实现 `oort-core`；共享字节码后端在两个方言 v1 之后。详见
-[路线图](docs/roadmap.md) 与 [OP 0001 §5](docs/proposals/0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受)。
+开发以**方言垂直切片**为主轴：`oort-object` 动态方言的 v1 已完成；
+`oort-core` 已落地薄探针（`#lang oort-core`，Int/Bool/Unit 与函数、独立
+静态检查器、跨方言导入拒绝）；共享字节码后端在两个方言 v1 之后。详见
+[路线图](docs/roadmap.md) 与
+[OP 0001 §5](docs/proposals/0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受)。
 
 ### 已实现
 
@@ -48,6 +50,9 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
   规范路径缓存、循环诊断、`-I/--module-path` 搜索路径
 - REPL（多行输入；Ctrl-C 取消输入或中断执行；Unix Ctrl-D、Windows Ctrl-Z+Enter、
   `exit` / `quit` 或管道 EOF 正常退出）
+- `oort-core` 薄探针：`#lang oort-core`、Int/Bool/Unit、标注必填的函数、
+  `if`/`return`、独立静态检查器；`oort-object` 仍忽略标注。见
+  [规范](docs/spec/11-core-probe.md)
 
 ### 待实现（见 proposals）
 

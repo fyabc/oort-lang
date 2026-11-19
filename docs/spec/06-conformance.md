@@ -4,13 +4,14 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 本页是二者之间的一致性矩阵。
 
 实现原则：**未实现的功能必须显式报错**，不能静默产生错误结果。
-`Pass1Analyzer` 负责在运行前拒绝这些特性。
+`Pass1Analyzer` 负责共享的名称/作用域/未实现特性检查；`oort-core` 还由
+`CoreTypeChecker` 拒绝静态子集之外的构造。
 
 ## 已实现
 
 | 类别 | 特性 |
 |------|------|
-| 方言 | 首行 `#lang oort-object`（可选，缺省即此方言）；未知/未实现方言与错位声明显式报错 |
+| 方言 | 首行 `#lang oort-object`（可选，缺省即此方言）与 `#lang oort-core` 薄探针；未知/未实现方言与错位声明显式报错 |
 | 字面量 | 整数、浮点、字符串（含 `r`、三引号）、布尔、`null`、List/Tuple/Dict/Set、切片 |
 | 表达式 | 全部内建运算符、运算符重载（`def operator "<sym>"`）、位运算高于比较、比较非结合、`Bool` 与 `Int` 严格区分（含嵌套容器）、容器递归值相等与 Dict/Set 键相等、`and`/`or` 短路、属性、下标、调用、尾随 lambda、块、`if`/`while`/`for` 表达式、行首 `.` 方法链续行 |
 | 语句 | `var`/`val`（含多目标解包）、赋值（含 `//=` 等增强赋值、元组交换）、`if`/`elif`/`else`、`while`、`for`、`return`、`break expr`、`continue` |
@@ -48,11 +49,27 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 
 `super.__init__(args)` 与 `super.method` 仍然可用。
 
-## 解析但被忽略
+## 解析但被忽略（仅 `oort-object`）
 
 - **类型标注**（`val x: Int`、`-> Int`、形参类型）会被解析和保存到 AST，
-  但动态解释器不检查、不强制。类型系统的工作见
+  但动态解释器不检查、不强制。完整类型系统见
   [proposal 0005](../proposals/0005-type-system.md)。
+- 在 `oort-core` 薄探针中，`Int`/`Bool`/`Unit` 标注会被独立检查器检查；
+  见 [11-core-probe.md](11-core-probe.md)。
+
+## `oort-core` 薄探针
+
+| 类别 | 已实现 |
+|------|--------|
+| 类型 | `Int`、`Bool`、`Unit`（仅函数返回）；内部函数类型/`Unknown`/`Never` |
+| 声明 | 单目标 `val`/`var`，标注或局部推断；`var` 可赋值 |
+| 函数 | 顶层 `def`、标注必填、位置参数、自递归、所有路径返回 |
+| 表达式 | 字面量、名字、块、`if`/`else`、调用、Int 算术/比较、Bool 逻辑、`print` |
+| 模块 | core 暂不支持 import；object↔core 跨方言导入被拒绝 |
+| 调试 | `-t ast` 跳过检查；`-t astm` 显示推断类型 |
+
+不在子集中的构造会以带位置的 `UnsupportedSyntax` 或 `TypeCheckError` 拒绝；
+完整清单见 [11-core-probe.md](11-core-probe.md)。
 
 ## 语法之外的限制
 
@@ -113,3 +130,6 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
   `test_host_boundary.py` 与 `examples/05_stdlib/` 覆盖。
 - 迭代协议由 `tests/unit/runtime/test_iterators.py`、`test_control_flow.py`
   与 `examples/06_iterators/` 覆盖。
+- `oort-core` 薄探针由 `tests/unit/frontend/test_core_checker.py`、
+  `test_core_types.py`、`test_analyzer_dispatch.py`、
+  `tests/unit/runtime/test_core_execution.py` 与 `examples/08_core/` 覆盖。

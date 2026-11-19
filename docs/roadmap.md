@@ -33,7 +33,7 @@ ANTLR 语法与 Pratt 表达式解析、AST、名称解析、树遍历解释器�
 继承/元类、容器、运算符重载、内建函数与 REPL。旧的寄存器字节码原型已移除
 （[OP 0004](proposals/0004-bytecode-vm.md)）。
 
-### 阶段 1：`oort-object` v1（进行中）
+### 阶段 1：`oort-object` v1（P1 已完成，P2 打磨中）
 
 把动态方言做成完整、可演示、可验收的产品。对象模型见
 [OP 0007](proposals/0007-oort-object-object-model.md)。
@@ -66,12 +66,16 @@ P1 已完成。后续打磨（P2）：
 - 下标/属性访问协议（另立提案）；
 - 覆盖率与基准回归持续维护。
 
-### 阶段 2：`oort-core` v1
+### 阶段 2：`oort-core` v1（薄探针已完成）
 
-先做薄探针：`#lang oort-core`、最小静态子集、独立类型检查器，并验证同一程序
-在动态/静态方言下的路由隔离。之后按 [OP 0005](proposals/0005-type-system.md)
-实现双向类型检查、局部推断、泛型（内部单态化 + 边界擦除）、ADT/`match`、
-`Result`/`Option`、静态对象模型与槽变量。
+已完成薄探针（[OP 0017](proposals/0017-oort-core-thin-probe.md)）：
+`#lang oort-core`、Int/Bool/Unit 与函数、独立类型检查器、同一程序在
+动态/静态方言下的路由隔离、跨方言导入拒绝。规范见
+[spec 11](spec/11-core-probe.md)。
+
+后续按 [OP 0005](proposals/0005-type-system.md) 实现双向类型检查的
+expected-type 传播、泛型（内部单态化 + 边界擦除）、ADT/`match`、
+`Result`/`Option`、静态对象模型与槽变量，以及跨方言 FFI 边界。
 
 ### 阶段 3：共享后端
 

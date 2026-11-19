@@ -144,6 +144,7 @@ visitor，默认行为会“穿过”节点执行子节点——这正是旧字�
 
 1. 解释器实现所有语法分析阶段接受的**核心**节点；
 2. `Pass1Analyzer` 对未实现的特性显式报 `UnsupportedSyntax`；
+   `oort-core` 的 `CoreTypeChecker` 还会拒绝静态子集之外的构造；
 3. 新增语法节点时，必须同时实现 visitor 或加入拒绝列表。
 
 拒绝清单见 [规范：一致性矩阵](../spec/06-conformance.md)。

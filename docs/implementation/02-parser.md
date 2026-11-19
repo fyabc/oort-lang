@@ -7,7 +7,7 @@
 
 ```
 源码 → OortLexer → TokenProcessor → OortParser → 解析树
-     → ASTBuilder(+Pratt) → AST → Pass1 语义分析 → 解释器
+     → ASTBuilder(+Pratt) → AST → 语义分析（Pass1；core 另加静态检查）→ 解释器
 ```
 
 `parser/token_processor.py` 位于词法器与解析器之间，是一层纯 token 处理：

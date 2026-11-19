@@ -150,6 +150,15 @@ match opt {
 5. 边界 trampoline 与 blame。
 6. 类型级 `comptime`（最后，需与宏提案统一）。
 
+### 已实现的第一步（2026-11-20）
+
+[OP 0017](0017-oort-core-thin-probe.md) 落地了探针：`#lang oort-core`、
+`Int`/`Bool`/`Unit`、标注必填的函数、局部推断、`if`/`return`、独立的
+`CoreTypeChecker`。它验证了模块级静态/动态路由，但**还不是**本提案的完整
+实现：expected-type 传播、泛型、ADT/`match`、`Result`/`Option`、静态对象
+模型与跨方言 FFI 仍待完成。探针阶段显式拒绝跨方言导入，避免在 trampoline
+之前假装有健全边界。
+
 ## 未解决问题
 
 - `var` 与 `val` 的类型可变性（流敏感类型？）。

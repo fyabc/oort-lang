@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `oort-core` thin probe: `#lang oort-core` with an independent static checker
+  for `Int`, `Bool`, `Unit`, annotated functions, `val`/`var`, `if`/`return`,
+  `print`, and a small operator subset. The same source still runs dynamically
+  under `oort-object`, where annotations remain unchecked (OP 0017).
+- Checked core modules execute on the existing interpreter; `-t astm` shows
+  inferred static types and `Unit` maps to runtime `null`.
+
+### Changed
+
+- Dialect boundaries are explicit: `oort-core` rejects imports, and the module
+  loader rejects `oort-object` ↔ `oort-core` imports until FFI trampolines land.
+- The REPL stays `oort-object`-only and now rejects `#lang` directives with a
+  clear message instead of silently treating the submission as dynamic code.
+
 ## [0.3.1] - 2026-11-20
 
 ### Changed

@@ -4,14 +4,14 @@
 与设计笔记、提案不同，规范中的内容应当与 `src/oort_lang` 的行为一致；
 任何偏离都应被视为 bug。
 
-> 状态：Oort 仍在早期演进（0.2.x）。规范只覆盖**已实现**的特性；
+> 状态：Oort 仍在早期演进（0.3.x）。规范只覆盖**已实现**的特性；
 > 尚未实现但语法可解析的特性在 [06-conformance.md](06-conformance.md) 中列明，
 > 并由编译器显式拒绝。
 >
-> 方言契约（首行 `#lang`）已落地：缺省 `oort-object`，`oort-core` 已注册但
-> 尚未实现。当前规范描述的是 `oort-object` 的参考语义；后续拆分共享的
-> 词法/语法部分与每方言的语义规范。开发模型见
-> [OP 0001 §5](../proposals/0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受)。
+> 方言契约（首行 `#lang`）已落地：缺省 `oort-object`；`oort-core` 已有
+> **薄探针**（Int/Bool/函数与独立类型检查器），规范见
+> [11-core-probe.md](11-core-probe.md)。其余章节描述 `oort-object` 的参考语义；
+> 开发模型见 [OP 0001 §5](../proposals/0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受)。
 
 ## 阅读顺序
 
@@ -26,10 +26,13 @@
 | [08-stdlib.md](08-stdlib.md) | 集合助手、`math` / `string` 原生模块 |
 | [09-iterators.md](09-iterators.md) | `__iter__` 协议、流式 `for`、内置迭代器 |
 | [10-extensions.md](10-extensions.md) | 扩展方法/运算符、作用域、导入、`super` |
+| [11-core-probe.md](11-core-probe.md) | `oort-core` 薄探针：Int/Bool/函数、Unit、拒绝清单 |
 | [06-conformance.md](06-conformance.md) | 实现状态矩阵与诊断规则 |
 
 ## 术语
 
 - **动态方言**：默认的 `oort-object`，树遍历执行（`oort -t eval`），不做类型检查。
-- **语义分析**：`Pass1Analyzer`，负责名称解析、作用域检查和显式拒绝未实现特性。
+- **静态方言**：`oort-core`，当前只实现薄探针子集；类型标注在 `oort-core` 中检查。
+- **语义分析**：`Pass1Analyzer` 负责名称解析、作用域检查和显式拒绝未实现特性；
+  `oort-core` 还运行独立的 `CoreTypeChecker`。
 - **规范错误**：本规范列出的行为；测试套件（`tests/`）覆盖主要条目。

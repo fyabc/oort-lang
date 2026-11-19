@@ -147,12 +147,15 @@ Pratt 表工厂；`ASTBuilder` 与 `Pass1Analyzer` 接收当前方言。
 1. ~~在编译入口解析 `#lang` 并路由到 `DialectConfig`；把 Pratt 运算符表改为按方言配置~~
    （已完成，2026-11-18；`DialectConfig.new_operator_table()` 每次编译返回新表）。
 2. 完成 `oort-object` v1：动态对象模型（OP 0007）、参数绑定、模块/标准库/迭代器协议。
-3. 用 `oort-core` 的薄探针验证方言隔离，再实现完整类型系统与静态对象模型。
+3. ~~用 `oort-core` 的薄探针验证方言隔离~~（已完成，2026-11-20，
+   见 [OP 0017](0017-oort-core-thin-probe.md) 与
+   [spec 11](../spec/11-core-probe.md)）；接下来实现完整类型系统与静态对象模型。
 4. 两个方言 v1 后统一 HIR，再实现共享字节码 VM。
 5. `oort-systems` / `oort-meta` 按实际需求立项，不提前实现。
 
 ## 未解决问题
 
-- `oort-core` 的类型检查器选择 HM 还是双向类型检查？
+- 完整 `oort-core` 的类型检查器选择 HM 还是双向类型检查？（薄探针已采用
+  局部双向检查：签名标注 + 局部推断，不做 HM。）
 - 方言之间共享标准库的策略？
 - 跨方言调用的错误模型（异常 vs `Result`）如何统一？

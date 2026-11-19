@@ -70,6 +70,7 @@ nav:
       - 标准库: spec/08-stdlib.md
       - 迭代器: spec/09-iterators.md
       - 扩展方法与运算符: spec/10-extensions.md
+      - oort-core 薄探针: spec/11-core-probe.md
   - 提案:
       - 提案索引与流程: proposals/README.md
       - OP 0000 模板: proposals/0000-template.md
@@ -89,6 +90,7 @@ nav:
       - OP 0014 扩展方法与运算符: proposals/0014-extension-methods.md
       - OP 0015 最小 I/O 与进程: proposals/0015-minimal-io-and-process.md
       - OP 0016 统一相等性: proposals/0016-equality-protocol.md
+      - OP 0017 oort-core 薄探针: proposals/0017-oort-core-thin-probe.md
   - 设计:
       - 设计索引: design/00-INDEX.md
       - 运行时值表示: design/01-runtime-value-representation.md
@@ -114,4 +116,5 @@ nav:
       - 迭代器: implementation/06-iterators.md
       - 扩展方法: implementation/07-extensions.md
       - 相等性: implementation/08-equality.md
+      - oort-core 类型检查器: implementation/09-core-typechecker.md
   - 路线图: roadmap.md

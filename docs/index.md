@@ -4,9 +4,10 @@ Oort 得名于**奥尔特云**——太阳系最外缘那层包裹着一切的�
 安静，却承载着无数尚未被命名的彗星与可能性。这正是我们对这门语言的期待：
 边界可以很远，但核心必须清晰、稳定、可理解。
 
-Oort 以“显式优于隐式、正交优于特例、先语义后性能”为准则，先把动态方言
-`oort-object` 做扎实，再向静态方言与共享后端演进。项目中的工具链也会延续
-天文学词汇的命名传统——你已经能在左上角的轨道与彗星里看到它。
+Oort 以“显式优于隐式、正交优于特例、先语义后性能”为准则：`oort-object`
+动态方言的 v1 已完成，`oort-core` 已有薄静态探针，之后向完整静态方言与
+共享后端演进。项目中的工具链也会延续天文学词汇的命名传统——你已经能在
+左上角的轨道与彗星里看到它。
 
 欢迎从[开始使用](getting-started.md)或[示例](examples.md)进入；想了解语言
 当前确切行为，请直接阅读[语言规范](spec/index.md)。
@@ -32,6 +33,7 @@ Oort 以“显式优于隐式、正交优于特例、先语义后性能”为准
 - [标准库](spec/08-stdlib.md) — 集合助手、`math` / `string`
 - [迭代器协议](spec/09-iterators.md) — `__iter__`、流式 `for`
 - [扩展方法与运算符](spec/10-extensions.md) — `def C.f`、作用域、导入、`super`
+- [`oort-core` 薄探针](spec/11-core-probe.md) — Int/Bool/Unit、静态检查与拒绝清单
 - [实现状态矩阵](spec/06-conformance.md) — 已实现 / 被拒绝 / 计划中的特性
 
 ## 提案
@@ -54,7 +56,8 @@ Oort 的语言变更采用类 PEP/RFC 流程：
 - [OP 0013: 迭代器协议](proposals/0013-iterator-protocol.md)（已实现）
 - [OP 0014: 扩展方法与扩展运算符](proposals/0014-extension-methods.md)（已实现）
 - [OP 0015: 最小 I/O、命令行参数与退出码](proposals/0015-minimal-io-and-process.md)
-- [OP 0016: 统一相等性协议](proposals/0016-equality-protocol.md)
+- [OP 0016: 统一相等性协议](proposals/0016-equality-protocol.md)（已实现）
+- [OP 0017: `oort-core` 薄探针](proposals/0017-oort-core-thin-probe.md)（已实现）
 
 ## 实现与设计
 

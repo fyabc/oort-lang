@@ -44,6 +44,17 @@
 | [集合助手](https://github.com/fyabc/oort-lang.py/blob/main/examples/05_stdlib/05_00_collections.ort) | `map` / `filter` / `sorted` / `zip` |
 | [math 与 string](https://github.com/fyabc/oort-lang.py/blob/main/examples/05_stdlib/05_01_math_string.ort) | 原生标准库模块 |
 
+## `oort-core` 薄探针
+
+| 示例 | 内容 |
+|---|---|
+| [基础子集](https://github.com/fyabc/oort-lang.py/blob/main/examples/08_core/08_00_core_basics.ort) | `#lang oort-core`、Int/Bool、`var`/`val`、`if`、`print` |
+| [静态函数](https://github.com/fyabc/oort-lang.py/blob/main/examples/08_core/08_01_core_functions.ort) | 标注必填、自递归、`-> Unit` 过程 |
+
+```bash
+oort examples/08_core/08_01_core_functions.ort
+```
+
 ## Showcase
 
 | 示例 | 内容 |

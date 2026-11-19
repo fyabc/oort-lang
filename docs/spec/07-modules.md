@@ -88,8 +88,11 @@ oort --module-path ./libs main.ort
 
 - 每个模块独立解析首行 `#lang`。被导入模块可以是显式的
   `#lang oort-object`，也可以省略（缺省即 `oort-object`）。
-- 导入未知或未实现的方言（如 `oort-core`）会在该模块的诊断中报错。
-- 跨方言调用必须经过未来的显式 FFI 边界；本版不提供该机制。
+- `oort-core` 薄探针暂不支持 `import`；core 模块只能作为入口模块运行。
+- 加载器在编译后比较导入方与目标模块的方言；object↔core 双向导入都会被
+  拒绝，并提示需要显式 FFI 边界。跨方言调用见
+  [OP 0005](../proposals/0005-type-system.md) 的后续工作。
+- 原生模块（`io`/`math`/`os`/`string`）仍只对 `oort-object` 可用。
 
 ## 导入错误
 
