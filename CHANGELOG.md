@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-20
+
 ### Changed
 
 - Equality now has one recursive value protocol and a separate key protocol
@@ -16,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   resolution, so it cannot silently capture an outer anonymous parameter.
 - Line-leading `.` continuation is removed from the parser token stream before
   parsing; the REPL still requires `\` because it cannot see the next line.
+- The JSON showcase uses brace-only definitions for no-argument methods
+  (`def parse { ... }`).
 
 ### Fixed
 

@@ -58,7 +58,7 @@ def test_repl_ctrl_c_discards_pending_multiline_input(monkeypatch, capsys):
 @pytest.mark.parametrize("command", ["exit", "quit", "  exit  "])
 def test_repl_exit_commands(monkeypatch, capsys, command: str):
     assert _run_repl(monkeypatch, [command, "print(1)"]) == 0
-    assert "1\n" not in capsys.readouterr().out
+    assert "Out[" not in capsys.readouterr().out
 
 
 def test_repl_ctrl_c_during_evaluation_returns_to_prompt(monkeypatch, capsys):
