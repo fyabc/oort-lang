@@ -12,6 +12,7 @@
 | [02-parser.md](02-parser.md) | ANTLR 词法/语法 + Pratt 表达式解析，错误报告 |
 | [03-interpreter.md](03-interpreter.md) | 树遍历解释器、对象模型、作用域与内建函数 |
 | [04-class-system.md](04-class-system.md) | 类、继承、元类、`this` / `super` |
+| [05-stdlib.md](05-stdlib.md) | 宿主边界、集合助手、`math` / `string` 原生模块 |
 
 ## 当前实现边界
 

@@ -7,7 +7,7 @@ tests/
 ├── assets/              # 固定的 .ort 源文件与期望 AST
 ├── unit/
 │   ├── frontend/        # 词法、解析、AST、语义分析、Binding、诊断、拒绝清单
-│   └── runtime/         # 解释器：基础语句、控制流、函数、类、容器、内建、参数绑定、模块加载
+│   └── runtime/         # 解释器、函数/类/容器、模块加载、宿主边界与标准库
 ├── property/            # hypothesis 属性测试（CI 用 --with hypothesis）
 └── integration/         # CLI、REPL、全部示例程序
 ```
@@ -83,6 +83,10 @@ REPL 按层次测试，不依赖手动输入：
 | 匿名 lambda 参数 | `unit/runtime/test_anonymous_params.py` |
 | 默认值/关键字/变长/块参数 | `unit/runtime/test_parameter_binding.py` |
 | 解释器运行时隔离 | `unit/runtime/test_runtime_isolation.py` |
+| 宿主投影/原生模式 | `unit/runtime/test_host_boundary.py` |
+| 集合助手 | `unit/runtime/test_collection_builtins.py` |
+| `math` / `string` 模块 | `unit/runtime/test_math_string_modules.py` |
+| 原生标准库导入 | `unit/runtime/test_native_modules.py` |
 | 模块路径解析 | `unit/runtime/test_module_resolution.py` |
 | 模块加载/缓存/循环 | `unit/runtime/test_modules.py` |
 | 类与继承 | `unit/runtime/test_classes.py` |

@@ -15,9 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Multi-file example under `examples/04_modules/`.
 - Diagnostics now keep each error paired with its own source input and sort
   across files, so imported-module errors point at the right file and line.
+- Minimal standard library (OP 0012): eager `map`, `filter`, `zip`, `enumerate`
+  and stable `sorted` builtins, plus native `math` and `string` modules
+  importable as `import "math"` / `from "string" import upper`.
+- Standard-library examples under `examples/05_stdlib/` and host/stdlib
+  benchmarks in `benchmarks/test_stdlib.py`.
 
 ### Changed
 
+- Host boundary refactor: `OortObject.py_value` becomes `host_value`, with a
+  `HostBridge`, HOST/VALUE/CONTEXT native call modes and a `NativeContext` for
+  higher-order native functions. `len` no longer projects whole containers.
 - Imports are only allowed at module top level; nested imports are rejected
   with an explicit diagnostic.
 - Each module owns an isolated global environment; global lookups resolve

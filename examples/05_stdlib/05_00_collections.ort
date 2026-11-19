@@ -1,0 +1,10 @@
+# 集合助手：map / filter / zip / enumerate / sorted（OP 0012）
+
+val xs = [3, 1, 2]
+
+print(map(xs) do(x): x * 2)
+print(filter(xs) do(x): x > 1)
+print(zip(xs, [10, 20]))
+print(enumerate(xs))
+print(sorted(xs))
+print(sorted(xs, do(x): -x))

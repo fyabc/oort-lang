@@ -21,6 +21,7 @@
 | [09-version-naming.md](09-version-naming.md) | 天体命名版本号方案 |
 | [10-category-theory-notes.md](10-category-theory-notes.md) | 范畴论在编译器中的应用笔记 |
 | [11-latest-research-2025.md](11-latest-research-2025.md) | 2025–2026 年语言设计前沿调研 |
+| [12-host-boundary.md](12-host-boundary.md) | 宿主边界、HostBridge、原生调用模式与 Rust 迁移 |
 
 ## 使用注意
 

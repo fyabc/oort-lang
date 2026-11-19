@@ -2,6 +2,8 @@
 
 """Helpers for benchmarks: run the real compiler pipeline once."""
 
+from pathlib import Path
+
 from oort_lang.ast.nodes import ASTNode
 from oort_lang.driver.arguments import get_main_parser, parse_main_args
 from oort_lang.driver.compiler import Compiler
@@ -25,7 +27,9 @@ def compile_program(source: str) -> tuple[ASTInterpreter, ASTNode]:
     assert ast is not None
     ast = compiler.semantic_analyze(ast, Pass1Analyzer(compiler.error_handler, input_info))
     assert ast is not None
-    return ASTInterpreter(compiler.error_handler), ast
+    interpreter = ASTInterpreter(compiler.error_handler)
+    interpreter.module_loader = compiler.make_module_loader(interpreter, Path.cwd())
+    return interpreter, ast
 
 
 def run_compiled(interpreter: ASTInterpreter, ast: ASTNode) -> object:

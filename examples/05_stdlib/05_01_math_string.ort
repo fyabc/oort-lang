@@ -1,0 +1,12 @@
+# 原生标准库模块：math / string（OP 0012）
+
+import "math"
+import "string"
+from "string" import upper
+
+print(math.floor(math.sqrt(10)))
+print(math.pi > 3.14)
+print(string.join(["a", "b"], "-"))
+print(upper("oort"))
+print(string.split("a,b,c", ","))
+print(string.startswith("oort", "oo"))

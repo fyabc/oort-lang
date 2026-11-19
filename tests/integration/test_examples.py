@@ -29,6 +29,10 @@ EXPECTED_OUTPUTS = {
     ),
     "03_oop/03_01_object_model.ort": "1\n0\ntrue\nfalse\nA\n",
     "04_modules/04_00_imports.ort": "Hello, Oort!\nHello, modules!\n2\n",
+    "05_stdlib/05_00_collections.ort": (
+        "[6, 2, 4]\n[3, 2]\n[(3, 10), (1, 20)]\n[(0, 3), (1, 1), (2, 2)]\n[1, 2, 3]\n[3, 2, 1]\n"
+    ),
+    "05_stdlib/05_01_math_string.ort": "3\ntrue\na-b\nOORT\n[a, b, c]\ntrue\n",
 }
 
 EXAMPLE_NAME = re.compile(r"^\d{2}_\d{2}_")

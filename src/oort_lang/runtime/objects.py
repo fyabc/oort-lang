@@ -40,8 +40,8 @@ class OortObject:
         return f"<{self.type.name} object at {hex(id(self))}>"
 
     @property
-    def py_value(self):
-        """Get Python value."""
+    def host_value(self):
+        """Project to the Python host value."""
         return self
 
     @property
@@ -177,8 +177,8 @@ class OortNull(OortNativeMixin, OortObject):
         return "null"
 
     @property
-    def py_value(self):
-        """Get Python value."""
+    def host_value(self):
+        """Project to the Python host value."""
         return None
 
 
@@ -214,8 +214,8 @@ class OortBool(OortNativeMixin, OortObject):
         return hash(self.value)
 
     @property
-    def py_value(self):
-        """Get Python value."""
+    def host_value(self):
+        """Project to the Python host value."""
         return self.value
 
 
@@ -236,8 +236,8 @@ class OortInt(OortNativeMixin, OortObject):
         return hash(self.value)
 
     @property
-    def py_value(self):
-        """Get Python value."""
+    def host_value(self):
+        """Project to the Python host value."""
         return self.value
 
 
@@ -258,8 +258,8 @@ class OortFloat(OortNativeMixin, OortObject):
         return hash(self.value)
 
     @property
-    def py_value(self):
-        """Get Python value."""
+    def host_value(self):
+        """Project to the Python host value."""
         return self.value
 
 
@@ -283,7 +283,7 @@ class OortString(OortNativeMixin, OortObject):
         return hash(self.value)
 
     def __getitem__(self, item: "OortObject"):
-        index = item.py_value
+        index = item.host_value
         result = self.value[index]
         if isinstance(index, slice):
             return OortString(result)
@@ -296,8 +296,8 @@ class OortString(OortNativeMixin, OortObject):
         return (OortString(char) for char in self.value)
 
     @property
-    def py_value(self):
-        """Get Python value."""
+    def host_value(self):
+        """Project to the Python host value."""
         return self.value
 
 
@@ -309,14 +309,14 @@ class OortList(OortObject):
         self.value = value
 
     def __getitem__(self, item: "OortObject"):
-        index = item.py_value
+        index = item.host_value
         result = self.value[index]
         if isinstance(index, slice):
             return OortList(result)
         return result
 
     def __setitem__(self, key: "OortObject", value: "OortObject"):
-        self.value[key.py_value] = value
+        self.value[key.host_value] = value
 
     def __len__(self):
         return len(self.value)
@@ -334,9 +334,9 @@ class OortList(OortObject):
         raise TypeError("unhashable type: 'List'")
 
     @property
-    def py_value(self):
-        """Get Python value."""
-        return [item.py_value for item in self.value]
+    def host_value(self):
+        """Project to a Python list, preserving nested containers and aliases."""
+        return _project_host_value(self, {}, set())
 
 
 class OortTuple(OortObject):
@@ -347,7 +347,7 @@ class OortTuple(OortObject):
         self.value = value
 
     def __getitem__(self, item: "OortObject"):
-        index = item.py_value
+        index = item.host_value
         result = self.value[index]
         if isinstance(index, slice):
             return OortTuple(result)
@@ -376,9 +376,9 @@ class OortTuple(OortObject):
         return "(" + ", ".join(str(item) for item in self.value) + ")"
 
     @property
-    def py_value(self):
-        """Get Python value."""
-        return tuple(item.py_value for item in self.value)
+    def host_value(self):
+        """Project to a Python tuple."""
+        return _project_host_value(self, {}, set())
 
 
 class OortDict(OortObject):
@@ -417,9 +417,9 @@ class OortDict(OortObject):
         return "{: " + ", ".join(f"{k}: {v}" for k, v in self.value.items()) + " :}"
 
     @property
-    def py_value(self):
-        """Get Python value."""
-        return {key.py_value: value.py_value for key, value in self.value.items()}
+    def host_value(self):
+        """Project to a Python dict."""
+        return _project_host_value(self, {}, set())
 
 
 class OortSet(OortObject):
@@ -452,9 +452,9 @@ class OortSet(OortObject):
         return "{. " + ", ".join(str(item) for item in self.value) + " .}"
 
     @property
-    def py_value(self):
-        """Get Python value."""
-        return {item.py_value for item in self.value}
+    def host_value(self):
+        """Project to a Python set."""
+        return _project_host_value(self, {}, set())
 
 
 class OortSlice(OortObject):
@@ -467,16 +467,74 @@ class OortSlice(OortObject):
         self.step = step
 
     @property
-    def py_value(self):
-        """Get Python value."""
-        return slice(
-            None if self.start is None else self.start.py_value,
-            None if self.stop is None else self.stop.py_value,
-            None if self.step is None else self.step.py_value,
-        )
+    def host_value(self):
+        """Project to a Python slice."""
+        return _project_host_value(self, {}, set())
 
     def __repr__(self):
         return f"slice({self.start}, {self.stop}, {self.step})"
+
+
+def _project_host_value(value: "OortObject", memo: dict[int, object], active: set[int]) -> object:
+    """Project one Oort value into the Python host representation.
+
+    Containers are copied recursively. `memo` preserves aliasing and lets
+    mutable List/Dict cycles become self-referential host containers. A tuple
+    cannot be created empty and filled later, so a cycle through a tuple is
+    rejected explicitly instead of recursing forever.
+    """
+    if isinstance(value, OortList):
+        key = id(value)
+        if key in memo:
+            return memo[key]
+        result: list[object] = []
+        memo[key] = result
+        result.extend(_project_host_value(item, memo, active) for item in value.value)
+        return result
+
+    if isinstance(value, OortTuple):
+        key = id(value)
+        if key in memo:
+            return memo[key]
+        if key in active:
+            raise TypeError("Cannot convert a cyclic tuple to a host value")
+        active.add(key)
+        try:
+            result_tuple = tuple(_project_host_value(item, memo, active) for item in value.value)
+        finally:
+            active.discard(key)
+        memo[key] = result_tuple
+        return result_tuple
+
+    if isinstance(value, OortDict):
+        key = id(value)
+        if key in memo:
+            return memo[key]
+        result_dict: dict[object, object] = {}
+        memo[key] = result_dict
+        for item_key, item_value in value.value.items():
+            result_dict[_project_host_value(item_key, memo, active)] = _project_host_value(
+                item_value, memo, active
+            )
+        return result_dict
+
+    if isinstance(value, OortSet):
+        key = id(value)
+        if key in memo:
+            return memo[key]
+        result_set: set[object] = set()
+        memo[key] = result_set
+        result_set.update(_project_host_value(item, memo, active) for item in value.value)
+        return result_set
+
+    if isinstance(value, OortSlice):
+        return slice(
+            None if value.start is None else _project_host_value(value.start, memo, active),
+            None if value.stop is None else _project_host_value(value.stop, memo, active),
+            None if value.step is None else _project_host_value(value.step, memo, active),
+        )
+
+    return value.host_value
 
 
 def wrap_value(value) -> OortObject:

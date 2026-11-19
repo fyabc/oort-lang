@@ -13,6 +13,8 @@ from .functions import (
     OortNativeFunction,
     OortNativeMethod,
 )
+from .host import HostBridge, PythonHost
+from .native import NativeContext, NativeMode
 from .objects import (
     OortBool,
     OortDict,
@@ -34,6 +36,9 @@ from .objects import (
 from .type_system import OortType, Runtime, TypeSystem
 
 __all__ = [
+    "HostBridge",
+    "NativeContext",
+    "NativeMode",
     "OortBool",
     "OortCallableMixin",
     "OortDict",
@@ -57,6 +62,7 @@ __all__ = [
     "OortSuperProxy",
     "OortTuple",
     "OortType",
+    "PythonHost",
     "Runtime",
     "TypeSystem",
     "find_callable_class_member",

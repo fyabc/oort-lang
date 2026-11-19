@@ -26,6 +26,7 @@ from ..parser.grammar.OortLexer import OortLexer
 from ..parser.grammar.OortParser import OortParser
 from ..runtime.interpreter import ASTInterpreter
 from ..runtime.modules import ModuleLoader
+from ..runtime.stdlib import native_module_factories
 from ..semantics.pass1 import Pass1Analyzer
 from ..source.input_info import FileInputInfo, InputInfo, StringInputInfo
 from ..source.source_position import SourcePosition
@@ -92,7 +93,7 @@ class Compiler:
             raise CompilerError() from None
         if self.error_handler.pending_count:
             self.error_handler.report(exit_on_error=False, clear=True)
-        return result.py_value
+        return result.host_value
 
     def compile_unit(self, input_info: InputInfo) -> nodes.ModuleNode | None:
         """Compile one module without printing or clearing diagnostics."""
@@ -138,6 +139,7 @@ class Compiler:
             make_module=interpreter.new_module,
             entry_dir=entry_dir,
             search_paths=self.module_paths,
+            native_modules=native_module_factories(interpreter),
         )
 
     def run_file(self, input_file: os.PathLike) -> Any:

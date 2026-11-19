@@ -127,5 +127,11 @@ jobs:
       - name: Run the installed entry point
         run: .smoke/bin/oort examples/00_basic/00_01_control_flow.ort
 
+      - name: Smoke test the installed standard library
+        run: |
+          cd "$RUNNER_TEMP"
+          output=$("$GITHUB_WORKSPACE/.smoke/bin/oort" -c $'import "math"\nimport "string"\nprint(math.floor(math.sqrt(10)))\nprint(string.upper("oort"))')
+          test "$output" = $'3\nOORT'
+
       - name: Import the installed package
         run: .smoke/bin/python -c "import oort_lang; print(oort_lang.__version__)"

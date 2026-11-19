@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from ..diagnostics.runtime_errors import OortImportError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
     from ..ast import nodes
     from ..source.source_position import SourcePosition
@@ -128,6 +128,7 @@ class ModuleLoader:
         make_module: Callable[[str, Environment], OortModule],
         entry_dir: Path,
         search_paths: Sequence[Path] = (),
+        native_modules: Mapping[str, Callable[[], OortModule]] | None = None,
     ):
         self._compile_module = compile_module
         self._execute_module = execute_module
@@ -135,6 +136,8 @@ class ModuleLoader:
         self._make_module = make_module
         self.entry_dir = entry_dir.resolve()
         self.search_paths = tuple(path.resolve() for path in search_paths)
+        self._native_modules = dict(native_modules or {})
+        self._native_cache: dict[str, OortModule] = {}
         self._records: dict[Path, ModuleRecord] = {}
         self._frames: list[ImportFrame] = []
 
@@ -170,6 +173,14 @@ class ModuleLoader:
 
     def import_module(self, spec: str, position: SourcePosition) -> OortModule:
         """Resolve, load and return a module, executing it at most once."""
+        factory = self._native_modules.get(spec)
+        if factory is not None:
+            module = self._native_cache.get(spec)
+            if module is None:
+                module = factory()
+                self._native_cache[spec] = module
+            return module
+
         importer_dir = self._frames[-1].directory if self._frames else self.entry_dir
         path = resolve_module_path(
             spec,

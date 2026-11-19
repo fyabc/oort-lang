@@ -7,6 +7,7 @@ and exercises the real compiler pipeline, not a stripped-down harness.
 |------|-------|--------|
 | `test_micro.py` | micro | arithmetic, locals, calls, attributes, indexing, dicts |
 | `test_macro.py` | macro | recursion, loops, method dispatch |
+| `test_stdlib.py` | macro/micro | map/filter/sorted/zip/enumerate, string join, host projection and `len` |
 | `test_startup.py` | startup | compiler/runtime construction, empty program |
 | `test_memory.py` | memory | peak allocation ceilings for a runtime and a program |
 | `test_ast_interpreter.py` | macro | historical Fibonacci baseline |
@@ -22,6 +23,13 @@ uv run pytest benchmarks/ --benchmark-json=benchmark.json -q
 micro/macro tests then measure only `interpreter.run(ast)`. Startup tests
 measure construction, and compile-time work is covered by startup/empty
 program rather than mixed into every micro number.
+
+Host-boundary work has two kinds of cost: the constant per-call mode dispatch,
+and the deep copy performed by `HostBridge.to_host` for HOST-mode natives.
+Collection helpers use CONTEXT mode and do not project; `len` is VALUE-mode and
+reads the Oort container directly. `test_stdlib.py` keeps a benchmark for each
+path (`len` on a large nested list, string join, list equality) so the next
+host refactor has a baseline.
 
 ## Regression tracking
 

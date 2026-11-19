@@ -19,6 +19,7 @@
 - [函数](spec/04-functions.md) — `def`、lambda、闭包、尾随闭包
 - [类](spec/05-classes.md) — 继承、元类、`this` / `super`
 - [模块与导入](spec/07-modules.md) — 路径解析、缓存、循环诊断
+- [标准库](spec/08-stdlib.md) — 集合助手、`math` / `string`
 - [实现状态矩阵](spec/06-conformance.md) — 已实现 / 被拒绝 / 计划中的特性
 
 ## 提案
@@ -37,6 +38,7 @@ Oort 的语言变更采用类 PEP/RFC 流程：
 - [OP 0009: 表达式语义与语法表面积清理](proposals/0009-expression-and-surface-cleanup.md)（已实现）
 - [OP 0010: Token 职责与匿名 lambda 参数](proposals/0010-token-responsibilities-and-anonymous-parameters.md)（已实现）
 - [OP 0011: 参数绑定](proposals/0011-parameter-binding.md)（已实现）
+- [OP 0012: 最小标准库与宿主边界](proposals/0012-standard-library.md)（已实现）
 
 ## 实现与设计
 

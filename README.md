@@ -35,7 +35,9 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 - 运算符重载：`def operator "+"(other)` 等方法，内建类型使用同一套调度
 - 行首 `.` 方法链续行；`Bool` 与 `Int` 语义分离
 - 内建：`print`、`clock`、`type`、`super`、`len`、`range`、`str`、`repr`、
-  `int`、`float`、`bool`
+  `int`、`float`、`bool`；集合助手 `map`/`filter`/`sorted`/`zip`/`enumerate`
+- 标准库：`math`（常量与数学函数）与 `string`（切分/连接/大小写/查找/替换）
+  原生模块
 - 模块：`import "./lib"`、`import "./lib" as l`、`from "./lib" import a, b as c`；
   规范路径缓存、循环诊断、`-I/--module-path` 搜索路径
 - REPL（多行输入）

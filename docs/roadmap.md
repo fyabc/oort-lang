@@ -47,11 +47,12 @@ ANTLR 语法与 Pratt 表达式解析、AST、名称解析、树遍历解释器�
 - 小型 lambda 匿名参数（[OP 0010](proposals/0010-token-responsibilities-and-anonymous-parameters.md)）；
 - 完整参数绑定（[OP 0011](proposals/0011-parameter-binding.md)）；
 - 模块与导入加载器、规范路径缓存、循环诊断与 `-I/--module-path`
-  （[OP 0006](proposals/0006-modules-and-imports.md)）。
+  （[OP 0006](proposals/0006-modules-and-imports.md)）；
+- 最小标准库：集合助手与 `math`/`string` 原生模块，以及宿主边界重构
+  （[OP 0012](proposals/0012-standard-library.md)）。
 
 待完成（P1）：
 
-- 最小标准库：`map`/`filter`/`sorted`/`zip`/`enumerate`、`math`、`string`；
 - 用户对象迭代器协议；
 - 类外扩展方法 `def C.f`；
 - 文法去宿主化与 REPL 分层重构（[OP 0008](proposals/0008-lexer-postprocessing-and-repl.md)）。

@@ -64,7 +64,7 @@ _AUG_OPS = {
 def _is_truthy(value: OortObject) -> bool:
     # Truthy check: same as Python.
     # TODO: Replace this simple check with complex `__bool__` call.
-    return bool(value.py_value)
+    return bool(value.host_value)
 
 
 class ASTInterpreter(ASTVisitor[OortObject]):
@@ -129,6 +129,58 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             return result
         finally:
             self.env = prev
+
+    @staticmethod
+    def _builtin_position() -> SourcePosition:
+        return SourcePosition.from_location(1, 0, "<builtin>", filename="<builtin>")
+
+    def is_truthy(self, value: OortObject) -> bool:
+        return _is_truthy(value)
+
+    def iter_values(self, value: OortObject, position=None) -> list[OortObject]:
+        """Snapshot the values iterated by a `for` loop or collection helper."""
+        if isinstance(value, (OortList, OortTuple, OortSet, OortDict, OortString)):
+            return list(value)
+        try:
+            return [wrap_value(item) for item in value.host_value]
+        except TypeError as e:
+            raise OortTypeError(f"{e}", position or self._builtin_position()) from e
+
+    def call_value(self, func, args, position=None) -> OortObject:
+        """Call any Oort callable with already-evaluated positional values."""
+        error_position = position or self._builtin_position()
+        if isinstance(func, (OortNativeFunction, OortNativeMethod)):
+            try:
+                return func(self, args, position)
+            except OortException:
+                raise
+            except ArgumentBindingError as e:
+                raise OortTypeError(str(e), error_position) from e
+            except TypeError as e:
+                raise OortTypeError(str(e), error_position) from e
+            except Exception as e:
+                raise OortRuntimeError(str(e), error_position) from e
+
+        if isinstance(func, (OortFunction, OortMethod, OortType)):
+            try:
+                return func(self, args)
+            except OortException:
+                raise
+            except ArgumentBindingError as e:
+                raise OortTypeError(str(e), error_position) from e
+
+        raise OortTypeError(f"{func.type.name} object is not callable", error_position)
+
+    def apply_operator(self, symbol: str, lhs: OortObject, rhs: OortObject, position=None):
+        """Apply a binary Oort operator to already-evaluated operands."""
+        error_position = position or self._builtin_position()
+        method = self._find_operator(lhs, symbol, 2)
+        if method is None:
+            raise OortTypeError(
+                f"Type {lhs.type.name!r} does not support operator {symbol!r}",
+                error_position,
+            )
+        return self._invoke_operator(method, [rhs], symbol, error_position)
 
     def visit_module(self, node: nodes.ModuleNode) -> OortObject:
         # Static imports are hoisted: dependencies are initialized before the
@@ -340,7 +392,9 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                 )
             values = [arg.value for arg in evaluated]
             try:
-                return func(self, values)
+                return func(self, values, node.position)
+            except OortException:
+                raise
             except TypeError as e:
                 raise OortTypeError(f"{e}", node.position)
             except Exception as e:
@@ -360,7 +414,10 @@ class ASTInterpreter(ASTVisitor[OortObject]):
 
     def _invoke_operator(self, method, args: list[OortObject], symbol: str, position):
         try:
-            result = method(self, args)
+            if isinstance(method, OortNativeMethod):
+                result = method(self, args, position)
+            else:
+                result = method(self, args)
         except OortException:
             raise
         except TypeError as e:
@@ -557,14 +614,7 @@ class ASTInterpreter(ASTVisitor[OortObject]):
 
     def visit_for_expr(self, node: nodes.ForExpr) -> OortObject:
         iterable = node.iterator.accept(self)
-
-        if isinstance(iterable, (OortList, OortTuple, OortSet, OortDict, OortString)):
-            items = list(iterable)
-        else:
-            try:
-                items = [wrap_value(item) for item in iterable.py_value]
-            except TypeError as e:
-                raise OortTypeError(f"{e}", node.iterator.position) from e
+        items = self.iter_values(iterable, node.iterator.position)
 
         result = OortNull.get_null_value()
         for item in items:

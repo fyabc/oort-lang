@@ -61,7 +61,7 @@ def test_existing_interpreter_is_not_affected_by_a_new_one():
 
     # Creating and running interpreter B must not replace A's runtime types.
     assert _run_source(compiler, interpreter_a, "type(3)") is int_type_a
-    assert _run_source(compiler, interpreter_a, "1 + 2").py_value == 3
+    assert _run_source(compiler, interpreter_a, "1 + 2").host_value == 3
 
 
 def test_module_cache_is_per_interpreter(tmp_path, capsys):

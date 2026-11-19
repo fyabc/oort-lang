@@ -16,6 +16,7 @@ from .functions import (
     OortMethodMixin,
     OortNativeFunction,
 )
+from .host import HostBridge, PythonHost
 from .objects import (
     OortBool,
     OortDict,
@@ -274,6 +275,7 @@ class Runtime:
     """Type system and singleton values owned by one interpreter."""
 
     def __init__(self):
+        self.host: HostBridge = PythonHost()
         with self.activate():
             self.types: TypeSystem = TypeSystem(self)
             self.null: OortNull = OortNull()
@@ -311,9 +313,9 @@ def _setup_native_operators(
 ):
     """Define built-in operators as methods, like user-defined ones.
 
-    Native operator functions receive Python values (`this.py_value` and the
-    operands' `py_value`), because `OortNativeMethod` unwraps them before the
-    call. Results are wrapped again by the interpreter.
+    Native operator functions receive host values (`this.host_value` and the
+    operands' `host_value`), because `OortNativeMethod` projects them before
+    the call. Results are wrapped again by the host bridge.
     """
     comparisons = {
         "==": operator.eq,

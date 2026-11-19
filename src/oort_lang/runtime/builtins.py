@@ -8,13 +8,35 @@ from collections.abc import Callable
 
 from .environment import Environment
 from .functions import OortNativeFunction
-from .objects import OortSuperProxy
+from .native import NativeMode
+from .objects import (
+    OortDict,
+    OortList,
+    OortSet,
+    OortString,
+    OortSuperProxy,
+    OortTuple,
+)
+from .stdlib.collections import define_collection_builtins
 from .type_system import OortType, Runtime
 
 
-def _define_native_function(env: Environment, name: str, func: Callable, **kwargs):
+def _define_native_function(
+    env: Environment,
+    name: str,
+    func: Callable,
+    *,
+    mode: NativeMode = NativeMode.HOST,
+):
     """Define a builtin function."""
-    env.define(name, OortNativeFunction(func, name=name, **kwargs))
+    env.define(name, OortNativeFunction(func, name=name, mode=mode))
+
+
+def _len(value):
+    """Length without projecting the whole container to the host."""
+    if isinstance(value, (OortList, OortTuple, OortDict, OortSet, OortString)):
+        return len(value)
+    raise TypeError(f"Type {value.type.name!r} has no len()")
 
 
 def setup_builtins(runtime: Runtime, env: Environment):
@@ -109,7 +131,7 @@ def setup_builtins(runtime: Runtime, env: Environment):
     # List
     t_list = runtime.types.list_type
     t_list.fields = {
-        "length": OortNativeFunction(len),
+        "length": OortNativeFunction(_len, mode=NativeMode.VALUE),
         "__op_getitem__": OortNativeFunction(operator.getitem),
         "__op_setitem__": OortNativeFunction(operator.setitem),
         "__op_delitem__": OortNativeFunction(operator.delitem),
@@ -121,7 +143,7 @@ def setup_builtins(runtime: Runtime, env: Environment):
     # Tuple
     t_tuple = runtime.types.tuple_type
     t_tuple.fields = {
-        "length": OortNativeFunction(len),
+        "length": OortNativeFunction(_len, mode=NativeMode.VALUE),
         "__op_getitem__": OortNativeFunction(operator.getitem),
         "__op_contains__": OortNativeFunction(operator.contains),
         "__op_add__": OortNativeFunction(operator.add),
@@ -131,7 +153,7 @@ def setup_builtins(runtime: Runtime, env: Environment):
     # Dict
     t_dict = runtime.types.dict_type
     t_dict.fields = {
-        "length": OortNativeFunction(len),
+        "length": OortNativeFunction(_len, mode=NativeMode.VALUE),
         "__op_getitem__": OortNativeFunction(operator.getitem),
         "__op_setitem__": OortNativeFunction(operator.setitem),
         "__op_delitem__": OortNativeFunction(operator.delitem),
@@ -142,24 +164,27 @@ def setup_builtins(runtime: Runtime, env: Environment):
     # Set
     t_set = runtime.types.set_type
     t_set.fields = {
-        "length": OortNativeFunction(len),
+        "length": OortNativeFunction(_len, mode=NativeMode.VALUE),
         "__op_contains__": OortNativeFunction(operator.contains),
     }
     env.define(t_set.name, t_set)
 
     # === Builtin functions
-    _define_native_function(env, "print", print, unwrap=False)
+    _define_native_function(env, "print", print, mode=NativeMode.VALUE)
     _define_native_function(env, "clock", time.perf_counter)
-    _define_native_function(env, "type", lambda obj: obj.type, unwrap=False)
-    _define_native_function(env, "super", OortSuperProxy, unwrap=False)
-    _define_native_function(env, "len", len)
+    _define_native_function(env, "type", lambda obj: obj.type, mode=NativeMode.VALUE)
+    _define_native_function(env, "super", OortSuperProxy, mode=NativeMode.VALUE)
+    _define_native_function(env, "len", _len, mode=NativeMode.VALUE)
     _define_native_function(env, "range", range)
     # Keep Oort objects wrapped so their own `__str__` / `__repr__` decide
     # the display syntax (containers use Oort literal delimiters).
-    _define_native_function(env, "str", str, unwrap=False)
-    _define_native_function(env, "repr", repr, unwrap=False)
+    _define_native_function(env, "str", str, mode=NativeMode.VALUE)
+    _define_native_function(env, "repr", repr, mode=NativeMode.VALUE)
     _define_native_function(env, "int", int)
     _define_native_function(env, "float", float)
     _define_native_function(env, "bool", bool)
+
+    # === Collection helpers (eager, CONTEXT mode)
+    define_collection_builtins(env)
 
     # === Builtin variables

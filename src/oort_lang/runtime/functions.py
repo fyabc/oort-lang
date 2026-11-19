@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING
 
 from .context import get_runtime
 from .control_flow_exceptions import OortReturn
-from .objects import OortInstance, OortNativeMixin, OortObject, wrap_value
+from .native import NativeContext, NativeMode
+from .objects import OortInstance, OortNativeMixin, OortObject
 from .signature import build_call_env
 
 if TYPE_CHECKING:
@@ -42,25 +43,29 @@ class OortFunctionMixin(OortCallableMixin):
 class OortNativeFunction(OortFunctionMixin, OortNativeMixin, OortObject):
     """Oort native function object."""
 
-    def __init__(self, value: Callable, name: str = "<lambda>", unwrap: bool = True):
+    def __init__(
+        self,
+        value: Callable,
+        name: str = "<lambda>",
+        *,
+        mode: NativeMode = NativeMode.HOST,
+    ):
         super().__init__(name=name)
         self.value = value
-        self.unwrap = unwrap
+        self.mode = mode
 
     def __repr__(self):
         return f"<Built-in function {self.name}>"
 
-    def __call__(self, interpreter, args):
-        if self.unwrap:
-            result = self.value(*(arg.py_value for arg in args))
-        else:
+    def __call__(self, interpreter, args, position=None):
+        host = interpreter.runtime.host
+        if self.mode is NativeMode.HOST:
+            result = self.value(*(host.to_host(arg) for arg in args))
+        elif self.mode is NativeMode.VALUE:
             result = self.value(*args)
-        return wrap_value(result)
-
-    @property
-    def py_value(self):
-        """Get Python value."""
-        return self.value
+        else:
+            result = self.value(NativeContext(interpreter, position), *args)
+        return host.from_host(result)
 
 
 class OortFunction(OortFunctionMixin, OortInstance):
@@ -98,25 +103,34 @@ class OortMethodMixin(OortCallableMixin):
 class OortNativeMethod(OortMethodMixin, OortNativeMixin, OortObject):
     """Oort native bound method object."""
 
-    def __init__(self, this: OortObject, value: Callable, name: str = "<lambda>"):
+    def __init__(
+        self,
+        this: OortObject,
+        value: Callable,
+        name: str = "<lambda>",
+        *,
+        mode: NativeMode = NativeMode.HOST,
+    ):
         super().__init__(this, name)
         self.value = value
+        self.mode = mode
 
     def __repr__(self):
         return f"<Built-in bound method {self.this.type.name}.{self.name} of {self.this}>"
 
-    def __call__(self, interpreter, args):
-        result = self.value(self.this.py_value, *(arg.py_value for arg in args))
-        return wrap_value(result)
+    def __call__(self, interpreter, args, position=None):
+        host = interpreter.runtime.host
+        if self.mode is NativeMode.HOST:
+            result = self.value(host.to_host(self.this), *(host.to_host(arg) for arg in args))
+        elif self.mode is NativeMode.VALUE:
+            result = self.value(self.this, *args)
+        else:
+            result = self.value(NativeContext(interpreter, position), self.this, *args)
+        return host.from_host(result)
 
     @classmethod
     def from_native_func(cls, this: OortObject, func: OortNativeFunction):
-        return cls(this, value=func.value, name=func.name)
-
-    @property
-    def py_value(self):
-        """Get Python value."""
-        return self.value
+        return cls(this, value=func.value, name=func.name, mode=func.mode)
 
 
 class OortMethod(OortMethodMixin, OortInstance):

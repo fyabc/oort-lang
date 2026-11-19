@@ -80,5 +80,19 @@ def test_repl_recovers_from_import_error(monkeypatch, capsys, caplog, tmp_path):
     assert "5" in capsys.readouterr().out
 
 
+def test_repl_native_modules(monkeypatch, capsys, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    lines = [
+        'import "math"',
+        'from "string" import upper',
+        "print(math.floor(math.sqrt(10)))",
+        'print(upper("oort"))',
+    ]
+    assert _run_repl(monkeypatch, lines) == 0
+    out = capsys.readouterr().out
+    assert "3" in out
+    assert "OORT" in out
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

@@ -19,6 +19,7 @@
 | `Type` | `OortType` | 类型对象本身也是对象；`Type.type is Type` |
 | `Function` / `Method` | `OortFunction` / `OortMethod` | 用户函数与绑定方法 |
 | `Object` | `OortInstance` | 用户类实例 |
+| `Module` | `OortModule` | 模块命名空间的只读视图 |
 | `SuperProxy` | `OortSuperProxy` | `super` 的中间对象 |
 
 - 标量实现 `__eq__` / `__hash__`，因此可以作为字典键和集合元素；
@@ -30,7 +31,10 @@
   或大小比较。容器成员测试也对 `Bool`/`Int` 做严格区分。
 - lambda 的匿名参数 `$0` / `$1` 在调用时按位置绑定到 `OortFunction` 的调用
   环境；arity 由 `FunctionDef.param_count` 提供。
-- `py_value` 提供与 Python 原生值的转换，供内建函数与运算符使用。
+- `host_value` 是 Python 宿主的投影；原生调用通过 `HostBridge`、`NativeMode`
+  与 `NativeContext` 显式处理参数/结果，详见
+  [05-stdlib.md](05-stdlib.md) 与
+  [设计 12](../design/12-host-boundary.md)。
 - 运算符通过 `OortType.operators` 表调度，键为 `(符号, 操作数个数)`：
   - 用户类在类体中用 `def operator "<sym>"` 定义，解释器在
     `visit_class_def` 中调用 `set_operator` 登记；
@@ -111,12 +115,19 @@ print(fs[0](), fs[1]())   # 1 2
 - 类型对象：`Object`、`Type`、`Int`、`Float`、`String`、`Bool`、`Null`、
   `List`、`Tuple`、`Dict`、`Set`、`Function`、`Method`。
 - 函数：`print`、`clock`、`type`、`super`、`len`、`range`、`str`、`repr`、
-  `int`、`float`、`bool`。
+  `int`、`float`、`bool`；集合助手 `map`、`filter`、`zip`、`enumerate`、`sorted`。
 
-这些内建函数默认接收解包后的 Python 值（`unwrap=True`），返回值再装箱；
-`print`、`type`、`super`、`str`、`repr` 需要看到 Oort 对象本身，因此
-`unwrap=False`。`str` / `repr` 使用对象自己的 `__str__` / `__repr__`，
-容器因此输出 Oort 字面量形式。
+原生函数通过 `NativeMode` 决定参数/结果如何跨越宿主边界：
+
+- `HOST`：参数经 `HostBridge.to_host` 投影，结果再装箱（运算符、`math`、
+  `string`）；
+- `VALUE`：参数保持 Oort 对象（`print`、`type`、`super`、`str`、`repr`、
+  `len`）；
+- `CONTEXT`：额外传入 `NativeContext`，可调用 Oort lambda、读取 truthiness、
+  迭代容器并应用运算符（集合助手）。
+
+`str` / `repr` 使用对象自己的 `__str__` / `__repr__`，容器因此输出 Oort
+字面量形式。`len` 直接在 Oort 容器上取长度，避免深投影。
 
 ## 未实现功能的处理
 
