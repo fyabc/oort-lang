@@ -44,6 +44,7 @@ Oort 的语言变更采用类 PEP/RFC 流程：
 - [OP 0012: 最小标准库与宿主边界](proposals/0012-standard-library.md)（已实现）
 - [OP 0013: 迭代器协议](proposals/0013-iterator-protocol.md)（已实现）
 - [OP 0014: 扩展方法与扩展运算符](proposals/0014-extension-methods.md)（已实现）
+- [OP 0015: 最小 I/O、命令行参数与退出码](proposals/0015-minimal-io-and-process.md)
 
 ## 实现与设计
 

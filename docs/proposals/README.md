@@ -36,6 +36,7 @@
 | [0012](0012-standard-library.md) | 最小标准库与宿主边界 | Implemented |
 | [0013](0013-iterator-protocol.md) | 迭代器协议（`__iter__` + `(value, valid)`） | Implemented |
 | [0014](0014-extension-methods.md) | 扩展方法与扩展运算符（`def C.f`） | Implemented |
+| [0015](0015-minimal-io-and-process.md) | 最小 I/O、命令行参数与退出码 | Proposed |
 
 ## 流程
 
