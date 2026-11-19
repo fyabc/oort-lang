@@ -68,7 +68,10 @@ testpaths = ["tests", "benchmarks"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+markers = [
+    "slow: long-running tests; excluded from the default run (use -m slow)",
+]
+addopts = "-v --tb=short -m 'not slow'"
 
 [tool.coverage.run]
 source = ["src/oort_lang"]

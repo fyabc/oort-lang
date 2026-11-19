@@ -66,7 +66,10 @@ make docs         # strict build, same as CI
 
 - Add or extend tests under `tests/unit/` for the subsystem you touch.
 - CLI/REPL/example behavior belongs in `tests/integration/`.
-- New examples must be registered in `tests/integration/test_examples.py`.
+- New examples must be registered in `tests/integration/test_examples.py`
+  (or a dedicated test module if it needs expensive setup).
+- Tests that take more than a few seconds should use `@pytest.mark.slow`;
+  they are excluded from the default run and executed by the CI slow job.
 - Core code is expected to stay above the CI coverage threshold (87%).
 
 ## Quality gates

@@ -121,8 +121,9 @@ code --install-extension oort-lang-0.1.0.vsix
 uv sync --extra dev
 pre-commit install
 
-# 测试
+# 测试（默认排除 slow；完整运行用 -m slow）
 uv run pytest tests/
+uv run pytest tests/ -m slow
 
 # 基准测试
 uv run pytest benchmarks/

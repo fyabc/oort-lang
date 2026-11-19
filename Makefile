@@ -1,4 +1,4 @@
-.PHONY: help install dev test benchmark benchmark-json lint format format-check type-check imports security audit deps dead-code property markdown docs docs-serve quality clean build-grammar check
+.PHONY: help install dev test test-slow benchmark benchmark-json lint format format-check type-check imports security audit deps dead-code property markdown docs docs-serve quality clean build-grammar check
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -9,8 +9,11 @@ install: ## Install the project
 dev: ## Install with development dependencies
 	uv sync --extra dev
 
-test: ## Run tests
+test: ## Run fast tests (slow tests excluded)
 	uv run pytest tests/ -v
+
+test-slow: ## Run tests marked slow
+	uv run pytest tests/ -m slow -v
 
 benchmark: ## Run benchmarks
 	uv run pytest benchmarks/ -v

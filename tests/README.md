@@ -16,11 +16,15 @@ tests/
 ## 运行
 
 ```bash
-uv run pytest tests/                  # 全部测试
+uv run pytest tests/                  # 快速测试（默认排除 slow）
+uv run pytest tests/ -m slow          # 仅 slow 测试（如 JSON showcase）
 uv run pytest tests/unit              # 单元测试
 uv run pytest tests/integration       # 集成测试
 uv run pytest tests/ -k "collections" # 按名字筛选
 ```
+
+耗时的端到端测试标记为 `pytest.mark.slow`，默认运行与 CI 快速任务会跳过；
+CI 有独立的 `Slow tests` job。新增超过约 5 秒的测试时使用该标记。
 
 ## 编写约定
 
