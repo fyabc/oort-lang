@@ -113,4 +113,5 @@ nav:
       - 标准库与宿主边界: implementation/05-stdlib.md
       - 迭代器: implementation/06-iterators.md
       - 扩展方法: implementation/07-extensions.md
+      - 相等性: implementation/08-equality.md
   - 路线图: roadmap.md
