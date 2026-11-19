@@ -24,6 +24,63 @@ def test_basic_extension_method(run_source):
     assert out == "3 3\n"
 
 
+def test_extension_operators(run_source):
+    out = run_source(
+        """\
+class Vec {
+    def __init__(x, y) { this.x = x; this.y = y }
+}
+def Vec.operator "+"(other): Vec(this.x + other.x, this.y + other.y)
+def Vec.operator "-": "negated"
+def Vec.operator "in"(item): item == this.x
+var v = Vec(1, 2) + Vec(3, 4)
+v += Vec(1, 1)
+print(v.x, v.y)
+print(-Vec(0, 0))
+print(1 in Vec(1, 0))
+"""
+    ).stdout
+    assert out == "5 7\nnegated\ntrue\n"
+
+
+def test_extension_operator_member_priority(run_source):
+    out = run_source(
+        """\
+class C { def operator "+"(other): "member" }
+def C.operator "+"(other): "extension"
+print(C() + C())
+class Base { def operator "+"(other): "base" }
+class Child < Base {}
+def Child.operator "+"(other): "extension"
+print(Child() + Child())
+def Int.operator "+"(other): 999
+print(1 + 2)
+"""
+    ).stdout
+    assert out == "member\nbase\n3\n"
+
+
+def test_extension_operator_inheritance_and_scope(run_source):
+    out = run_source(
+        """\
+class Base {}
+class Child < Base {}
+def Base.operator "|"(other): "base"
+print(Child() | Child())
+def Child.operator "|"(other): "child"
+print(Child() | Child())
+
+def Int.operator "%%"(n): this % n
+def scoped() {
+    def Int.operator "%%"(n): this + n
+    7 %% 3
+}
+print(7 %% 3, scoped(), 7 %% 3)
+"""
+    ).stdout
+    assert out == "base\nchild\n1 10 1\n"
+
+
 def test_extension_parameters_defaults_and_block(run_source):
     out = run_source(
         """\
@@ -237,9 +294,12 @@ class C {}
 def C.value: 1
 def C.value: 2
 print(C().value())
+def C.operator "|"(other): "one"
+def C.operator "|"(other): "two"
+print(C() | C())
 """
     ).stdout
-    assert out == "2\n"
+    assert out == "2\ntwo\n"
 
 
 @pytest.mark.parametrize(
@@ -253,7 +313,13 @@ print(C().value())
         ("def Missing.f: 1\n", "Extension receiver 'Missing' is not defined."),
         ("var not_a_type = 1\ndef not_a_type.f: 1\n", "is not a type."),
         ("def C.f: 1\nclass C {}\n", "Extension receiver 'C' is not defined."),
-        ('class C {}\ndef C.operator "+"(x): 1\n', "not supported yet"),
+        ('class C {}\ndef C.operator "foo"(x): 1\n', "Invalid operator symbol"),
+        ('class C {}\ndef C.operator "*"(): 1\n', "cannot be defined as a unary operator"),
+        ('class C {}\ndef C.operator "+"(x = 1): 1\n', "cannot use default"),
+        (
+            'class C {}\ndef g() { def C.operator "+"(x): 1\n def C.operator "+"(x): 2 }\ng()\n',
+            "already defined",
+        ),
         ("class C {}\ndef g() { def C.f: 1\n def C.f: 2 }\ng()\n", "already defined"),
         ("class C {}\ndef C.f: 1\ndef g() { print(f) }\ng()\n", "Name 'f' is not defined"),
     ],

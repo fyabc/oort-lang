@@ -90,8 +90,8 @@ class FunctionResolverMixin(ASTVisitor):
             )
             return False
         if node.is_operator:
-            self._unsupported("Extension operator methods are not supported yet.", node)
-            return False
+            self._check_operator_definition(node)
+            return True
         if _is_special_method_name(node.name):
             self.error_handler.add(
                 OortSyntaxError(
@@ -111,7 +111,7 @@ class FunctionResolverMixin(ASTVisitor):
         return node.name
 
     def _check_operator_definition(self, node: nodes.FunctionDef):
-        if self._current_decl != OutsideDeclType.CLASS:
+        if self._current_decl != OutsideDeclType.CLASS and not node.is_extension:
             self._unsupported("Operator methods must be defined inside a class.", node)
             return
         if node.is_class_method:

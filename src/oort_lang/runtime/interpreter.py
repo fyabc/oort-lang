@@ -248,7 +248,7 @@ class ASTInterpreter(ASTVisitor[OortObject]):
     def apply_operator(self, symbol: str, lhs: OortObject, rhs: OortObject, position=None):
         """Apply a binary Oort operator to already-evaluated operands."""
         error_position = position or self._builtin_position()
-        method = self._find_operator(lhs, symbol, 2)
+        method = self._find_operator(lhs, symbol, 2, error_position)
         if method is None:
             raise OortTypeError(
                 f"Type {lhs.type.name!r} does not support operator {symbol!r}",
@@ -448,13 +448,15 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         )
 
     @staticmethod
-    def _ambiguous_extension_message(lookup: ExtensionLookup) -> str:
+    def _ambiguous_extension_message(
+        lookup: ExtensionLookup, kind: str = "method", symbol: str | None = None
+    ) -> str:
         names = sorted({match.func.closure.module_root.name for match in lookup.ambiguous})
         target = lookup.ambiguous[0].target.name
-        name = lookup.ambiguous[0].func.name
+        label = symbol if symbol is not None else lookup.ambiguous[0].func.name
         origins = " and ".join(repr(origin) for origin in names)
         return (
-            f"Ambiguous extension method {name!r} for type {target!r}: candidates from {origins}."
+            f"Ambiguous extension {kind} {label!r} for type {target!r}: candidates from {origins}."
         )
 
     def visit_subscript(self, node: nodes.Subscript) -> OortObject:
@@ -506,9 +508,27 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             assert isinstance(func, OortObject)
             raise OortTypeError(f"{func.type.name} object is not callable", node.func.position)
 
-    def _find_operator(self, receiver: OortObject, symbol: str, operand_count: int):
-        """Find an operator method for `receiver` in its class MRO."""
-        return _get_operator_from_cls(symbol, operand_count, receiver.type, receiver)
+    def _find_operator(
+        self,
+        receiver: OortObject,
+        symbol: str,
+        operand_count: int,
+        position: SourcePosition,
+    ):
+        """Find an operator method for `receiver`, then an extension operator."""
+        method = _get_operator_from_cls(symbol, operand_count, receiver.type, receiver)
+        if method is not None:
+            return method
+
+        lookup = self.env.lookup_extension_operator(receiver.type, symbol, operand_count)
+        if lookup.ambiguous:
+            raise OortTypeError(
+                self._ambiguous_extension_message(lookup, "operator", symbol),
+                position,
+            )
+        if lookup.match is not None:
+            return _bind_extension_method(receiver, lookup.match.func, lookup.match.target)
+        return None
 
     def _invoke_operator(self, method, args: list[OortObject], symbol: str, position):
         try:
@@ -537,9 +557,9 @@ class ASTInterpreter(ASTVisitor[OortObject]):
 
         # Membership dispatches to the container (the right operand).
         if op_text in ("in", "!in"):
-            method = self._find_operator(rhs, op_text, 2)
+            method = self._find_operator(rhs, op_text, 2, position)
             if method is None and op_text == "!in":
-                method = self._find_operator(rhs, "in", 2)
+                method = self._find_operator(rhs, "in", 2, position)
                 if method is not None:
                     result = self._invoke_operator(method, [lhs], "in", position)
                     return OortBool.get_bool_value(not _is_truthy(result))
@@ -550,10 +570,10 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             result = self._invoke_operator(method, [lhs], op_text, position)
             return OortBool.get_bool_value(_is_truthy(result))
 
-        method = self._find_operator(lhs, op_text, 2)
+        method = self._find_operator(lhs, op_text, 2, position)
         if method is None and op_text == "!=":
             # `!=` defaults to the negation of `==`.
-            method = self._find_operator(lhs, "==", 2)
+            method = self._find_operator(lhs, "==", 2, position)
             if method is not None:
                 result = self._invoke_operator(method, [rhs], "==", position)
                 return OortBool.get_bool_value(not _is_truthy(result))
@@ -573,7 +593,7 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         if op_text == "not":
             return OortBool.get_bool_value(not _is_truthy(operand))
 
-        method = self._find_operator(operand, op_text, 1)
+        method = self._find_operator(operand, op_text, 1, position)
         if method is None:
             raise OortTypeError(
                 f"Type {operand.type.name!r} does not support operator {op_text!r}", position
@@ -700,15 +720,27 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                     f"Extension receiver {receiver_name!r} is not a type.",
                     node.name_position,
                 )
-            # Extension operator support arrives in the next commit; Pass 1
-            # currently rejects it before execution.
-            result = self.env.register_extension(receiver, node.name, func)
-            if result == DefineResult.REDEFINED:
-                raise OortSyntaxError(
-                    f"Extension method {receiver.name!r}.{node.name} is already "
-                    f"defined in this scope.",
-                    node.name_position,
+            if node.is_operator:
+                assert node.operator_symbol is not None
+                assert node.operator_operand_count is not None
+                result = self.env.register_extension_operator(
+                    receiver,
+                    node.operator_symbol,
+                    node.operator_operand_count,
+                    func,
                 )
+                duplicate_message = (
+                    f"Extension operator {node.operator_symbol!r} for "
+                    f"{receiver.name!r} is already defined in this scope."
+                )
+            else:
+                result = self.env.register_extension(receiver, node.name, func)
+                duplicate_message = (
+                    f"Extension method {receiver.name!r}.{node.name} is already "
+                    f"defined in this scope."
+                )
+            if result == DefineResult.REDEFINED:
+                raise OortSyntaxError(duplicate_message, node.name_position)
             return func
 
         self.env.define(node.name, func, mutable=False)
