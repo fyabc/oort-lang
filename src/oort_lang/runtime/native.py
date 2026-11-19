@@ -47,3 +47,11 @@ class NativeContext:
 
     def binary(self, symbol: str, lhs: OortObject, rhs: OortObject) -> OortObject:
         return self.interpreter.apply_operator(symbol, lhs, rhs, self.position)
+
+    def equal(self, lhs: OortObject, rhs: OortObject) -> bool:
+        """Oort value equality, recursive through builtin containers."""
+        return self.interpreter.values_equal(lhs, rhs)
+
+    def contains(self, container: OortObject, item: OortObject) -> bool:
+        """Sequence membership using Oort value equality."""
+        return self.interpreter.sequence_contains(container, item)

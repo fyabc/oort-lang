@@ -18,6 +18,7 @@ from .functions import (
     OortNativeFunction,
 )
 from .host import HostBridge, PythonHost
+from .native import NativeMode
 from .objects import (
     OortBool,
     OortDict,
@@ -293,12 +294,18 @@ def _install_operators(
     type_obj: "OortType",
     unary: dict[str, Callable] | None = None,
     binary: dict[str, Callable] | None = None,
+    *,
+    mode: NativeMode = NativeMode.HOST,
 ):
     """Install native operator implementations on a built-in type."""
     for symbol, func in (unary or {}).items():
-        type_obj.operators[(symbol, 1)] = OortNativeFunction(func, name=f"operator {symbol}")
+        type_obj.operators[(symbol, 1)] = OortNativeFunction(
+            func, name=f"operator {symbol}", mode=mode
+        )
     for symbol, func in (binary or {}).items():
-        type_obj.operators[(symbol, 2)] = OortNativeFunction(func, name=f"operator {symbol}")
+        type_obj.operators[(symbol, 2)] = OortNativeFunction(
+            func, name=f"operator {symbol}", mode=mode
+        )
 
 
 def _setup_native_operators(
@@ -354,14 +361,30 @@ def _setup_native_operators(
 
         return wrapped
 
-    def _strict_equal(lhs, rhs):
-        if isinstance(lhs, bool) != isinstance(rhs, bool):
-            return False
-        return lhs == rhs
+    def _sequence_eq(ctx, lhs, rhs):
+        return OortBool.get_bool_value(ctx.equal(lhs, rhs))
 
-    def _contains(container, item):
-        return any(_strict_equal(element, item) for element in container)
+    def _dict_eq(ctx, lhs, rhs):
+        return OortBool.get_bool_value(ctx.equal(lhs, rhs))
 
+    def _sequence_contains(ctx, container, item):
+        return OortBool.get_bool_value(ctx.contains(container, item))
+
+    def _set_eq(lhs, rhs):
+        # Python sets already use the Oort key protocol (Bool/Int strict,
+        # Int/Float distinct, identity for instances).
+        return lhs.value == rhs.value
+
+    def _set_contains(container, item):
+        return item in container.value
+
+    def _set_op(op):
+        def wrapped(lhs, rhs):
+            return OortSet(op(lhs.value, rhs.value))
+
+        return wrapped
+
+    ordering_comparisons = {symbol: func for symbol, func in comparisons.items() if symbol != "=="}
     numeric_comparisons = {
         "==": _numeric_eq,
         "<": _numeric_cmp(operator.lt),
@@ -423,27 +446,45 @@ def _setup_native_operators(
             binary={
                 "+": operator.add,
                 "*": operator.mul,
-                "in": _contains,
-                **comparisons,
+                **ordering_comparisons,
             },
         )
+        _install_operators(
+            type_obj,
+            binary={"==": _sequence_eq, "in": _sequence_contains},
+            mode=NativeMode.CONTEXT,
+        )
+    _install_operators(
+        t_dict,
+        binary=ordering_comparisons,
+    )
     _install_operators(
         t_dict,
         binary={
             # Keys are wrapped OortObjects, so Python's dict lookup is already
             # Bool/Int-strict and stays O(1).
             "in": lambda mapping, key: key in mapping,
-            **comparisons,
         },
+        mode=NativeMode.VALUE,
+    )
+    _install_operators(
+        t_dict,
+        binary={"==": _dict_eq},
+        mode=NativeMode.CONTEXT,
+    )
+    _install_operators(
+        t_set,
+        binary=ordering_comparisons,
     )
     _install_operators(
         t_set,
         binary={
-            "&": operator.and_,
-            "|": operator.or_,
-            "^": operator.xor,
-            "-": operator.sub,
-            "in": _contains,
-            **comparisons,
+            "&": _set_op(operator.and_),
+            "|": _set_op(operator.or_),
+            "^": _set_op(operator.xor),
+            "-": _set_op(operator.sub),
+            "in": _set_contains,
+            "==": _set_eq,
         },
+        mode=NativeMode.VALUE,
     )

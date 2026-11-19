@@ -1,6 +1,6 @@
 # OP 0016: 统一相等性协议
 
-- **状态**：Proposed（2026-11-20）
+- **状态**：Implemented（2026-11-20）
 - **作者**：Oort 设计讨论
 - **相关**：[OP 0007](0007-oort-object-object-model.md)、
   [OP 0012](0012-standard-library.md)、
@@ -120,6 +120,19 @@ Dict 键、Set 元素以及 Tuple 的键哈希使用**键协议**，与值 `==` 
   按 0.x 规则放在下一个 minor（0.4.0）发布，并在 CHANGELOG 标注。
 - 现有程序若依赖 HOST 投影相等，需要按新协议调整。
 - `is`/`!is` 仍是身份比较，不参与本协议。
+
+## 实现与测试
+
+- `ASTInterpreter.values_equal` / `_values_equal`：List/Tuple/Dict 递归、
+  循环对象对 memo；Set 使用键协议。
+- `NativeContext.equal` / `contains`：CONTEXT 原生运算符调用解释器级相等。
+- `type_system`：List/Tuple/Dict 的 `==` 改为 CONTEXT，List/Tuple 的 `in`
+  改为 CONTEXT；Dict `in`、Set `==`/`in`/集合代数改为 VALUE，避免宿主投影。
+- Dict 键查找继续使用底层 Oort 键容器（Bool/Int 严格、Int/Float 区分、
+  用户实例身份）。
+- 测试：`tests/unit/runtime/test_equality.py`，覆盖嵌套 Bool/Int、Int/Float、
+  Dict/Set 键语义、集合代数、用户 `==`、类型不敏感、循环容器。
+- 示例/集合助手回归全部通过。
 
 ## 替代方案
 

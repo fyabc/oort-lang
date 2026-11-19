@@ -12,13 +12,13 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 |------|------|
 | 方言 | 首行 `#lang oort-object`（可选，缺省即此方言）；未知/未实现方言与错位声明显式报错 |
 | 字面量 | 整数、浮点、字符串（含 `r`、三引号）、布尔、`null`、List/Tuple/Dict/Set、切片 |
-| 表达式 | 全部内建运算符、运算符重载（`def operator "<sym>"`）、位运算高于比较、比较非结合、`Bool` 与 `Int` 严格区分、`and`/`or` 短路、属性、下标、调用、尾随 lambda、块、`if`/`while`/`for` 表达式、行首 `.` 方法链续行 |
+| 表达式 | 全部内建运算符、运算符重载（`def operator "<sym>"`）、位运算高于比较、比较非结合、`Bool` 与 `Int` 严格区分（含嵌套容器）、容器递归值相等与 Dict/Set 键相等、`and`/`or` 短路、属性、下标、调用、尾随 lambda、块、`if`/`while`/`for` 表达式、行首 `.` 方法链续行 |
 | 语句 | `var`/`val`（含多目标解包）、赋值（含 `//=` 等增强赋值、元组交换）、`if`/`elif`/`else`、`while`、`for`、`return`、`break expr`、`continue` |
 | 函数 | `def`、`do` lambda、闭包、递归、尾随闭包；所有显式形参列表都使用括号；lambda 支持 `$0`/`$1` 匿名参数；默认值、关键字实参、`/`、`*`、`*args`、`**kwargs`、`&block` |
-| 类 | 定义、实例化、`__init__`、方法、类方法、单/多重继承、C3 MRO、元类、`this`/`super`；开放字段袋、方法遮蔽检查、身份相等/哈希 |
+| 类 | 定义、实例化、`__init__`、方法、类方法、单/多重继承、C3 MRO、元类、`this`/`super`；开放字段袋、方法遮蔽检查、身份键哈希 |
 | 扩展 | 类外 `def C.f` 与 `def C.operator "<sym>"`；词法作用域、导入激活、调用点歧义、继承与 `super`（只查类成员） |
 | 迭代 | `__iter__` 返回 `(value, valid)` 迭代器；流式 `for`；内置 List/Tuple/Set/Dict/String 的原生 `__iter__`，`Iterator` 类型与手动迭代 |
-| 模块 | `.ort` 文件模块；`import "m" [as x]`、`from "m" import a, b as c`；相对/裸名解析、`-I` 搜索路径、规范路径缓存、急切初始化与循环诊断；模块命名空间只读、导入名可再导出；`math` / `string` 内置原生模块 |
+| 模块 | `.ort` 文件模块；`import "m" [as x]`、`from "m" import a, b as c`；相对/裸名解析、`-I` 搜索路径、规范路径缓存、急切初始化与循环诊断；模块命名空间只读、导入名可再导出；`io` / `math` / `os` / `string` 内置原生模块 |
 | 内建 | `print`、`clock`、`type`、`super`（仅 `super.method` / `super.__init__`）、`len`、`range`、`str`、`repr`、`int`、`float`、`bool`；集合助手 `map`、`filter`、`zip`、`enumerate`、`sorted` |
 | 标准库 | 原生模块 `io`（UTF-8 整文件读写）、`math`（常量/数学函数）、`os`（参数、脚本路径、退出码）与 `string`（切分/连接/大小写/查找/替换/`ord`/`chr`）；裸名优先于同名文件，`./math` 等可加载本地模块 |
 
@@ -70,8 +70,10 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
   槽变量属于 `oort-core`。
 - 实例字段不能遮蔽实例方法或类方法；写入时报
   `Cannot shadow method 'name' with an instance field`。
-- 默认相等与哈希使用对象身份；缺失字段读取抛 `OortAttributeError`。
-- 自定义 `==` 不会改变哈希，相关字典键/集合元素行为尚未定义。
+- 用户类默认值相等与键哈希使用对象身份；自定义 `==` 只影响值相等，
+  不改变 Dict/Set 键身份（[OP 0016](../proposals/0016-equality-protocol.md)）。
+- Int 与 Float 值相等但键不同：`1 == 1.0`，`{. 1 .} != {. 1.0 .}`。
+- 缺失字段读取抛 `OortAttributeError`；类对象写入可调用成员会被拒绝。
 - 匿名参数 `$0` / `$1` 只允许出现在无显式参数列表的 lambda 中；
   `def`、`do()`、`do(x)` 以及显式声明 `$n` 都会报错。
 - 模块系统（OP 0006）：

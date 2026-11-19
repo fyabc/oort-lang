@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Equality now has one recursive value protocol and a separate key protocol
+  (OP 0016): nested `Bool`/`Int` stay distinct, Dict/Set equality and set
+  algebra use key equality, and Int/Float remain value-equal but distinct keys.
+  Host projection is no longer used for equality, membership or set algebra.
+- A lambda with an explicit parameter list is now a barrier for `$0`/`$1`
+  resolution, so it cannot silently capture an outer anonymous parameter.
+- Line-leading `.` continuation is removed from the parser token stream before
+  parsing; the REPL still requires `\` because it cannot see the next line.
+
+### Fixed
+
+- Class object writes (`C.f = ...`) can no longer replace callable members
+  inherited through the class/metaclass MRO.
+
 ## [0.3.0] - 2026-11-20
 
 ### Added

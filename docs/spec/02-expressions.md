@@ -84,6 +84,36 @@ class Vec {
 当前词法作用域可见的扩展运算符；`in`、`!=`、增强赋值等规则完全相同。
 详见 [扩展方法](10-extensions.md)。
 
+## 相等与成员测试
+
+完整设计见 [OP 0016](../proposals/0016-equality-protocol.md)。规则分为两层：
+
+### 值相等 `==`
+
+- List/Tuple：长度相同且逐元素 `==`；Dict：键相等且对应值 `==`；Set：
+  按键相等比较元素。
+- Bool 与 Int 在所有嵌套层严格区分：`[true] == [1]` 为 `false`。
+- Int 与 Float 按数值比较：`1 == 1.0` 与 `[1] == [1.0]` 为 `true`。
+- String 按内容；Null 只等于 Null；用户类使用其 `operator "=="`，未定义时
+  按身份。
+- `!=` 默认取反 `==`；显式 `operator "!="` 优先。
+- 身份短路：同一对象直接相等；循环容器使用已比较对象对 memo。
+
+### 成员测试 `in`
+
+- List/Tuple/String：逐元素用值 `==`；`!in` 取反。
+- Dict：按键查找；Set：按键相等查找。
+- 用户容器可显式定义 `operator "in"` 覆盖。
+
+### 键相等（Dict 键 / Set 元素）
+
+- Null、Bool、Int、Float、String、Tuple（元素可哈希）按类型严格的键相等；
+  Type/Function/Module/用户实例按身份。
+- **Int 与 Float 是不同的键**：`1 == 1.0`，但 `{1: "x"} != {1.0: "x"}`，
+  `1 in {. 1.0 .}` 为 `false`。这是 Ruby `eql?` 式的值/键分层。
+- List/Dict/Set 不可哈希，不能作键或集合元素。
+- 用户类自定义 `==` 不改变键身份；自定义哈希协议留待后续提案。
+
 ## 下标与切片
 
 ```oort

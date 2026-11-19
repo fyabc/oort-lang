@@ -15,6 +15,7 @@
 | [05-stdlib.md](05-stdlib.md) | 宿主边界、集合助手、`math` / `string` 原生模块 |
 | [06-iterators.md](06-iterators.md) | `__iter__` 协议、原生迭代器、流式 for |
 | [07-extensions.md](07-extensions.md) | 扩展方法/运算符：分类、扩展表、查找、导入、`super` |
+| [08-equality.md](08-equality.md) | 值相等、键协议、CONTEXT/VALUE 运算符与循环容器 |
 
 ## 当前实现边界
 

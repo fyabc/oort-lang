@@ -88,6 +88,35 @@ C()
     assert "Cannot shadow method 'f' with an instance field" in caplog.text
 
 
+@pytest.mark.parametrize(
+    "definition, name",
+    [
+        ("class C { def f: 1 }", "C.f"),
+        ("class C { def class.f: 1 }", "C.f"),
+        ("class A { def f: 1 }\nclass C < A {}", "C.f"),
+    ],
+)
+def test_class_attribute_cannot_shadow_callable_member(
+    definition: str, name: str, caplog: pytest.LogCaptureFixture
+):
+    source = f"{definition}\n{name} = 2\n"
+    compiler = get_compiler("NOT_EXIST -t eval")
+    with pytest.raises(CompilerError):
+        compiler.run_string(source)
+    assert "Cannot shadow method 'f' with a class attribute" in caplog.text
+
+
+def test_new_class_attribute_is_allowed(run_source):
+    out = run_source(
+        """\
+class C {}
+C.answer = 42
+print(C.answer, C().answer)
+"""
+    ).stdout
+    assert out == "42 42\n"
+
+
 def test_missing_attribute_is_reported(caplog: pytest.LogCaptureFixture):
     source = """\
 class C {}

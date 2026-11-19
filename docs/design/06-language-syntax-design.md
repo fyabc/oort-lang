@@ -75,7 +75,11 @@ trait AddAssign[Rhs = Self] {
 
 ### 2.4 当前实现状态
 
-语法层面已支持（`operator "+"` 在 `funcName` 规则中），但运行时仍使用 Python 的 `operator` 模块直接计算，未走 `__op_*` 方法调度。
+语法层面已支持（`operator "+"` 在 `funcName` 规则中）。运行时已统一走
+`OortType.operators` 表：用户类、扩展运算符与内建类型共用同一分派路径；
+宿主函数只作为内建运算符的实现，不再由解释器直接调用 Python `operator`。
+详见 [OP 0014](../proposals/0014-extension-methods.md) 与
+[实现笔记 04](../implementation/04-class-system.md)。
 
 ## 3. 导入系统
 

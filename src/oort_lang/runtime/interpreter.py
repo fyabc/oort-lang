@@ -260,6 +260,82 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             )
         return self._invoke_operator(method, [rhs], symbol, error_position)
 
+    def values_equal(self, lhs: OortObject, rhs: OortObject) -> bool:
+        """Recursive Oort value equality (OP 0016)."""
+        return self._values_equal(lhs, rhs, set())
+
+    def _values_equal(self, lhs: OortObject, rhs: OortObject, memo: set[tuple[int, int]]) -> bool:
+        if lhs is rhs:
+            return True
+
+        if isinstance(lhs, (OortList, OortTuple)) or isinstance(rhs, (OortList, OortTuple)):
+            if type(lhs) is not type(rhs):
+                return False
+            assert isinstance(lhs, (OortList, OortTuple))
+            assert isinstance(rhs, (OortList, OortTuple))
+            pair = (id(lhs), id(rhs))
+            if pair in memo:
+                return True
+            memo.add(pair)
+            if len(lhs.value) != len(rhs.value):
+                return False
+            return all(
+                self._values_equal(left, right, memo)
+                for left, right in zip(lhs.value, rhs.value, strict=True)
+            )
+
+        if isinstance(lhs, OortDict) or isinstance(rhs, OortDict):
+            if not isinstance(lhs, OortDict) or not isinstance(rhs, OortDict):
+                return False
+            pair = (id(lhs), id(rhs))
+            if pair in memo:
+                return True
+            memo.add(pair)
+            if len(lhs.value) != len(rhs.value):
+                return False
+            for key, value in lhs.value.items():
+                # Python dict lookup uses the Oort key protocol (Bool/Int
+                # strict, Int/Float distinct, identity for instances).
+                if key not in rhs.value:
+                    return False
+                if not self._values_equal(value, rhs.value[key], memo):
+                    return False
+            return True
+
+        if isinstance(lhs, OortSet) or isinstance(rhs, OortSet):
+            return isinstance(lhs, OortSet) and isinstance(rhs, OortSet) and lhs.value == rhs.value
+
+        if isinstance(lhs, OortBool) or isinstance(rhs, OortBool):
+            return (
+                isinstance(lhs, OortBool) and isinstance(rhs, OortBool) and lhs.value == rhs.value
+            )
+
+        if isinstance(lhs, (OortInt, OortFloat)) or isinstance(rhs, (OortInt, OortFloat)):
+            if isinstance(lhs, (OortInt, OortFloat)) and isinstance(rhs, (OortInt, OortFloat)):
+                return lhs.value == rhs.value
+            return False
+
+        if isinstance(lhs, OortNull) or isinstance(rhs, OortNull):
+            return isinstance(lhs, OortNull) and isinstance(rhs, OortNull)
+
+        if isinstance(lhs, OortString) or isinstance(rhs, OortString):
+            return (
+                isinstance(lhs, OortString)
+                and isinstance(rhs, OortString)
+                and lhs.value == rhs.value
+            )
+
+        result = self.apply_operator("==", lhs, rhs, self._builtin_position())
+        return _is_truthy(result)
+
+    def sequence_contains(self, container: OortObject, item: OortObject) -> bool:
+        """Sequence membership with Oort value equality."""
+        assert isinstance(container, (OortList, OortTuple))
+        for element in container.value:
+            if element is item or self._values_equal(element, item, set()):
+                return True
+        return False
+
     def visit_module(self, node: nodes.ModuleNode) -> OortObject:
         # Static imports are hoisted: dependencies are initialized before the
         # rest of the module body, in source order (ES module / Go style).
@@ -421,9 +497,15 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                 )
 
             assert isinstance(value, OortInstance)
-            if not isinstance(value, OortType) and (
-                find_callable_class_member(lhs.attribute, value.type) is not None
-            ):
+            if isinstance(value, OortType):
+                # Writing through a class object must not replace methods or
+                # class methods inherited from the class/metaclass MRO.
+                if find_callable_class_member(lhs.attribute, value) is not None:
+                    raise OortAttributeError(
+                        f"Cannot shadow method {lhs.attribute!r} with a class attribute",
+                        lhs.position,
+                    )
+            elif find_callable_class_member(lhs.attribute, value.type) is not None:
                 raise OortAttributeError(
                     f"Cannot shadow method {lhs.attribute!r} with an instance field",
                     lhs.position,

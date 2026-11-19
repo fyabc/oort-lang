@@ -99,6 +99,7 @@ REPL 按层次测试，不依赖手动输入：
 | 模块加载/缓存/循环 | `unit/runtime/test_modules.py` |
 | 类与继承 | `unit/runtime/test_classes.py` |
 | 运算符重载 | `unit/runtime/test_operators.py` |
+| 相等性/键协议 | `unit/runtime/test_equality.py` |
 | 扩展方法/扩展运算符 | `unit/runtime/test_extensions.py` |
 | 容器与切片 | `unit/runtime/test_collections.py` |
 | 内建函数 | `unit/runtime/test_builtins.py` |
