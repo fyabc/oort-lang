@@ -22,7 +22,14 @@ from .call_args import ArgumentBindingError, EvaluatedArgument
 from .control_flow_exceptions import OortBreak, OortContinue, OortReturn
 from .dispatch import _get_operator_from_cls, find_callable_class_member
 from .environment import AssignResult, DefineResult, Entry, Environment
-from .functions import OortFunction, OortMethod, OortNativeFunction, OortNativeMethod
+from .functions import (
+    OortCallableMixin,
+    OortFunction,
+    OortIterator,
+    OortMethod,
+    OortNativeFunction,
+    OortNativeMethod,
+)
 from .objects import (
     OortBool,
     OortDict,
@@ -38,7 +45,6 @@ from .objects import (
     OortString,
     OortSuperProxy,
     OortTuple,
-    wrap_value,
 )
 from .type_system import OortType, Runtime
 
@@ -137,14 +143,72 @@ class ASTInterpreter(ASTVisitor[OortObject]):
     def is_truthy(self, value: OortObject) -> bool:
         return _is_truthy(value)
 
+    def open_iterator(self, value: OortObject, position=None) -> OortObject:
+        """Call `__iter__` and return the callable iterator."""
+        error_position = position or self._builtin_position()
+        if isinstance(value, OortType):
+            raise OortTypeError(f"Class {value.name!r} is not iterable", error_position)
+        if isinstance(value, OortModule):
+            raise OortTypeError(f"Module {value.module_name!r} is not iterable", error_position)
+
+        method = value.get("__iter__")
+        if method is None:
+            raise OortTypeError(f"Type {value.type.name!r} is not iterable", error_position)
+        if not isinstance(method, OortCallableMixin):
+            raise OortTypeError(
+                f"Type {value.type.name!r} has a non-callable '__iter__'",
+                error_position,
+            )
+
+        iterator = self.call_value(method, [], error_position)
+        if not isinstance(iterator, OortCallableMixin):
+            raise OortTypeError(
+                f"__iter__() must return a callable iterator, got {iterator.type.name!r}",
+                error_position,
+            )
+        return iterator
+
+    def iterator_next(self, iterator: OortObject, position=None) -> tuple[OortObject | None, bool]:
+        """Fetch one `(value, valid)` step from an iterator."""
+        error_position = position or self._builtin_position()
+        if isinstance(iterator, OortIterator):
+            return iterator.next_value()
+
+        step = self.call_value(iterator, [], error_position)
+        if not isinstance(step, OortTuple):
+            raise OortTypeError(
+                f"Iterator must return a Tuple, got {step.type.name!r}",
+                error_position,
+            )
+        if len(step.value) != 2:
+            raise OortTypeError(
+                "Iterator must return a 2-element Tuple (value, valid), "
+                f"got {len(step.value)} element(s)",
+                error_position,
+            )
+
+        value, valid = step.value
+        if not isinstance(valid, OortBool):
+            raise OortTypeError(
+                f"Iterator 'valid' flag must be a Bool, got {valid.type.name!r}",
+                error_position,
+            )
+        return value, valid.value
+
     def iter_values(self, value: OortObject, position=None) -> list[OortObject]:
-        """Snapshot the values iterated by a `for` loop or collection helper."""
-        if isinstance(value, (OortList, OortTuple, OortSet, OortDict, OortString)):
-            return list(value)
-        try:
-            return [wrap_value(item) for item in value.host_value]
-        except TypeError as e:
-            raise OortTypeError(f"{e}", position or self._builtin_position()) from e
+        """Drain an iterable into a list for eager helpers."""
+        iterator = self.open_iterator(value, position)
+        if isinstance(iterator, OortIterator):
+            return iterator.take_remaining()
+
+        result: list[OortObject] = []
+        while True:
+            item, valid = self.iterator_next(iterator, position)
+            if not valid:
+                break
+            assert item is not None
+            result.append(item)
+        return result
 
     def call_value(self, func, args, position=None) -> OortObject:
         """Call any Oort callable with already-evaluated positional values."""
@@ -614,10 +678,15 @@ class ASTInterpreter(ASTVisitor[OortObject]):
 
     def visit_for_expr(self, node: nodes.ForExpr) -> OortObject:
         iterable = node.iterator.accept(self)
-        items = self.iter_values(iterable, node.iterator.position)
+        position = node.iterator.position
+        iterator = self.open_iterator(iterable, position)
 
         result = OortNull.get_null_value()
-        for item in items:
+        while True:
+            item, valid = self.iterator_next(iterator, position)
+            if not valid:
+                break
+
             # A fresh environment per iteration gives each captured loop
             # variable its own binding (like JavaScript `let`/C# `foreach`,
             # not Python's shared loop variable).
@@ -625,20 +694,19 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             prev = self.env
             try:
                 self.env = loop_env
+                assert item is not None
                 if len(node.vars) == 1:
                     self.env.define(node.vars[0].name, item)
                 else:
                     if isinstance(item, (OortTuple, OortList)):
                         values = list(item.value)
                     else:
-                        raise OortTypeError(
-                            "Cannot unpack a non-tuple value in for loop", node.iterator.position
-                        )
+                        raise OortTypeError("Cannot unpack a non-tuple value in for loop", position)
                     if len(values) != len(node.vars):
                         raise OortTypeError(
                             f"Cannot unpack {len(values)} value(s) into {len(node.vars)} "
                             f"loop variable(s)",
-                            node.iterator.position,
+                            position,
                         )
                     for var, value in zip(node.vars, values, strict=True):
                         self.env.define(var.name, value)

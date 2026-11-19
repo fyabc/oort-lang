@@ -83,7 +83,10 @@ for k, v in pairs { ... }
 ```
 
 - `for` 支持 List、Tuple、Set、Dict（迭代键）、String（迭代字符）以及实现了
-  迭代协议的值。
+  迭代协议的值：`__iter__()` 返回一个调用后给出 `(value, valid)` 的迭代器。
+  详见 [09-iterators.md](09-iterators.md)。
+- `for` 流式拉取；`valid=false` 结束，`valid=true` 的 `null` 是合法元素。
+- 内置容器在循环开始时快照；用户迭代器的状态由 `__iter__` 决定。
 - 每次迭代创建新的变量绑定；闭包捕获的是当次迭代的值。
 - 支持解包，要求元素是长度与目标数一致的元组/列表。
 - `break` / `continue` 可用于 `for` 与 `while`；在其他位置使用会报错。

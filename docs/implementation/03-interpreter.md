@@ -72,6 +72,11 @@ for i in [1, 2] {
 print(fs[0](), fs[1]())   # 1 2
 ```
 
+`for` 通过 `open_iterator` / `iterator_next` 流式拉取：`__iter__` 返回可调用
+迭代器，每步返回 `(value, valid)`；内置容器使用原生 `OortIterator` 快路径，
+用户对象使用任意 Oort 闭包。`iter_values` 只负责把迭代器 drain 成 List，供
+急切集合助手使用。协议见 [规范 09](../spec/09-iterators.md)。
+
 ## 模块加载
 
 - `runtime/modules.py` 的 `ModuleLoader` 负责路径解析、缓存与初始化；它通过

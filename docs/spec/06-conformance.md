@@ -16,6 +16,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 语句 | `var`/`val`（含多目标解包）、赋值（含 `//=` 等增强赋值、元组交换）、`if`/`elif`/`else`、`while`、`for`、`return`、`break expr`、`continue` |
 | 函数 | `def`、`do` lambda、闭包、递归、尾随闭包；所有显式形参列表都使用括号；lambda 支持 `$0`/`$1` 匿名参数；默认值、关键字实参、`/`、`*`、`*args`、`**kwargs`、`&block` |
 | 类 | 定义、实例化、`__init__`、方法、类方法、单/多重继承、C3 MRO、元类、`this`/`super`；开放字段袋、方法遮蔽检查、身份相等/哈希 |
+| 迭代 | `__iter__` 返回 `(value, valid)` 迭代器；流式 `for`；内置 List/Tuple/Set/Dict/String 的原生 `__iter__`，`Iterator` 类型与手动迭代 |
 | 模块 | `.ort` 文件模块；`import "m" [as x]`、`from "m" import a, b as c`；相对/裸名解析、`-I` 搜索路径、规范路径缓存、急切初始化与循环诊断；模块命名空间只读、导入名可再导出；`math` / `string` 内置原生模块 |
 | 内建 | `print`、`clock`、`type`、`super`（仅 `super.method` / `super.__init__`）、`len`、`range`、`str`、`repr`、`int`、`float`、`bool`；集合助手 `map`、`filter`、`zip`、`enumerate`、`sorted` |
 | 标准库 | 原生模块 `math`（常量/数学函数）与 `string`（切分/连接/大小写/查找/替换）；裸名优先于同名文件，`./math` 可加载本地模块 |
@@ -101,3 +102,5 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 - 标准库由 `tests/unit/runtime/test_collection_builtins.py`、
   `test_math_string_modules.py`、`test_native_modules.py`、
   `test_host_boundary.py` 与 `examples/05_stdlib/` 覆盖。
+- 迭代协议由 `tests/unit/runtime/test_iterators.py`、`test_control_flow.py`
+  与 `examples/06_iterators/` 覆盖。

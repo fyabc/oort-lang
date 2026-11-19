@@ -49,11 +49,12 @@ ANTLR 语法与 Pratt 表达式解析、AST、名称解析、树遍历解释器�
 - 模块与导入加载器、规范路径缓存、循环诊断与 `-I/--module-path`
   （[OP 0006](proposals/0006-modules-and-imports.md)）；
 - 最小标准库：集合助手与 `math`/`string` 原生模块，以及宿主边界重构
-  （[OP 0012](proposals/0012-standard-library.md)）。
+  （[OP 0012](proposals/0012-standard-library.md)）；
+- 用户对象迭代器协议：`__iter__` + `(value, valid)`，内置容器与用户
+  迭代器统一分发（[OP 0013](proposals/0013-iterator-protocol.md)）。
 
 待完成（P1）：
 
-- 用户对象迭代器协议；
 - 类外扩展方法 `def C.f`；
 - 文法去宿主化与 REPL 分层重构（[OP 0008](proposals/0008-lexer-postprocessing-and-repl.md)）。
 

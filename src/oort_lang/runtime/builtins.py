@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 
 from .environment import Environment
-from .functions import OortNativeFunction
+from .functions import OortIterator, OortNativeFunction
 from .native import NativeMode
 from .objects import (
     OortDict,
@@ -37,6 +37,11 @@ def _len(value):
     if isinstance(value, (OortList, OortTuple, OortDict, OortSet, OortString)):
         return len(value)
     raise TypeError(f"Type {value.type.name!r} has no len()")
+
+
+def _iter(value):
+    """Create a fresh snapshot iterator for a built-in container."""
+    return OortIterator(list(value))
 
 
 def setup_builtins(runtime: Runtime, env: Environment):
@@ -123,6 +128,7 @@ def setup_builtins(runtime: Runtime, env: Environment):
     # String
     t_string = runtime.types.string_type
     t_string.fields = {
+        "__iter__": OortNativeFunction(_iter, name="__iter__", mode=NativeMode.VALUE),
         "__op_add__": OortNativeFunction(operator.add),
         "__op_mul__": OortNativeFunction(operator.mul),
     }
@@ -131,6 +137,7 @@ def setup_builtins(runtime: Runtime, env: Environment):
     # List
     t_list = runtime.types.list_type
     t_list.fields = {
+        "__iter__": OortNativeFunction(_iter, name="__iter__", mode=NativeMode.VALUE),
         "length": OortNativeFunction(_len, mode=NativeMode.VALUE),
         "__op_getitem__": OortNativeFunction(operator.getitem),
         "__op_setitem__": OortNativeFunction(operator.setitem),
@@ -143,6 +150,7 @@ def setup_builtins(runtime: Runtime, env: Environment):
     # Tuple
     t_tuple = runtime.types.tuple_type
     t_tuple.fields = {
+        "__iter__": OortNativeFunction(_iter, name="__iter__", mode=NativeMode.VALUE),
         "length": OortNativeFunction(_len, mode=NativeMode.VALUE),
         "__op_getitem__": OortNativeFunction(operator.getitem),
         "__op_contains__": OortNativeFunction(operator.contains),
@@ -153,6 +161,7 @@ def setup_builtins(runtime: Runtime, env: Environment):
     # Dict
     t_dict = runtime.types.dict_type
     t_dict.fields = {
+        "__iter__": OortNativeFunction(_iter, name="__iter__", mode=NativeMode.VALUE),
         "length": OortNativeFunction(_len, mode=NativeMode.VALUE),
         "__op_getitem__": OortNativeFunction(operator.getitem),
         "__op_setitem__": OortNativeFunction(operator.setitem),
@@ -164,10 +173,18 @@ def setup_builtins(runtime: Runtime, env: Environment):
     # Set
     t_set = runtime.types.set_type
     t_set.fields = {
+        "__iter__": OortNativeFunction(_iter, name="__iter__", mode=NativeMode.VALUE),
         "length": OortNativeFunction(_len, mode=NativeMode.VALUE),
         "__op_contains__": OortNativeFunction(operator.contains),
     }
     env.define(t_set.name, t_set)
+
+    # Iterator
+    t_iterator = runtime.types.iterator_type
+    t_iterator.fields = {
+        "__iter__": OortNativeFunction(lambda value: value, name="__iter__", mode=NativeMode.VALUE),
+    }
+    env.define(t_iterator.name, t_iterator)
 
     # === Builtin functions
     _define_native_function(env, "print", print, mode=NativeMode.VALUE)

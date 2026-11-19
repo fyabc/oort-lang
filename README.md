@@ -29,6 +29,8 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 - List、Tuple、Dict、Set 字面量与下标、切片
 - 一等函数、`do` lambda、闭包、尾随闭包调用；匿名参数 `do: $0 * 2`
 - 默认参数、关键字实参、位置/关键字限定、`*args`、`**kwargs`、`&block`
+- 迭代器协议：用户类实现 `__iter__` 返回 `(value, valid)` 闭包；内置容器与
+  用户对象统一用于 `for ... in`
 - `if` / `elif` / `else`、`while`、`for ... in`（含解包）、`break expr`
 - `var` / `val`、多目标声明与元组解包、增强赋值（含 `//=`）
 - 类、方法、类方法、多重继承（C3 MRO）、元类、`this` / `super`

@@ -13,6 +13,7 @@
 | [03-interpreter.md](03-interpreter.md) | 树遍历解释器、对象模型、作用域与内建函数 |
 | [04-class-system.md](04-class-system.md) | 类、继承、元类、`this` / `super` |
 | [05-stdlib.md](05-stdlib.md) | 宿主边界、集合助手、`math` / `string` 原生模块 |
+| [06-iterators.md](06-iterators.md) | `__iter__` 协议、原生迭代器、流式 for |
 
 ## 当前实现边界
 

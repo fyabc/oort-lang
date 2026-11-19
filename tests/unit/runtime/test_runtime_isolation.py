@@ -3,7 +3,14 @@
 """Each interpreter owns an isolated type system and runtime singletons."""
 
 from oort_lang.driver.compiler import Compiler
-from oort_lang.runtime import OortBool, OortInt, OortNull, Runtime, get_runtime
+from oort_lang.runtime import (
+    OortBool,
+    OortInt,
+    OortIterator,
+    OortNull,
+    Runtime,
+    get_runtime,
+)
 from oort_lang.runtime.interpreter import ASTInterpreter
 from oort_lang.semantics.pass1 import Pass1Analyzer
 from oort_lang.source.input_info import StringInputInfo
@@ -29,12 +36,18 @@ def test_runtimes_have_independent_type_objects():
         int_a = OortInt(1)
         null_a = OortNull.get_null_value()
         true_a = OortBool.get_true_value()
+        iterator_a = OortIterator([OortInt(1)])
 
     with runtime_b.activate():
         assert get_runtime() is runtime_b
         int_b = OortInt(1)
         null_b = OortNull.get_null_value()
         true_b = OortBool.get_true_value()
+        iterator_b = OortIterator([OortInt(2)])
+
+    assert runtime_a.types.iterator_type is not runtime_b.types.iterator_type
+    assert iterator_a.type is runtime_a.types.iterator_type
+    assert iterator_b.type is runtime_b.types.iterator_type
 
     assert int_a.type is runtime_a.types.int_type
     assert int_b.type is runtime_b.types.int_type

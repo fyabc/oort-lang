@@ -1,0 +1,43 @@
+# 用户自定义迭代器：__iter__ 返回一个 (value, valid) 闭包
+
+class Countdown {
+    def __init__(n) { this.n = n }
+
+    def __iter__() {
+        var current = this.n
+        do {
+            if current > 0 {
+                val value = current
+                current = current - 1
+                (value, true)
+            } else {
+                (null, false)
+            }
+        }
+    }
+}
+
+for value in Countdown(3) { print(value) }
+
+# 手动使用内置迭代器
+val iterator = ["a", "b"].__iter__()
+print(iterator(), iterator(), iterator())
+
+# valid=true 时 null 也是有效元素
+class OneNull {
+    def __iter__() {
+        var done = false
+        do {
+            if done {
+                (null, false)
+            } else {
+                done = true
+                (null, true)
+            }
+        }
+    }
+}
+
+var count = 0
+for value in OneNull() { count = count + 1 }
+print(count)

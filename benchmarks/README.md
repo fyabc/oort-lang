@@ -8,6 +8,7 @@ and exercises the real compiler pipeline, not a stripped-down harness.
 | `test_micro.py` | micro | arithmetic, locals, calls, attributes, indexing, dicts |
 | `test_macro.py` | macro | recursion, loops, method dispatch |
 | `test_stdlib.py` | macro/micro | map/filter/sorted/zip/enumerate, string join, host projection and `len` |
+| `test_iterators.py` | macro/micro | builtin loop, user `__iter__` closure, infinite iterator + break |
 | `test_startup.py` | startup | compiler/runtime construction, empty program |
 | `test_memory.py` | memory | peak allocation ceilings for a runtime and a program |
 | `test_ast_interpreter.py` | macro | historical Fibonacci baseline |
@@ -30,6 +31,12 @@ Collection helpers use CONTEXT mode and do not project; `len` is VALUE-mode and
 reads the Oort container directly. `test_stdlib.py` keeps a benchmark for each
 path (`len` on a large nested list, string join, list equality) so the next
 host refactor has a baseline.
+
+The iterator protocol has two costs: builtin containers allocate one native
+iterator over a snapshot, while user `__iter__` closures call into the
+interpreter and allocate one `(value, valid)` Tuple per step. `test_iterators.py`
+keeps a benchmark for the builtin path, a user closure and an infinite iterator
+stopped by `break`; do not claim zero per-step allocation for the tree-walker.
 
 ## Regression tracking
 

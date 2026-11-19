@@ -113,7 +113,12 @@ import lazy "module"   # 显式懒加载（后续设计，当前文法未提供�
 
 ### 4.1 设计选择
 
-**`(value, has_next)` 双返回协议**，而非 Python 的 `StopIteration` 异常。
+**`(value, valid)` 双返回协议**，而非 Python 的 `StopIteration` 异常。
+
+> 早期草稿称第二个返回值为 `has_next`；实现与示例实际使用 **`valid` /
+> `has_value`** 语义（`true` 表示 value 有效，`false` 表示结束）。以
+> [OP 0013](../proposals/0013-iterator-protocol.md) 与
+> [规范 09](../spec/09-iterators.md) 为准。
 
 理由：
 - 避免异常驱动的控制流（性能差、语义不清）
@@ -126,7 +131,7 @@ import lazy "module"   # 显式懒加载（后续设计，当前文法未提供�
 > 实际语法以 [语言规范](../spec/index.md) 为准。
 
 ```oort
-# 迭代器：返回 (value, has_next) 的闭包
+# 迭代器：返回 (value, valid) 的闭包
 def __iter__(self) -> () -> (T, Bool) {
     var index = 0
     return do () {
@@ -177,6 +182,11 @@ for i = 0; i < 3; i++ { ... }
 ### 4.6 渐进类型边界
 
 在动态↔静态迭代器边界处需要 blame tracking，确保类型安全。
+
+> 实现状态（2026-11-20）：动态 `oort-object` 已实现
+> [`__iter__` → callable → `(value, valid)`](../spec/09-iterators.md)；
+> 内置容器通过原生 `__iter__` 遵循同一协议。`yield` 生成器、静态
+> `Iterable<T>`/`Iterator<T>` 与 `Option<T>` 视图仍属未来工作。
 
 ## 5. 参考
 

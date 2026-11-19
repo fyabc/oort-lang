@@ -80,7 +80,8 @@ class NativeContext:
 
 - `call_value`：统一调用用户函数/方法/类/原生函数，并保留调用位置的诊断；
 - `is_truthy`：语言 truthiness；
-- `iter_values`：List/Tuple/Set/Dict/String 的迭代快照（#8 后可扩展）；
+- `iter_values`：通过 `__iter__` 协议 drain 可迭代值（内置容器与用户迭代器
+  共用；见 [09-iterators](../spec/09-iterators.md)）；
 - `apply_operator`：按 Oort 运算符表执行（含用户 `operator "<"`）。
 
 `visit_call` 在原生分支先重新抛出 `OortException`，再包装 Python 的

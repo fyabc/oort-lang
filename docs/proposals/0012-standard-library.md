@@ -54,8 +54,10 @@
 
 ### D2 急切返回 List
 
-当前没有迭代器协议（#8），`range` 也已物化为 List。`map`/`filter`/`zip`/
-`enumerate` 返回 List；`sorted` 返回新 List。惰性版本留待 #8 之后重新评估。
+集合助手选择急切语义（提交时尚未有迭代器协议；[OP 0013](0013-iterator-protocol.md)
+之后助手可接受有限用户迭代器，但仍返回 List）。`range` 也已物化为 List。
+`map`/`filter`/`zip`/`enumerate` 返回 List；`sorted` 返回新 List。惰性版本
+仍是后续提案。
 
 ### D3 集合优先、回调最后
 
@@ -112,7 +114,8 @@ sorted(iterable, key = null, reverse = false)
 | `sorted(iterable, key = null, reverse = false)` | 稳定；新 List；Oort `<` |
 
 参数均为位置参数（OP 0011 D8）；输入支持 List/Tuple/Set/Dict（键）/String
-（字符）；用户迭代器留待 #8。
+（字符）；用户迭代器由 [OP 0013](0013-iterator-protocol.md) 提供，助手会
+急切 drain 有限迭代器。
 
 ### `math`
 
@@ -146,15 +149,15 @@ sorted(iterable, key = null, reverse = false)
 
 1. **把五个助手放进 `std` 模块**：命名空间更干净，但已有文档使用裸 `map`，
    且与 `len`/`range` 的内建风格不一致。
-2. **惰性迭代器**：与 Python/Rust 一致，但依赖尚未实现的 #8，会把两个 issue
-   绑定。
+2. **惰性迭代器**：与 Python/Rust 一致，但提交时迭代器协议尚未落地（现由
+   [OP 0013](0013-iterator-protocol.md) 提供）；即使现在，助手仍保持急切。
 3. **把 `math`/`string` 写成 `.ort`**：dogfood 更好，但数学函数仍需隐藏宿主
    原语，且引入包数据、方言与启动编译问题。
 4. **保留隐式 `py_value` 解包**：改动小，但高阶原生函数与 Rust 宿主都受限。
 
 ## 未解决问题
 
-- 惰性版本与迭代器协议（#8）。
+- 惰性版本的助手（用户迭代器已由 OP 0013 支持，但助手仍急切）。
 - 集合助手的方法式/管道式 API（#9 扩展方法、`|>`）。
 - 更多 `math`/`string` API（`min`/`max`/`sum`、格式化、字符码）。
 - 用户宿主模块与 FFI（独立提案）。

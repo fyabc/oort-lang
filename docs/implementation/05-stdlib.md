@@ -20,7 +20,9 @@
 
 - `call_value`：按可调用对象类型分派，保留调用位置诊断；
 - `is_truthy`；
-- `iter_values`：`for` 与集合助手共用；
+- `iter_values`：通过 `__iter__` 协议 drain 可迭代值（`for` 使用流式
+  `open_iterator`/`iterator_next`；助手使用 `iter_values`）；见
+  [06-iterators.md](06-iterators.md)；
 - `apply_operator`：通过 `OortType.operators` 执行 `<` 等运算符。
 
 ## 集合助手

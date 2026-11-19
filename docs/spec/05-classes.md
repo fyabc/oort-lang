@@ -53,6 +53,33 @@ print(C().f())   # 11
 - 显式的 `super(Class, this)` / `super(args)` 调用形式已被拒绝；
   当前只保留 `super` 的成员访问形式。
 
+## 迭代协议方法
+
+类可以定义 `def __iter__()`，使实例可用于 `for ... in`：
+
+```oort
+class Countdown {
+    def __init__(n) { this.n = n }
+    def __iter__() {
+        var current = this.n
+        do {
+            if current > 0 {
+                val value = current
+                current = current - 1
+                (value, true)
+            } else {
+                (null, false)
+            }
+        }
+    }
+}
+```
+
+- `__iter__()` 返回一个可调用迭代器；每次调用返回 `(value, valid)`。
+- `valid` 必须是 Bool；`null` 可以是合法元素。
+- 每次 `__iter__()` 应返回新的迭代器，以支持嵌套/重复循环。
+- 完整协议与错误见 [09-iterators.md](09-iterators.md)。
+
 ## 运算符方法
 
 ```oort

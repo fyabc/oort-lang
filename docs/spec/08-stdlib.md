@@ -3,7 +3,8 @@
 > 本页描述 `oort-object` v1 的最小标准库（[OP 0012](../proposals/0012-standard-library.md)）。
 > 集合助手是全局内建；`math` 与 `string` 是封闭的宿主原生模块。
 > 所有集合助手都是**急切**的：返回新的 List，不返回惰性迭代器。
-> 用户自定义迭代器属于后续的迭代器协议（GitHub issue #8）。
+> 用户定义的可迭代对象遵循 [09-iterators.md](09-iterators.md)；助手会接受
+> 有限用户迭代器并立即 drain 成 List。
 
 ## 集合助手
 
@@ -30,7 +31,8 @@ print(filter([1, 2, 3]) do(x): x > 1)    # [2, 3]
 ### 规则
 
 - `map` / `filter` 对 List、Tuple、Set、Dict（迭代键）、String（迭代字符）
-  操作；当前不支持用户自定义可迭代对象。
+  操作，也接受实现了 `__iter__` 的有限用户对象；助手会立即 drain 成 List。
+  无限迭代器会让助手一直运行；只有 `for` 是流式。
 - `zip` 在最短输入结束时停止；无参数返回空 List。
 - `enumerate` 的 `start` 必须是 Int，可为负数。
 - `sorted`：

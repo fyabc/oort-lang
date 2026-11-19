@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   importable as `import "math"` / `from "string" import upper`.
 - Standard-library examples under `examples/05_stdlib/` and host/stdlib
   benchmarks in `benchmarks/test_stdlib.py`.
+- Iterator protocol (OP 0013): user classes implement `__iter__` returning a
+  callable that yields `(value, valid)` tuples; `for` is streaming and builtin
+  containers expose the same protocol through a native `Iterator` type.
+- User-iterator example under `examples/06_iterators/` and builtin/user iterator
+  benchmarks in `benchmarks/test_iterators.py`.
 
 ### Changed
 

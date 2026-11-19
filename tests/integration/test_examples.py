@@ -33,6 +33,7 @@ EXPECTED_OUTPUTS = {
         "[6, 2, 4]\n[3, 2]\n[(3, 10), (1, 20)]\n[(0, 3), (1, 1), (2, 2)]\n[1, 2, 3]\n[3, 2, 1]\n"
     ),
     "05_stdlib/05_01_math_string.ort": "3\ntrue\na-b\nOORT\n[a, b, c]\ntrue\n",
+    "06_iterators/06_00_user_iterators.ort": ("3\n2\n1\n(a, true) (b, true) (null, false)\n1\n"),
 }
 
 EXAMPLE_NAME = re.compile(r"^\d{2}_\d{2}_")

@@ -2,13 +2,20 @@
 
 """Callable Oort objects."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING
 
 from .context import get_runtime
 from .control_flow_exceptions import OortReturn
 from .native import NativeContext, NativeMode
-from .objects import OortInstance, OortNativeMixin, OortObject
+from .objects import (
+    OortBool,
+    OortInstance,
+    OortNativeMixin,
+    OortNull,
+    OortObject,
+    OortTuple,
+)
 from .signature import build_call_env
 
 if TYPE_CHECKING:
@@ -66,6 +73,42 @@ class OortNativeFunction(OortFunctionMixin, OortNativeMixin, OortObject):
         else:
             result = self.value(NativeContext(interpreter, position), *args)
         return host.from_host(result)
+
+
+class OortIterator(OortNativeFunction):
+    """Native callable iterator over a snapshot of Oort values."""
+
+    def __init__(self, values: Iterable[OortObject], name: str = "<iterator>"):
+        self._values = list(values)
+        self._index = 0
+        super().__init__(self._next_tuple, name=name, mode=NativeMode.VALUE)
+
+    def __repr__(self):
+        return f"<Iterator object at {hex(id(self))}>"
+
+    def next_value(self) -> tuple[OortObject | None, bool]:
+        """Return the next value and whether it is valid."""
+        if self._index >= len(self._values):
+            return None, False
+        value = self._values[self._index]
+        self._index += 1
+        return value, True
+
+    def take_remaining(self) -> list[OortObject]:
+        """Consume and return the remaining values (used by eager helpers)."""
+        if self._index == 0:
+            remaining = self._values
+        else:
+            remaining = self._values[self._index :]
+        self._index = len(self._values)
+        return remaining
+
+    def _next_tuple(self) -> OortTuple:
+        value, valid = self.next_value()
+        if not valid:
+            return OortTuple((OortNull.get_null_value(), OortBool.get_false_value()))
+        assert value is not None
+        return OortTuple((value, OortBool.get_true_value()))
 
 
 class OortFunction(OortFunctionMixin, OortInstance):
