@@ -125,7 +125,9 @@ class ReplInputInfo(InputInfo):
         self._lines: list[str] = []
 
     def get_input_stream(self) -> InputStream:
-        raise RuntimeError("Not supported.")
+        stream = InputStream(self.get_source_text())
+        stream.name = self.module_name
+        return stream
 
     def get_source_text(self) -> str:
         return "".join(self._lines)

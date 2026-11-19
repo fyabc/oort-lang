@@ -6,7 +6,7 @@ tests/
 ├── helpers.py           # get_compiler、示例/资产路径
 ├── assets/              # 固定的 .ort 源文件与期望 AST
 ├── unit/
-│   ├── frontend/        # 词法、解析、AST、语义分析、Binding、诊断、拒绝清单
+│   ├── frontend/        # 词法、token 后处理、解析、AST、语义分析、Binding、诊断
 │   └── runtime/         # 解释器、函数/类/容器、模块加载、宿主边界、标准库、
 │                        # 迭代器与扩展方法
 ├── property/            # hypothesis 属性测试（CI 用 --with hypothesis）
@@ -70,6 +70,7 @@ REPL 按层次测试，不依赖手动输入：
 | 领域 | 测试文件 |
 |------|----------|
 | 词法 | `unit/frontend/test_lexer.py` |
+| Token 后处理/完整性 | `unit/frontend/test_token_processor.py` |
 | 解析与优先级 | `unit/frontend/test_parser.py` |
 | AST 打印 | `unit/frontend/test_ast.py` |
 | 名称解析/作用域 | `unit/frontend/test_semantic.py` |
@@ -93,6 +94,7 @@ REPL 按层次测试，不依赖手动输入：
 | 模块加载/缓存/循环 | `unit/runtime/test_modules.py` |
 | 类与继承 | `unit/runtime/test_classes.py` |
 | 运算符重载 | `unit/runtime/test_operators.py` |
+| 扩展方法/扩展运算符 | `unit/runtime/test_extensions.py` |
 | 容器与切片 | `unit/runtime/test_collections.py` |
 | 内建函数 | `unit/runtime/test_builtins.py` |
 | CLI | `integration/test_cli.py` |

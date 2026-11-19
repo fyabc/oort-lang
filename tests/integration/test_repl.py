@@ -6,7 +6,7 @@ import pytest
 from rich.console import Console
 
 from oort_lang import __version__
-from oort_lang.driver.repl import run_repl
+from oort_lang.driver.repl import ReplAction, ReplSession, run_repl
 from tests.helpers import get_compiler
 
 
@@ -92,6 +92,59 @@ def test_repl_native_modules(monkeypatch, capsys, tmp_path):
     out = capsys.readouterr().out
     assert "3" in out
     assert "OORT" in out
+
+
+def _session() -> ReplSession:
+    return ReplSession(get_compiler("NOT_EXIST -t eval"))
+
+
+def test_session_reports_continuation_then_evaluates():
+    session = _session()
+    assert session.feed_line("var xs = [").action is ReplAction.CONTINUE
+    assert session.is_continuing
+    assert session.feed_line("1, 2,").action is ReplAction.CONTINUE
+    result = session.feed_line("]")
+    assert result.action is ReplAction.EVALUATED
+    assert result.value is None  # declarations produce null
+    assert session.statement_count == 1
+    assert not session.is_continuing
+
+    result = session.feed_line("xs[1]")
+    assert result.action is ReplAction.EVALUATED
+    assert result.index == 1
+    assert result.value is not None
+
+
+def test_session_keeps_environment_after_error():
+    session = _session()
+    session.feed_line("var value = 3")
+    result = session.feed_line("1 +")
+    assert result.action is ReplAction.ERROR
+    assert not session.is_continuing
+
+    result = session.feed_line("print(value)")
+    assert result.action is ReplAction.EVALUATED
+
+
+def test_session_cancel_discards_pending_input():
+    session = _session()
+    session.feed_line("[1,")
+    assert session.is_continuing
+    session.cancel()
+    assert not session.is_continuing
+    assert session.feed_line("2 + 2").action is ReplAction.EVALUATED
+
+
+def test_session_trailing_backslash_continues():
+    session = _session()
+    assert session.feed_line("1 + \\").action is ReplAction.CONTINUE
+    assert session.feed_line("2").action is ReplAction.EVALUATED
+
+
+def test_session_ignores_empty_input_when_idle():
+    session = _session()
+    assert session.feed_line("   ").action is ReplAction.EMPTY
+    assert session.statement_count == 0
 
 
 if __name__ == "__main__":

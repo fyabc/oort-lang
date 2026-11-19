@@ -1,117 +1,193 @@
 #! /usr/bin/env python
 
-from pathlib import Path
+"""REPL session logic and console front-end.
 
-from antlr4 import CommonTokenStream, InputStream
+`ReplSession` owns compilation state and knows nothing about terminals;
+`ConsoleIO` handles prompts and output. The session reparses the whole pending
+buffer on every submission, so it never mutates ANTLR lexer/parser internals.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+from enum import Enum, auto
+from pathlib import Path
+from typing import TYPE_CHECKING
+
 from rich.console import Console
 
 from .. import __version__
 from ..ast import nodes
 from ..diagnostics import OortException
-from ..diagnostics.error_listener import OortErrorListener
-from ..parser.grammar.OortLexer import OortLexer
-from ..parser.grammar.OortParser import OortParser
 from ..runtime.interpreter import ASTInterpreter
 from ..semantics.pass1 import Pass1Analyzer
 from ..source.input_info import ReplInputInfo
-from .compiler import Compiler
+
+if TYPE_CHECKING:
+    from antlr4 import Parser
+
+    from ..runtime.objects import OortObject
+    from .compiler import Compiler
 
 
-def run_repl(compiler: Compiler):
-    running = True
+class ReplAction(Enum):
+    EMPTY = auto()
+    CONTINUE = auto()
+    EVALUATED = auto()
+    ERROR = auto()
 
-    console = Console()
 
-    console.rule("""Welcome to Oort REPL!""")
-    console.print(f"""[white]\
-Oort {__version__}
-Type 'ctrl + C' to exit.[/]""")
+@dataclasses.dataclass(frozen=True)
+class ReplResult:
+    action: ReplAction
+    value: OortObject | None = None
+    index: int = 0
 
-    # Setup lexer & parser.
-    lexer = None
-    token_stream = CommonTokenStream(None)
-    parser = OortParser(None)
-    input_info = ReplInputInfo()
-    compiler.error_handler.register_input(input_info)
-    parser.removeErrorListeners()
-    parser.addErrorListener(OortErrorListener(compiler.error_handler, input_info))
 
-    pass1_analyzer: Pass1Analyzer = Pass1Analyzer(compiler.error_handler, input_info)
-    ast_interpreter = ASTInterpreter(compiler.error_handler)
-    module_loader = compiler.make_module_loader(ast_interpreter, Path.cwd())
-    ast_interpreter.module_loader = module_loader
+class ReplSession:
+    """Compile and evaluate one REPL statement at a time."""
 
-    stmt_count = 0
-    continuation_mode = False
-    continuation_lines = []
+    def __init__(self, compiler: Compiler, entry_dir: Path | None = None):
+        self.compiler = compiler
+        self.input_info = ReplInputInfo()
+        compiler.error_handler.register_input(self.input_info)
 
-    while running:
+        self.interpreter = ASTInterpreter(compiler.error_handler)
+        self.module_loader = compiler.make_module_loader(
+            self.interpreter, (entry_dir or Path.cwd()).resolve()
+        )
+        self.interpreter.module_loader = self.module_loader
+        self.statement_count = 0
+        self._pending: list[str] = []
+
+    @property
+    def is_continuing(self) -> bool:
+        """True while the current submission has unclosed brackets."""
+        return bool(self._pending)
+
+    def cancel(self) -> None:
+        """Discard the pending multi-line input (Ctrl-C semantics)."""
+        self._reset_buffer()
+
+    def flush(self) -> ReplResult | None:
+        """Parse a still-incomplete buffer at EOF so diagnostics are not lost."""
+        if not self._pending:
+            return None
+        parser, _ = self.compiler.prepare_parser(self.input_info)
+        return self._submit(parser)
+
+    def feed_line(self, line: str) -> ReplResult:
+        if not self._pending and not line.strip():
+            return ReplResult(ReplAction.EMPTY)
+
+        normalized = line + "\n"
+        self._pending.append(normalized)
+        self.input_info.add_lines([normalized])
+
+        parser, tokenized = self.compiler.prepare_parser(self.input_info)
+        if tokenized.incomplete:
+            return ReplResult(ReplAction.CONTINUE)
+        return self._submit(parser)
+
+    def _submit(self, parser: Parser) -> ReplResult:
+        ast = self.compiler.build_ast(parser, self.input_info, exit_on_error=False, summary=False)
+        if ast is not None:
+            analyzer: Pass1Analyzer = Pass1Analyzer(self.compiler.error_handler, self.input_info)
+            ast = self.compiler.semantic_analyze(ast, analyzer, exit_on_error=False, summary=False)
+        if ast is None:
+            return self._error()
+
+        assert isinstance(ast, nodes.ModuleNode)
         try:
-            if continuation_mode:
-                prompt = f"[green]{' ' * (len(str(stmt_count)) + 2)}...:[/] "
-            else:
-                prompt = f"\n[green]In [{stmt_count}]:[/] "
+            result = self.module_loader.execute_entry(ast, self.interpreter.entry_env)
+        except OortException as e:
+            matched = self.compiler.error_handler.input_info_for(e.position) or self.input_info
+            self.compiler.error_handler.add(e, matched)
+            self.compiler.error_handler.report(exit_on_error=False, clear=True, summary=False)
+            return self._error()
 
-            line = console.input(prompt).strip()
-            if not line:
-                continue
-            normalized_line = line + "\n"
-            continuation_lines.append(normalized_line)
-            line_stream = InputStream(normalized_line)
+        if self.compiler.error_handler.pending_count:
+            self.compiler.error_handler.report(exit_on_error=False, clear=True, summary=False)
 
-            # Update lexer.
-            if lexer is None:
-                lexer = OortLexer(line_stream)
-                token_stream.setTokenSource(lexer)
-                parser.setTokenStream(token_stream)
-            else:
-                lexer.inputStream = line_stream
-            lexer.line = len(input_info.get_lines()) + len(continuation_lines)
+        index = self.statement_count
+        value = None if result is self.interpreter.runtime.null else result
+        self._finish()
+        return ReplResult(ReplAction.EVALUATED, value=value, index=index)
 
-            # Force lexer to scan the new line.
-            token_stream.fill()
+    def _error(self) -> ReplResult:
+        index = self.statement_count
+        self._finish()
+        return ReplResult(ReplAction.ERROR, index=index)
 
-            # If inside any brackets or endswith backslash, run into continuation mode.
-            if lexer.brackets or line[-1] == "\\":
-                token_stream.tokens.pop()
-                token_stream.fetchedEOF = False
-                continuation_mode = True
-                continue
+    def _finish(self) -> None:
+        self.statement_count += 1
+        self._reset_buffer()
 
-            # Otherwise, all inputs are ready, run parser and reset states.
-            input_info.add_lines(continuation_lines)
-            continuation_lines.clear()
-            continuation_mode = False
-            lexer = None
+    def _reset_buffer(self) -> None:
+        self._pending.clear()
+        # Positions in the next submission start at line 1 again. Register a
+        # fresh input so diagnostics never read a stale buffer.
+        self.input_info = ReplInputInfo()
+        self.compiler.error_handler.register_input(self.input_info)
 
-            ast = compiler.build_ast(parser, input_info, exit_on_error=False, summary=False)
-            if ast is not None:
-                ast = compiler.semantic_analyze(
-                    ast, pass1_analyzer, exit_on_error=False, summary=False
-                )
-            if ast:
-                assert isinstance(ast, nodes.ModuleNode)
-                try:
-                    result = module_loader.execute_entry(ast, ast_interpreter.entry_env)
-                except OortException as e:
-                    matched = compiler.error_handler.input_info_for(e.position) or input_info
-                    compiler.error_handler.add(e, matched)
 
-                    compiler.error_handler.report(exit_on_error=False, clear=True, summary=False)
-                else:
-                    if compiler.error_handler.pending_count:
-                        compiler.error_handler.report(
-                            exit_on_error=False, clear=True, summary=False
-                        )
-                    # Skip null values.
-                    if result is not ast_interpreter.runtime.null:
-                        output = repr(result)
-                        console.print(f"[red]Out[{stmt_count}]:[/]", output)
+class ConsoleIO:
+    """Console prompts and output for the REPL."""
 
-            # Successfully finished one statement.
-            stmt_count += 1
+    def __init__(self, console: Console | None = None):
+        self.console = console or Console()
+        self.interactive = self.console.is_terminal
+
+    def banner(self) -> None:
+        self.console.rule("Welcome to Oort REPL!")
+        self.console.print(
+            f"[white]Oort {__version__}\n"
+            "Type Ctrl-D to exit; Ctrl-C cancels the current input "
+            "(or exits on an empty prompt).[/]"
+        )
+
+    def input(self, count: int, continuing: bool) -> str:
+        return self.console.input(self._prompt(count, continuing))
+
+    def _prompt(self, count: int, continuing: bool) -> str:
+        if not self.interactive:
+            return ""
+        if continuing:
+            return f"[green]{' ' * (len(str(count)) + 2)}...:[/] "
+        return f"\n[green]In [{count}]:[/] "
+
+    def result(self, index: int, text: str) -> None:
+        self.console.print(f"[red]Out[{index}]:[/]", text)
+
+    def cancelled(self) -> None:
+        self.console.print("[yellow]Input cancelled.[/]")
+
+    def goodbye(self) -> None:
+        self.console.print("[yellow]Exit.[/]")
+
+
+def run_repl(compiler: Compiler, console_io: ConsoleIO | None = None) -> int:
+    """Run the interactive REPL until EOF or Ctrl-C on an empty prompt."""
+    io = console_io or ConsoleIO()
+    io.banner()
+    session = ReplSession(compiler)
+
+    while True:
+        try:
+            line = io.input(session.statement_count, session.is_continuing)
+        except EOFError:
+            session.flush()
+            break
         except KeyboardInterrupt:
-            running = False
+            if session.is_continuing:
+                session.cancel()
+                io.cancelled()
+                continue
+            break
 
-    console.print("[yellow]Exit.[/]")
+        result = session.feed_line(line)
+        if result.action is ReplAction.EVALUATED and result.value is not None:
+            io.result(result.index, repr(result.value))
+
+    io.goodbye()
     return 0

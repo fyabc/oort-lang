@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from antlr4 import CommonTokenStream
+from antlr4.ListTokenSource import ListTokenSource
 
 from ..ast import nodes
 from ..ast.printer import ASTPrinter
@@ -24,6 +25,7 @@ from ..parser.dialect import (
 )
 from ..parser.grammar.OortLexer import OortLexer
 from ..parser.grammar.OortParser import OortParser
+from ..parser.token_processor import TokenizedInput, tokenize
 from ..runtime.interpreter import ASTInterpreter
 from ..runtime.modules import ModuleLoader
 from ..runtime.stdlib import native_module_factories
@@ -203,16 +205,24 @@ class Compiler:
         if exit_on_error:
             self.error_handler.report(exit_on_error=True, clear=False)
 
-    def _build_parser(self, input_info: InputInfo) -> OortParser:
-        """Build parser."""
-        input_stream = input_info.get_input_stream()
-        lexer = OortLexer(input_stream)
+    def prepare_parser(self, input_info: InputInfo) -> tuple[OortParser, TokenizedInput]:
+        """Lex and post-process one input, then build its parser.
 
-        token_stream = CommonTokenStream(lexer)
+        The tokenized result carries bracket depth and completeness, which the
+        REPL uses to decide whether to keep reading.
+        """
+        lexer = OortLexer(input_info.get_input_stream())
+        tokenized = tokenize(lexer)
+        token_stream = CommonTokenStream(ListTokenSource(tokenized.tokens))
+
         parser = OortParser(token_stream)
         parser.removeErrorListeners()
         parser.addErrorListener(OortErrorListener(self.error_handler, input_info))
-        return parser
+        return parser, tokenized
+
+    def _build_parser(self, input_info: InputInfo) -> OortParser:
+        """Build parser."""
+        return self.prepare_parser(input_info)[0]
 
     def build_ast(
         self,

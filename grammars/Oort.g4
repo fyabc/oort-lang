@@ -1,13 +1,5 @@
 grammar Oort;
 
-@lexer::members {
-    self.parenthesisCount = 0
-    self.bracketCount = 0
-    self.dictLiteralCount = 0
-    self.setLiteralCount = 0
-    self.brackets = []
-}
-
 startRule
     : statementList? EOF;
 
@@ -398,11 +390,11 @@ BIT_AND: '&';
 BIT_XOR: '^';
 BIT_OR: '|';
 
-LDICT_LITERAL: '{:' {self.dictLiteralCount += 1; self.brackets.append('{:')};
-RDICT_LITERAL: ':}' {self.dictLiteralCount -= 1; self.brackets.pop()};
+LDICT_LITERAL: '{:';
+RDICT_LITERAL: ':}';
 EMPTY_DICT_LITERAL: '{:}';
-LSET_LITERAL: '{.' {self.setLiteralCount += 1; self.brackets.append('{.')};
-RSET_LITERAL: '.}' {self.setLiteralCount -= 1; self.brackets.pop()};
+LSET_LITERAL: '{.';
+RSET_LITERAL: '.}';
 EMPTY_SET_LITERAL: '{.}';
 
 AUG_ASSIGN
@@ -431,14 +423,14 @@ COMMA: ',';
 ARROW: '->';
 AT: '@';
 
-LPA: '(' {self.parenthesisCount += 1; self.brackets.append('(')};
-RPA: ')' {self.parenthesisCount -= 1; self.brackets.pop()};
-LBK: '[' {self.bracketCount += 1; self.brackets.append('[')};
-RBK: ']' {self.bracketCount -= 1; self.brackets.pop()};
-AT_LBK: '@[' {self.bracketCount += 1; self.brackets.append('@[')};
+LPA: '(';
+RPA: ')';
+LBK: '[';
+RBK: ']';
+AT_LBK: '@[';
 
-LBC: '{' {self.brackets.append('{')};
-RBC: '}' {self.brackets.pop()};
+LBC: '{';
+RBC: '}';
 COLON: ':';
 DOUBLE_COLON: '::';
 SEMICOLON: ';';
@@ -580,8 +572,6 @@ fragment AnonymousParameter
 COMMENT
     : '#' ~[\r\n]* -> skip;
 LINE_ESCAPE
-    : '\\' '\r'? '\n' -> skip;
-IGNORED_NEWLINE
-    : '\r'? '\n' {(self.parenthesisCount != 0 or self.bracketCount != 0 or self.dictLiteralCount != 0 or self.setLiteralCount != 0) and (self.brackets and self.brackets[-1] != '{')}? -> skip;
+    : '\\' '\r'? '\n';
 NEWLINE: '\r'? '\n';
 WS: [ \t]+ -> skip;

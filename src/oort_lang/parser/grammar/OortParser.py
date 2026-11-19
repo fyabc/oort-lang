@@ -10,7 +10,7 @@ else:
 
 def serializedATN():
     return [
-        4,1,88,684,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,
+        4,1,87,684,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,
         6,2,7,7,7,2,8,7,8,2,9,7,9,2,10,7,10,2,11,7,11,2,12,7,12,2,13,7,13,
         2,14,7,14,2,15,7,15,2,16,7,16,2,17,7,17,2,18,7,18,2,19,7,19,2,20,
         7,20,2,21,7,21,2,22,7,22,2,23,7,23,2,24,7,24,2,25,7,25,2,26,7,26,
@@ -72,7 +72,7 @@ def serializedATN():
         22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,
         66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,98,100,102,104,106,
         108,0,7,1,0,52,53,1,0,26,27,3,0,11,11,13,13,40,40,1,0,3,4,1,0,77,
-        80,2,0,42,42,87,87,2,0,74,76,83,83,781,0,111,1,0,0,0,2,131,1,0,0,
+        80,2,0,42,42,86,86,2,0,74,76,83,83,781,0,111,1,0,0,0,2,131,1,0,0,
         0,4,138,1,0,0,0,6,140,1,0,0,0,8,143,1,0,0,0,10,148,1,0,0,0,12,156,
         1,0,0,0,14,178,1,0,0,0,16,180,1,0,0,0,18,185,1,0,0,0,20,189,1,0,
         0,0,22,214,1,0,0,0,24,246,1,0,0,0,26,283,1,0,0,0,28,315,1,0,0,0,
@@ -147,7 +147,7 @@ def serializedATN():
         0,283,256,1,0,0,0,283,257,1,0,0,0,283,258,1,0,0,0,283,263,1,0,0,
         0,283,264,1,0,0,0,283,271,1,0,0,0,283,272,1,0,0,0,283,273,1,0,0,
         0,283,274,1,0,0,0,283,275,1,0,0,0,283,276,1,0,0,0,283,277,1,0,0,
-        0,283,278,1,0,0,0,284,310,1,0,0,0,285,289,10,13,0,0,286,288,5,87,
+        0,283,278,1,0,0,0,284,310,1,0,0,0,285,289,10,13,0,0,286,288,5,86,
         0,0,287,286,1,0,0,0,288,291,1,0,0,0,289,287,1,0,0,0,289,290,1,0,
         0,0,290,292,1,0,0,0,291,289,1,0,0,0,292,293,5,29,0,0,293,309,3,28,
         14,0,294,295,10,12,0,0,295,296,5,35,0,0,296,297,3,30,15,0,297,298,
@@ -317,8 +317,7 @@ class OortParser ( Parser ):
                       "YIELD", "AWAIT", "TRUE", "FALSE", "NULL", "OPERATOR",
                       "INFIX", "FROM", "DEC_INT", "BIN_INT", "OCT_INT",
                       "HEX_INT", "FLOAT_LITERAL", "STRING_LITERAL", "IDENTIFIER",
-                      "COMMENT", "LINE_ESCAPE", "IGNORED_NEWLINE", "NEWLINE",
-                      "WS" ]
+                      "COMMENT", "LINE_ESCAPE", "NEWLINE", "WS" ]
 
     RULE_startRule = 0
     RULE_statementList = 1
@@ -477,9 +476,8 @@ class OortParser ( Parser ):
     IDENTIFIER=83
     COMMENT=84
     LINE_ESCAPE=85
-    IGNORED_NEWLINE=86
-    NEWLINE=87
-    WS=88
+    NEWLINE=86
+    WS=87
 
     def __init__(self, input:TokenStream, output:TextIO = sys.stdout):
         super().__init__(input, output)
@@ -526,7 +524,7 @@ class OortParser ( Parser ):
             self.state = 111
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if (((_la) & ~0x3f) == 0 and ((1 << _la) & -3461020249655083010) != 0) or ((((_la - 64)) & ~0x3f) == 0 and ((1 << (_la - 64)) & 9437183) != 0):
+            if (((_la) & ~0x3f) == 0 and ((1 << _la) & -3461020249655083010) != 0) or ((((_la - 64)) & ~0x3f) == 0 and ((1 << (_la - 64)) & 5242879) != 0):
                 self.state = 110
                 self.statementList()
 
@@ -589,7 +587,7 @@ class OortParser ( Parser ):
                 self.state = 116
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if _la==42 or _la==87:
+                if _la==42 or _la==86:
                     self.state = 115
                     self.term()
 
@@ -612,7 +610,7 @@ class OortParser ( Parser ):
                 self.state = 128
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if _la==42 or _la==87:
+                if _la==42 or _la==86:
                     self.state = 127
                     self.term()
 
@@ -2357,7 +2355,7 @@ class OortParser ( Parser ):
                 self.state = 280
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if (((_la) & ~0x3f) == 0 and ((1 << _la) & -3461020249655083010) != 0) or ((((_la - 64)) & ~0x3f) == 0 and ((1 << (_la - 64)) & 9437183) != 0):
+                if (((_la) & ~0x3f) == 0 and ((1 << _la) & -3461020249655083010) != 0) or ((((_la - 64)) & ~0x3f) == 0 and ((1 << (_la - 64)) & 5242879) != 0):
                     self.state = 279
                     self.statementList()
 
@@ -2389,7 +2387,7 @@ class OortParser ( Parser ):
                         self.state = 289
                         self._errHandler.sync(self)
                         _la = self._input.LA(1)
-                        while _la==87:
+                        while _la==86:
                             self.state = 286
                             self.match(OortParser.NEWLINE)
                             self.state = 291
@@ -3285,7 +3283,7 @@ class OortParser ( Parser ):
                 self.state = 411
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if (((_la) & ~0x3f) == 0 and ((1 << _la) & -3461020249655083010) != 0) or ((((_la - 64)) & ~0x3f) == 0 and ((1 << (_la - 64)) & 9437183) != 0):
+                if (((_la) & ~0x3f) == 0 and ((1 << _la) & -3461020249655083010) != 0) or ((((_la - 64)) & ~0x3f) == 0 and ((1 << (_la - 64)) & 5242879) != 0):
                     self.state = 410
                     self.statementList()
 
@@ -4372,7 +4370,7 @@ class OortParser ( Parser ):
                     self.state = 543
                     self._errHandler.sync(self)
                     _la = self._input.LA(1)
-                    if _la==42 or _la==87:
+                    if _la==42 or _la==86:
                         self.state = 542
                         self.term()
 
@@ -4394,7 +4392,7 @@ class OortParser ( Parser ):
                 self.state = 555
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if _la==42 or _la==87:
+                if _la==42 or _la==86:
                     self.state = 554
                     self.term()
 
@@ -4474,7 +4472,7 @@ class OortParser ( Parser ):
                 self.state = 565
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if (((_la) & ~0x3f) == 0 and ((1 << _la) & -3461020249655083010) != 0) or ((((_la - 64)) & ~0x3f) == 0 and ((1 << (_la - 64)) & 9437183) != 0):
+                if (((_la) & ~0x3f) == 0 and ((1 << _la) & -3461020249655083010) != 0) or ((((_la - 64)) & ~0x3f) == 0 and ((1 << (_la - 64)) & 5242879) != 0):
                     self.state = 564
                     self.statementList()
 
@@ -5449,7 +5447,7 @@ class OortParser ( Parser ):
             while True:
                 self.state = 676
                 _la = self._input.LA(1)
-                if not(_la==42 or _la==87):
+                if not(_la==42 or _la==86):
                     self._errHandler.recoverInline(self)
                 else:
                     self._errHandler.reportMatch(self)
@@ -5457,7 +5455,7 @@ class OortParser ( Parser ):
                 self.state = 679
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                if not (_la==42 or _la==87):
+                if not (_la==42 or _la==86):
                     break
 
         except RecognitionException as re:

@@ -2,6 +2,7 @@
 
 """End-to-end command-line tests."""
 
+import subprocess
 import sys
 
 import pytest
@@ -88,6 +89,56 @@ def test_print_ast_shows_import(monkeypatch, capsys, tmp_path):
 
     assert _run_cli(monkeypatch, ["-t", "ast", str(main)]) == 0
     assert "ImportStmt(module_path='./lib', alias='l')" in capsys.readouterr().out
+
+
+def _run_repl_subprocess(stdin: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "oort_lang"],
+        input=stdin,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+
+
+def test_repl_piped_input_evaluates_and_eof_exits_cleanly():
+    proc = _run_repl_subprocess("1 + 2\nprint(4)\n")
+    assert proc.returncode == 0
+    assert "Out[0]: 3" in proc.stdout
+    assert "4\n" in proc.stdout
+    assert "Traceback" not in proc.stdout
+    assert "Traceback" not in proc.stderr
+
+
+def test_repl_piped_multiline_input():
+    proc = _run_repl_subprocess("var xs = [\n1,\n2,\n]\nprint(xs[1])\n")
+    assert proc.returncode == 0
+    assert "2\n" in proc.stdout
+    assert "Traceback" not in proc.stderr
+
+
+def test_repl_piped_error_recovers():
+    proc = _run_repl_subprocess("1 +\nprint(7)\n")
+    assert proc.returncode == 0
+    assert "7\n" in proc.stdout
+    assert "Traceback" not in proc.stdout
+    assert "Traceback" not in proc.stderr
+
+
+def test_repl_empty_piped_input_exits_zero():
+    proc = _run_repl_subprocess("")
+    assert proc.returncode == 0
+    assert "Traceback" not in proc.stderr
+
+
+def test_repl_incomplete_input_at_eof_reports_syntax_error():
+    proc = _run_repl_subprocess("print(\n")
+    assert proc.returncode == 0
+    assert "Invalid syntax" in proc.stdout
+    assert "Traceback" not in proc.stdout
+    assert "Traceback" not in proc.stderr
 
 
 def test_print_ast_with_metadata_accepts_import(monkeypatch, capsys, tmp_path):

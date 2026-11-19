@@ -2,15 +2,26 @@
 
 """Lexer tests."""
 
-from antlr4 import InputStream
+from antlr4 import InputStream, Token
 
 from oort_lang.parser.grammar.OortLexer import OortLexer
+from oort_lang.parser.token_processor import tokenize
 
 
 def _tokens(text: str) -> list[tuple[str, str]]:
     lexer = OortLexer(InputStream(text))
     result = []
     for token in lexer.getAllTokens():
+        name = OortLexer.symbolicNames[token.type]
+        result.append((name, token.text))
+    return result
+
+
+def _processed_tokens(text: str) -> list[tuple[str, str]]:
+    result = []
+    for token in tokenize(OortLexer(InputStream(text))).tokens:
+        if token.type == Token.EOF:
+            continue
         name = OortLexer.symbolicNames[token.type]
         result.append((name, token.text))
     return result
@@ -46,9 +57,9 @@ def test_comments_are_skipped():
     assert _tokens("# comment\n42") == [("NEWLINE", "\n"), ("DEC_INT", "42")]
 
 
-def test_newline_inside_brackets_is_ignored():
-    tokens = _tokens("(\n1\n)\n2")
-    assert tokens == [
+def test_newline_inside_brackets_is_ignored_by_post_processing():
+    assert _tokens("(\n1\n)\n2")[:2] == [("LPA", "("), ("NEWLINE", "\n")]
+    assert _processed_tokens("(\n1\n)\n2") == [
         ("LPA", "("),
         ("DEC_INT", "1"),
         ("RPA", ")"),
@@ -58,7 +69,7 @@ def test_newline_inside_brackets_is_ignored():
 
 
 def test_newline_inside_braces_is_not_ignored():
-    tokens = _tokens("{\n1\n}")
+    tokens = _processed_tokens("{\n1\n}")
     assert tokens == [
         ("LBC", "{"),
         ("NEWLINE", "\n"),
