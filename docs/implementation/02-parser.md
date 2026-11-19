@@ -87,9 +87,9 @@ print(
 - `ConsoleIO`：提示符、banner 与结果输出；非 TTY 下隐藏提示符，管道输入仍可
   正常求值。测试可替换为任意实现。
 
-行为：EOF（Ctrl-D 或管道结束）正常退出并返回 0；Ctrl-C 在有待提交输入时
-取消当前缓冲区，在空提示符下退出；语法/运行时错误只清空当前缓冲区，REPL
-继续运行。会话不修改 ANTLR 的 `lexer.inputStream` / `token_stream.tokens` /
+行为：EOF（Unix Ctrl-D；Windows Ctrl-Z + Enter；或管道结束）正常退出并返回
+0；Ctrl-C 始终取消当前输入与待提交缓冲区并回到新提示符（与 Python/IPython
+一致）；语法/运行时错误只清空当前缓冲区，REPL 继续运行。会话不修改 ANTLR 的 `lexer.inputStream` / `token_stream.tokens` /
 `fetchedEOF`，也不复用 parser 实例。
 
 ## 文法清理记录

@@ -142,8 +142,8 @@ class ConsoleIO:
         self.console.rule("Welcome to Oort REPL!")
         self.console.print(
             f"[white]Oort {__version__}\n"
-            "Type Ctrl-D to exit; Ctrl-C cancels the current input "
-            "(or exits on an empty prompt).[/]"
+            "Exit with Ctrl-D (Unix) or Ctrl-Z then Enter (Windows); "
+            "Ctrl-C cancels the current input.[/]"
         )
 
     def input(self, count: int, continuing: bool) -> str:
@@ -179,11 +179,11 @@ def run_repl(compiler: Compiler, console_io: ConsoleIO | None = None) -> int:
             session.flush()
             break
         except KeyboardInterrupt:
-            if session.is_continuing:
-                session.cancel()
-                io.cancelled()
-                continue
-            break
+            # Match Python/IPython: Ctrl-C abandons the current input (and any
+            # pending multi-line buffer) instead of exiting.
+            session.cancel()
+            io.cancelled()
+            continue
 
         result = session.feed_line(line)
         if result.action is ReplAction.EVALUATED and result.value is not None:

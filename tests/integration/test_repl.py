@@ -17,11 +17,42 @@ def _run_repl(monkeypatch, lines: list[str]) -> int:
         try:
             return next(iterator)
         except StopIteration:
-            raise KeyboardInterrupt from None
+            raise EOFError from None
 
     monkeypatch.setattr(Console, "input", fake_input)
     compiler = get_compiler("NOT_EXIST -t eval")
     return run_repl(compiler)
+
+
+def _run_repl_events(monkeypatch, events: list[object]):
+    pending = list(events)
+
+    def fake_input(self, prompt="", *args, **kwargs):
+        event = pending.pop(0)
+        if isinstance(event, BaseException):
+            raise event
+        return event
+
+    monkeypatch.setattr(Console, "input", fake_input)
+    return run_repl(get_compiler("NOT_EXIST -t eval"))
+
+
+def test_repl_ctrl_c_at_prompt_cancels_without_exiting(monkeypatch, capsys):
+    code = _run_repl_events(monkeypatch, [KeyboardInterrupt(), "1 + 2", EOFError()])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Input cancelled." in out
+    assert "Out[0]: 3" in out
+
+
+def test_repl_ctrl_c_discards_pending_multiline_input(monkeypatch, capsys):
+    code = _run_repl_events(
+        monkeypatch, ["var xs = [", KeyboardInterrupt(), "print(1)", EOFError()]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Input cancelled." in out
+    assert "1\n" in out
 
 
 def test_repl_banner_uses_package_version(monkeypatch, capsys):

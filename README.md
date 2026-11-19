@@ -44,7 +44,8 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
   原生模块
 - 模块：`import "./lib"`、`import "./lib" as l`、`from "./lib" import a, b as c`；
   规范路径缓存、循环诊断、`-I/--module-path` 搜索路径
-- REPL（多行输入；Ctrl-C 取消当前输入，Ctrl-D/管道 EOF 正常退出）
+- REPL（多行输入；Ctrl-C 取消当前输入；Unix Ctrl-D、Windows Ctrl-Z+Enter
+  或管道 EOF 正常退出）
 
 ### 待实现（见 proposals）
 
