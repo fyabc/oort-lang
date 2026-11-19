@@ -6,8 +6,12 @@
 ## 前端流水线
 
 ```
-源码 → OortLexer → OortParser → 解析树 → ASTBuilder(+Pratt) → AST → Pass1 语义分析 → 解释器
+源码 → OortLexer → TokenProcessor → OortParser → 解析树
+     → ASTBuilder(+Pratt) → AST → Pass1 语义分析 → 解释器
 ```
+
+`parser/token_processor.py` 位于词法器与解析器之间，是一层纯 token 处理：
+文法本身不维护括号/换行状态，也不含宿主语言动作。
 
 - ANTLR 负责“词法扁平化”：把所有运算符 token 收集到 `flattenExprList`，
   不在文法里编码优先级。
@@ -29,17 +33,19 @@
 ## 换行与括号
 
 Oort 语句末尾不需要分号，因此需要区分“语句结束换行”与“长表达式内部换行”。
-词法器维护一个括号栈：
+词法器现在**始终**产生 `NEWLINE`；`TokenProcessor`（`parser/token_processor.py`）
+按括号栈过滤：
 
-- 位于 `()`、`[]`、`{: :}`、`{. .}` 内且最内层不是 `{}` 时，`\n` 被丢弃；
-- 否则产生 `NEWLINE` token，作为语句分隔符；
-- 行尾 `\` 显式续行；
+- 位于 `()`、`[]`、`@[]`、`{: :}`、`{. .}` 内且最内层不是 `{}` 时，
+  `NEWLINE` 被丢弃；
+- 最内层是代码块 `{}` 或栈为空时保留 `NEWLINE`，作为语句分隔符；
+- `LINE_ESCAPE`（行尾 `\`）由词法器产生、后处理层丢弃，并用于判断输入是否
+  未完成；
 - `atomExpr NEWLINE* DOT` 允许行首 `.` 继续方法链（例如 `user\n    .name()`）。
 
-当前实现见 `Oort.g4` 的 `@lexer::members` 与 `IGNORED_NEWLINE` 谓词。
-这使文法依赖 Python 动作，且未匹配的闭括号会让词法器栈操作崩溃；
-计划按 [OP 0008](../proposals/0008-lexer-postprocessing-and-repl.md) 移除全部
-lexer 动作，把换行/括号处理移到 token 后处理层，并同步重构 REPL。
+后处理还提供 `bracket_depth` 与 `incomplete`：未匹配的闭括号原样交给解析器，
+由错误监听器给出正常语法诊断，不再触发词法器的 `IndexError`；REPL 用同一份
+结果决定是否继续读取多行输入（见 [OP 0008](../proposals/0008-lexer-postprocessing-and-repl.md)）。
 
 ## 匿名参数
 
@@ -70,6 +76,22 @@ print(
 语义分析、AST 构建与运行期错误共用同一个处理器；`UnsupportedSyntax` 也走这条路径。
 `ASTBuilder.parse` 会捕获构建期的 `OortException`，避免以 Python traceback 结束。
 
+## REPL
+
+`driver/repl.py` 分成两层：
+
+- `ReplSession`：纯逻辑，持有 `ReplInputInfo`、解释器与模块加载器；每次收到
+  一行就把它追加到当前提交缓冲区，用 `Compiler.prepare_parser` 重新词法/
+  后处理，`incomplete=True` 时继续等待，否则解析、语义分析并在持久环境中求值。
+  成功或报错后清空缓冲区并递增语句计数；解释器环境保留。
+- `ConsoleIO`：提示符、banner 与结果输出；非 TTY 下隐藏提示符，管道输入仍可
+  正常求值。测试可替换为任意实现。
+
+行为：EOF（Ctrl-D 或管道结束）正常退出并返回 0；Ctrl-C 在有待提交输入时
+取消当前缓冲区，在空提示符下退出；语法/运行时错误只清空当前缓冲区，REPL
+继续运行。会话不修改 ANTLR 的 `lexer.inputStream` / `token_stream.tokens` /
+`fetchedEOF`，也不复用 parser 实例。
+
 ## 文法清理记录
 
 作为“避免 C++ 式历史包袱”的一次实践，文法做了以下收紧（见
@@ -96,5 +118,5 @@ print(
 - 隐式中缀调用（`a plus b`）已关闭，等 OP 0002 的显式 `infix` 声明。
 - 格式化字符串尚未实现；`f"..."` 会显式报错。
 - 类型参数、宏、`yield`/`await` 能解析，但语义分析阶段会拒绝。
-- 未匹配的闭括号（如单独的 `)` / `}`）目前会触发 lexer 的 `IndexError`，
-  而不是语法诊断；随 OP 0008 修复。
+- 未匹配的闭括号（如单独的 `)` / `}`）现在由文法/解析器报语法错误；词法器
+  不再维护状态，也不会崩溃。

@@ -45,12 +45,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Each module owns an isolated global environment; global lookups resolve
   against the defining module, so functions and methods keep their own module
   globals when called from elsewhere.
+- The grammar no longer embeds host-language actions (OP 0008): bracket
+  tracking, newline filtering and line escapes moved to a pure token
+  post-processor (`parser/token_processor.py`), and the lexer always emits
+  `NEWLINE`.
+- The REPL is now `ReplSession` + `ConsoleIO`: each submission reparses its
+  buffer instead of mutating ANTLR lexer/parser internals. Ctrl-C cancels a
+  pending multi-line input (or exits on an empty prompt), prompts are hidden
+  for non-TTY input, and EOF exits cleanly.
 
 ### Fixed
 
 - The VSCode grammar now colors `import`, `from` and `as` as import keywords
   (`keyword.control.import.oort`); `as` previously shared the operator-word
   scope and could be left uncolored by some themes. Extension version 0.1.1.
+- Unmatched closing brackets (`)`, `]`, `}`) now produce a normal syntax
+  diagnostic instead of an `IndexError` from lexer stack actions.
+- Piped/redirected REPL input exits cleanly on EOF instead of ending with a
+  traceback, and syntax errors no longer abort the session.
 
 ## [0.2.0] - 2026-11-19
 

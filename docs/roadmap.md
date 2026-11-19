@@ -54,13 +54,11 @@ ANTLR 语法与 Pratt 表达式解析、AST、名称解析、树遍历解释器�
   迭代器统一分发（[OP 0013](proposals/0013-iterator-protocol.md)）；
 - 扩展方法与扩展运算符：类外 `def C.f` / `def C.operator`，词法作用域、
   导入激活、调用点歧义、继承与 `super`
-  （[OP 0014](proposals/0014-extension-methods.md)）。
+  （[OP 0014](proposals/0014-extension-methods.md)）；
+- 文法去宿主化、token 后处理层与 REPL 分层重构
+  （[OP 0008](proposals/0008-lexer-postprocessing-and-repl.md)）。
 
-待完成（P1）：
-
-- 文法去宿主化与 REPL 分层重构（[OP 0008](proposals/0008-lexer-postprocessing-and-repl.md)）。
-
-后续打磨（P2）：
+P1 已完成。后续打磨（P2）：
 
 - 字段初始化器语法糖；
 - 下标/属性访问协议（另立提案）；
