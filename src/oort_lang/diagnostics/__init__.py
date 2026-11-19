@@ -8,3 +8,4 @@ from .base import (
 from .syntax_errors import (
     UnsupportedSyntax,
 )
+from .type_errors import TypeCheckError

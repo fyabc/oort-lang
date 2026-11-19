@@ -27,9 +27,9 @@ from ..parser.grammar.OortLexer import OortLexer
 from ..parser.grammar.OortParser import OortParser
 from ..parser.token_processor import TokenizedInput, tokenize
 from ..runtime.interpreter import ASTInterpreter
-from ..runtime.modules import ModuleLoader
+from ..runtime.modules import CompiledModule, ModuleLoader
 from ..runtime.stdlib import native_module_factories
-from ..semantics.pass1 import Pass1Analyzer
+from ..semantics.analyzer import SemanticAnalyzer, create_semantic_analyzer
 from ..source.input_info import FileInputInfo, InputInfo, StringInputInfo
 from ..source.source_position import SourcePosition
 
@@ -67,10 +67,8 @@ class Compiler:
             return None
 
         # Semantic analysis.
-        pass1_analyzer: Pass1Analyzer = Pass1Analyzer(
-            self.error_handler, input_info, dialect=dialect
-        )
-        ast = self.semantic_analyze(ast, pass1_analyzer)
+        analyzer = self.make_semantic_analyzer(input_info, dialect)
+        ast = self.semantic_analyze(ast, analyzer)
         if not ast:
             raise CompilerError()
 
@@ -91,7 +89,12 @@ class Compiler:
         interpreter.module_loader = loader
         assert isinstance(ast, nodes.ModuleNode)
         try:
-            result = loader.execute_entry(ast, interpreter.entry_env, input_info.module_path)
+            result = loader.execute_entry(
+                ast,
+                interpreter.entry_env,
+                input_info.module_path,
+                dialect_name=dialect.name,
+            )
         except OortException as e:
             matched = self.error_handler.input_info_for(e.position) or input_info
             self.error_handler.add(e, matched)
@@ -101,8 +104,10 @@ class Compiler:
             self.error_handler.report(exit_on_error=False, clear=True)
         return result.host_value
 
-    def compile_unit(self, input_info: InputInfo) -> nodes.ModuleNode | None:
-        """Compile one module without printing or clearing diagnostics."""
+    def compile_unit_details(
+        self, input_info: InputInfo
+    ) -> tuple[nodes.ModuleNode, DialectConfig] | None:
+        """Compile one module and return its AST plus resolved dialect."""
         self.error_handler.register_input(input_info)
         start = self.error_handler.error_count
 
@@ -122,12 +127,10 @@ class Compiler:
         if ast is None or self.error_handler.error_count > start:
             return None
 
-        pass1_analyzer: Pass1Analyzer = Pass1Analyzer(
-            self.error_handler, input_info, dialect=dialect
-        )
+        analyzer = self.make_semantic_analyzer(input_info, dialect)
         ast = self.semantic_analyze(
             ast,
-            pass1_analyzer,
+            analyzer,
             exit_on_error=False,
             summary=False,
             report_errors=False,
@@ -135,11 +138,23 @@ class Compiler:
         if ast is None or self.error_handler.error_count > start:
             return None
         assert isinstance(ast, nodes.ModuleNode)
-        return ast
+        return ast, dialect
+
+    def compile_unit(self, input_info: InputInfo) -> nodes.ModuleNode | None:
+        """Compile one module without printing or clearing diagnostics."""
+        result = self.compile_unit_details(input_info)
+        return None if result is None else result[0]
 
     def make_module_loader(self, interpreter: ASTInterpreter, entry_dir: Path) -> ModuleLoader:
+        def compile_module(path: Path) -> CompiledModule | None:
+            result = self.compile_unit_details(FileInputInfo(path))
+            if result is None:
+                return None
+            ast, dialect = result
+            return CompiledModule(ast, dialect.name)
+
         return ModuleLoader(
-            compile_module=lambda path: self.compile_unit(FileInputInfo(path)),
+            compile_module=compile_module,
             execute_module=interpreter.run_module,
             make_environment=interpreter.create_module_env,
             make_module=interpreter.new_module,
@@ -261,10 +276,17 @@ class Compiler:
 
         return ast
 
+    def make_semantic_analyzer(
+        self,
+        input_info: InputInfo,
+        dialect: DialectConfig = DEFAULT_DIALECT,
+    ) -> SemanticAnalyzer:
+        return create_semantic_analyzer(self.error_handler, input_info, dialect)
+
     def semantic_analyze(
         self,
         ast: ASTNode,
-        pass1_analyzer: Pass1Analyzer,
+        analyzer: SemanticAnalyzer,
         exit_on_error: bool = True,
         summary: bool = True,
         report_errors: bool = True,
@@ -273,8 +295,8 @@ class Compiler:
             return None
 
         start_errors = self.error_handler.error_count
-        pass1_analyzer.parse(ast)
-        logging.debug("Semantic analyzation pass 1 done")
+        analyzer.parse(ast)
+        logging.debug("Semantic analysis done")
 
         if report_errors:
             num_errors = self.error_handler.report(exit_on_error=exit_on_error, summary=summary)

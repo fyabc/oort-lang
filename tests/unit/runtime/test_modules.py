@@ -199,13 +199,32 @@ def test_imported_module_runtime_error_points_at_module(tmp_path, caplog):
     assert "OortNameError" in caplog.text
 
 
-def test_imported_unimplemented_dialect_is_reported(tmp_path, caplog):
+def test_cross_dialect_imports_are_rejected(tmp_path, caplog):
     _write(tmp_path, "core.ort", "#lang oort-core\nprint(1)\n")
     main = _write(tmp_path, "main.ort", 'import "./core"\n')
 
     with pytest.raises(CompilerError):
         _run(main)
-    assert "The 'oort-core' dialect is not implemented yet." in caplog.text
+    assert "Cannot import a 'oort-core' module from an 'oort-object' module" in caplog.text
+
+
+def test_core_entry_rejects_imports(tmp_path, caplog):
+    _write(tmp_path, "lib.ort", "var value = 3\n")
+    main = _write(tmp_path, "main.ort", '#lang oort-core\nimport "./lib"\n')
+
+    with pytest.raises(SystemExit):
+        _run(main)
+    assert "Imports are not supported in oort-core yet." in caplog.text
+
+
+def test_imported_core_module_is_type_checked(tmp_path, caplog):
+    _write(tmp_path, "core.ort", "#lang oort-core\nvar value: Bool = 1\n")
+    main = _write(tmp_path, "main.ort", 'import "./core"\n')
+
+    with pytest.raises(CompilerError):
+        _run(main)
+    assert "TypeCheckError" in caplog.text
+    assert "compilation failed" in caplog.text
 
 
 def test_explicit_oort_object_dialect_in_module(tmp_path, run_file):

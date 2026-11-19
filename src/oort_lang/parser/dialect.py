@@ -31,6 +31,8 @@ class DialectFeatures:
     #: declarations are rejected (OP 0007); static dialects may use them for
     #: slots once those are implemented.
     class_body_vars: bool = False
+    #: Whether semantic analysis runs the independent static checker.
+    type_checking: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -62,8 +64,8 @@ OORT_OBJECT = DialectConfig(
 OORT_CORE = DialectConfig(
     name="oort-core",
     description="Static core with type checking, ADTs, pattern matching and slots.",
-    implemented=False,
-    features=DialectFeatures(class_body_vars=True),
+    implemented=True,
+    features=DialectFeatures(class_body_vars=True, type_checking=True),
 )
 
 DIALECTS: dict[str, DialectConfig] = {config.name: config for config in (OORT_OBJECT, OORT_CORE)}

@@ -37,6 +37,8 @@ EXPECTED_OUTPUTS = {
     ),
     "05_stdlib/05_01_math_string.ort": "3\ntrue\na-b\nOORT\n[a, b, c]\ntrue\n",
     "06_iterators/06_00_user_iterators.ort": ("3\n2\n1\n(a, true) (b, true) (null, false)\n1\n"),
+    "08_core/08_00_core_basics.ort": "6\ntrue\ntrue\n",
+    "08_core/08_01_core_functions.ort": "1\n120\ntrue\n",
 }
 
 # The JSON showcase is covered by `test_json_example.py`, which compiles it

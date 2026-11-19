@@ -1,0 +1,14 @@
+#lang oort-core
+
+# oort-core 薄探针：Int/Bool、声明、条件与 print。
+
+var count: Int = 2
+val enabled: Bool = true
+
+if enabled {
+    count = count * 3
+}
+
+print(count)
+print(count > 5)
+print(enabled and count == 6)

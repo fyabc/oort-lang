@@ -6,8 +6,11 @@ import pytest
 
 from oort_lang.parser.dialect import (
     DEFAULT_DIALECT,
+    DIALECTS,
     OORT_CORE,
     OORT_OBJECT,
+    DialectConfig,
+    DialectFeatures,
     known_dialect_names,
     lookup_dialect,
     parse_lang_directive,
@@ -21,9 +24,10 @@ class TestDialectRegistry:
         assert DEFAULT_DIALECT is OORT_OBJECT
         assert lookup_dialect("oort-object") is OORT_OBJECT
 
-    def test_unimplemented_dialect_is_registered(self):
+    def test_both_dialects_are_implemented(self):
         assert lookup_dialect("oort-core") is OORT_CORE
-        assert OORT_CORE.implemented is False
+        assert OORT_CORE.implemented is True
+        assert OORT_CORE.features.type_checking is True
         assert known_dialect_names() == ["oort-object", "oort-core"]
 
     def test_unknown_dialect(self):
@@ -101,11 +105,45 @@ class TestDialectRouting:
         assert "Known dialects: oort-object, oort-core" in caplog.text
         assert "<string>:1:1" in caplog.text
 
-    def test_unimplemented_dialect_is_reported(self, caplog: pytest.LogCaptureFixture):
+    def test_unimplemented_dialect_is_reported(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ):
+        future = DialectConfig(
+            name="oort-future",
+            description="Registered but not implemented.",
+            implemented=False,
+            features=DialectFeatures(),
+        )
+        monkeypatch.setitem(DIALECTS, future.name, future)
         compiler = get_compiler("NOT_EXIST -t eval")
         with pytest.raises(SystemExit):
-            compiler.run_string("#lang oort-core\n")
-        assert "The 'oort-core' dialect is not implemented yet." in caplog.text
+            compiler.run_string("#lang oort-future\n")
+        assert "The 'oort-future' dialect is not implemented yet." in caplog.text
+
+    def test_core_dialect_runs(self, run_source):
+        result = run_source("#lang oort-core\nprint(1)\n")
+        assert result.stdout == "1\n"
+
+    def test_core_dialect_reports_type_errors(self, caplog: pytest.LogCaptureFixture):
+        compiler = get_compiler("NOT_EXIST -t eval")
+        with pytest.raises(SystemExit):
+            compiler.run_string("#lang oort-core\nvar x: Bool = 1\n")
+        assert "TypeCheckError" in caplog.text
+        assert "Expected Bool, got Int." in caplog.text
+
+    def test_object_dialect_still_ignores_annotations(self, run_source):
+        result = run_source("#lang oort-object\nvar x: Bool = 1\nprint(x)\n")
+        assert result.stdout == "1\n"
+
+    def test_ast_target_skips_core_checking(self, capsys):
+        compiler = get_compiler("NOT_EXIST -t ast")
+        compiler.run_string("#lang oort-core\nvar x: Bool = 1\n")
+        assert "VarDecl" in capsys.readouterr().out
+
+    def test_astm_target_shows_core_types(self, capsys):
+        compiler = get_compiler("NOT_EXIST -t astm")
+        compiler.run_string("#lang oort-core\nvar x = 1\nprint(x)\n")
+        assert "type='Int'" in capsys.readouterr().out
 
     def test_misplaced_directive_is_reported(self, caplog: pytest.LogCaptureFixture):
         compiler = get_compiler("NOT_EXIST -t eval")

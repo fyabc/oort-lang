@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from ..diagnostics.runtime_errors import OortImportError
+from ..parser.dialect import DEFAULT_DIALECT_NAME
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -101,6 +102,14 @@ class ModuleState(Enum):
     FAILED = auto()
 
 
+@dataclasses.dataclass(frozen=True)
+class CompiledModule:
+    """A compiled module AST together with the dialect it resolved."""
+
+    ast: nodes.ModuleNode
+    dialect_name: str
+
+
 @dataclasses.dataclass
 class ModuleRecord:
     path: Path
@@ -114,6 +123,7 @@ class ImportFrame:
     path: Path | None
     directory: Path
     display: str
+    dialect_name: str = DEFAULT_DIALECT_NAME
 
 
 class ModuleLoader:
@@ -122,7 +132,7 @@ class ModuleLoader:
     def __init__(
         self,
         *,
-        compile_module: Callable[[Path], nodes.ModuleNode | None],
+        compile_module: Callable[[Path], CompiledModule | None],
         execute_module: Callable[[nodes.ModuleNode, Environment], OortObject],
         make_environment: Callable[[str], Environment],
         make_module: Callable[[str, Environment], OortModule],
@@ -146,6 +156,7 @@ class ModuleLoader:
         ast: nodes.ModuleNode,
         env: Environment,
         path: Path | None = None,
+        dialect_name: str = DEFAULT_DIALECT_NAME,
     ) -> OortObject:
         """Execute the entry module, registering it for cycle diagnostics."""
         key = path.resolve() if path is not None else None
@@ -156,6 +167,7 @@ class ModuleLoader:
             path=key,
             directory=key.parent if key is not None else self.entry_dir,
             display=self._display(key) if key is not None else "<entry>",
+            dialect_name=dialect_name,
         )
         self._frames.append(frame)
         try:
@@ -181,7 +193,9 @@ class ModuleLoader:
                 self._native_cache[spec] = module
             return module
 
-        importer_dir = self._frames[-1].directory if self._frames else self.entry_dir
+        importer_frame = self._frames[-1] if self._frames else None
+        importer_dir = importer_frame.directory if importer_frame else self.entry_dir
+        importer_dialect = importer_frame.dialect_name if importer_frame else DEFAULT_DIALECT_NAME
         path = resolve_module_path(
             spec,
             importer_dir=importer_dir,
@@ -203,10 +217,15 @@ class ModuleLoader:
         record = ModuleRecord(path=path, env=env)
         self._records[path] = record
 
-        frame = ImportFrame(path=path, directory=path.parent, display=self._display(path))
+        frame = ImportFrame(
+            path=path,
+            directory=path.parent,
+            display=self._display(path),
+            dialect_name=importer_dialect,
+        )
         self._frames.append(frame)
         try:
-            self._initialize_module(record, spec, position)
+            self._initialize_module(record, spec, position, frame)
         except BaseException:
             record.state = ModuleState.FAILED
             raise
@@ -217,14 +236,28 @@ class ModuleLoader:
         finally:
             self._frames.pop()
 
-    def _initialize_module(self, record: ModuleRecord, spec: str, position: SourcePosition) -> None:
+    def _initialize_module(
+        self,
+        record: ModuleRecord,
+        spec: str,
+        position: SourcePosition,
+        frame: ImportFrame,
+    ) -> None:
         """Compile and execute a module body, or raise an import diagnostic."""
-        ast = self._compile_module(record.path)
-        if ast is None:
+        compiled = self._compile_module(record.path)
+        if compiled is None:
             raise OortImportError(
                 f"Failed to import module {spec!r}: compilation failed.", position
             )
-        self._execute_module(ast, record.env)
+        if compiled.dialect_name != frame.dialect_name:
+            raise OortImportError(
+                f"Cannot import a {compiled.dialect_name!r} module from an "
+                f"{frame.dialect_name!r} module; cross-dialect imports require "
+                f"an explicit FFI boundary.",
+                position,
+            )
+        frame.dialect_name = compiled.dialect_name
+        self._execute_module(compiled.ast, record.env)
 
     def import_names(
         self,

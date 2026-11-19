@@ -18,10 +18,11 @@ from rich.console import Console
 
 from .. import __version__
 from ..ast import nodes
-from ..diagnostics import OortException
+from ..diagnostics import OortException, OortSyntaxError
+from ..parser.dialect import DEFAULT_DIALECT, DEFAULT_DIALECT_NAME, parse_lang_directive
 from ..runtime.interpreter import ASTInterpreter
-from ..semantics.pass1 import Pass1Analyzer
 from ..source.input_info import ReplInputInfo
+from ..source.source_position import SourcePosition
 
 if TYPE_CHECKING:
     from antlr4 import Parser
@@ -99,16 +100,42 @@ class ReplSession:
         return self._submit(parser)
 
     def _submit(self, parser: Parser) -> ReplResult:
-        ast = self.compiler.build_ast(parser, self.input_info, exit_on_error=False, summary=False)
+        directive = parse_lang_directive(self.input_info.get_source_text())
+        if directive.has_directive:
+            message = directive.error or (
+                "Dialect directives are not supported in the REPL; "
+                "run a file with `#lang oort-core` instead."
+            )
+            position = SourcePosition.from_location(
+                directive.line,
+                directive.column,
+                directive.text,
+                filename=self.input_info.input_filename,
+            )
+            self.compiler.error_handler.add(OortSyntaxError(message, position), self.input_info)
+            self.compiler.error_handler.report(exit_on_error=False, clear=True, summary=False)
+            return self._error()
+
+        ast = self.compiler.build_ast(
+            parser,
+            self.input_info,
+            dialect=DEFAULT_DIALECT,
+            exit_on_error=False,
+            summary=False,
+        )
         if ast is not None:
-            analyzer: Pass1Analyzer = Pass1Analyzer(self.compiler.error_handler, self.input_info)
+            analyzer = self.compiler.make_semantic_analyzer(self.input_info, DEFAULT_DIALECT)
             ast = self.compiler.semantic_analyze(ast, analyzer, exit_on_error=False, summary=False)
         if ast is None:
             return self._error()
 
         assert isinstance(ast, nodes.ModuleNode)
         try:
-            result = self.module_loader.execute_entry(ast, self.interpreter.entry_env)
+            result = self.module_loader.execute_entry(
+                ast,
+                self.interpreter.entry_env,
+                dialect_name=DEFAULT_DIALECT_NAME,
+            )
         except OortException as e:
             matched = self.compiler.error_handler.input_info_for(e.position) or self.input_info
             self.compiler.error_handler.add(e, matched)

@@ -83,6 +83,17 @@ def test_repl_banner_uses_package_version(monkeypatch, capsys):
     assert f"Oort {__version__}" in capsys.readouterr().out
 
 
+def test_repl_rejects_lang_directive(monkeypatch, capsys, caplog):
+    assert _run_repl(monkeypatch, ["#lang oort-core", "print(7)"]) == 0
+    assert "Dialect directives are not supported in the REPL" in caplog.text
+    assert "7\n" in capsys.readouterr().out
+
+
+def test_repl_annotations_remain_dynamic(monkeypatch, capsys):
+    assert _run_repl(monkeypatch, ["var x: Bool = 1", "print(x + 1)"]) == 0
+    assert "2\n" in capsys.readouterr().out
+
+
 def test_repl_evaluates_expression(monkeypatch, capsys):
     assert _run_repl(monkeypatch, ["1 + 2"]) == 0
     assert "3" in capsys.readouterr().out

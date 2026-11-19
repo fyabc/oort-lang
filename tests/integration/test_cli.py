@@ -55,6 +55,30 @@ def test_version(monkeypatch, capsys):
     assert f"Oort {__version__}" in capsys.readouterr().out
 
 
+def test_core_dialect_runs(monkeypatch, capsys):
+    source = "#lang oort-core\ndef f(x: Int) -> Int { x + 1 }\nprint(f(1))\n"
+    assert _run_cli(monkeypatch, ["-c", source]) == 0
+    assert capsys.readouterr().out == "2\n"
+
+
+def test_core_type_error_exits_nonzero(monkeypatch, caplog):
+    source = "#lang oort-core\nvar x: Bool = 1\n"
+    assert _run_cli(monkeypatch, ["-c", source]) != 0
+    assert "TypeCheckError" in caplog.text
+
+
+def test_core_ast_target_skips_checking(monkeypatch, capsys):
+    source = "#lang oort-core\nvar x: Bool = 1\n"
+    assert _run_cli(monkeypatch, ["-t", "ast", "-c", source]) == 0
+    assert "VarDecl" in capsys.readouterr().out
+
+
+def test_core_astm_shows_types(monkeypatch, capsys):
+    source = "#lang oort-core\nvar x = 1\nprint(x)\n"
+    assert _run_cli(monkeypatch, ["-t", "astm", "-c", source]) == 0
+    assert "type='Int'" in capsys.readouterr().out
+
+
 def test_relative_import_from_file(monkeypatch, capsys, tmp_path):
     (tmp_path / "lib.ort").write_text("var value = 21\n", encoding="utf-8")
     main = tmp_path / "main.ort"

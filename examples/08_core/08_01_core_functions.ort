@@ -1,0 +1,15 @@
+#lang oort-core
+
+# 标注必填的函数、自递归与返回 Unit 的过程。
+
+def fact(n: Int) -> Int {
+    if n <= 1 { 1 } else { n * fact(n - 1) }
+}
+
+def show(label: Int, value: Int) -> Unit {
+    print(label)
+    print(value)
+}
+
+show(1, fact(5))
+print(fact(0) == 1)
