@@ -16,6 +16,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 语句 | `var`/`val`（含多目标解包）、赋值（含 `//=` 等增强赋值、元组交换）、`if`/`elif`/`else`、`while`、`for`、`return`、`break expr`、`continue` |
 | 函数 | `def`、`do` lambda、闭包、递归、尾随闭包；所有显式形参列表都使用括号；lambda 支持 `$0`/`$1` 匿名参数；默认值、关键字实参、`/`、`*`、`*args`、`**kwargs`、`&block` |
 | 类 | 定义、实例化、`__init__`、方法、类方法、单/多重继承、C3 MRO、元类、`this`/`super`；开放字段袋、方法遮蔽检查、身份相等/哈希 |
+| 扩展 | 类外 `def C.f` 与 `def C.operator "<sym>"`；词法作用域、导入激活、调用点歧义、继承与 `super`（只查类成员） |
 | 迭代 | `__iter__` 返回 `(value, valid)` 迭代器；流式 `for`；内置 List/Tuple/Set/Dict/String 的原生 `__iter__`，`Iterator` 类型与手动迭代 |
 | 模块 | `.ort` 文件模块；`import "m" [as x]`、`from "m" import a, b as c`；相对/裸名解析、`-I` 搜索路径、规范路径缓存、急切初始化与循环诊断；模块命名空间只读、导入名可再导出；`math` / `string` 内置原生模块 |
 | 内建 | `print`、`clock`、`type`、`super`（仅 `super.method` / `super.__init__`）、`len`、`range`、`str`、`repr`、`int`、`float`、`bool`；集合助手 `map`、`filter`、`zip`、`enumerate`、`sorted` |
@@ -23,7 +24,8 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 
 ## 可解析但被拒绝
 
-以下写法能通过词法/语法分析，但语义分析会报 `UnsupportedSyntax`：
+以下写法能通过词法/语法分析，但语义分析会显式报错
+（`UnsupportedSyntax` 或对应语法诊断）：
 
 | 特性 | 示例 | 诊断信息 |
 |------|------|----------|
@@ -34,7 +36,9 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 编译器属性 | `@[]` | Compiler attributes are not implemented yet. |
 | 格式化字符串 | `f"..."` | Formatted string literals are not implemented yet. |
 | 字典展开 | `{: **d :}` | Dictionary unpacking is not supported yet. |
-| 扩展方法 | `def C.f ...`（类外） | Extension methods are not implemented yet. |
+| 多级接收者 | `def A.B.f ...` | Extension methods must name exactly one receiver type ('def C.f'). |
+| 类体内的扩展 | `class C { def C.f ... }` | Cannot define extension method in class scope. |
+| 扩展特殊方法 | `def C.__init__ ...` | Extension methods cannot define special method `__init__`. |
 | 类方法定义位置 | `def class.f ...`（类外） | Class methods must be defined inside a class. |
 | 命名空间类 | `class A.B {}` | Namespaced classes are not implemented yet. |
 | 显式 `super` 调用 | `super(1)`、`super(A, this)` | Explicit super(...) calls are not supported |
@@ -55,8 +59,11 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 - 用户自定义运算符符号（由 `! % & * + - / < = > ? ^ | ~` 组成）可以定义方法并调度，
   但其**优先级**仍为默认值（中缀 500、左结合）；按作用域声明优先级属于
   [OP 0002](../proposals/0002-dsl-support.md) 的后续工作。
-- 运算符方法只能在类体内定义；顶层定义与 `def class.operator` 会被拒绝。
-- 扩展方法 `def C.f` 尚未实现，当前在类外会显式报错。
+- 类内运算符方法只能在类体内定义；顶层裸 `def operator ...` 与
+  `def class.operator` 会被拒绝。扩展运算符使用
+  `def C.operator "<sym>"`（[扩展方法](10-extensions.md)）。
+- 扩展方法的接收者必须是单个已定义的类标识符；多级接收者、类体内的扩展与
+  特殊方法名（`__init__` 等）会被拒绝。
 - 下标（`a[b]`）与属性（`a.b`）重载尚未接入运算符调度。
 - 类体中的 `var`/`val` 在 `oort-object` 中被显式拒绝；实例字段只能通过
   `this.x = ...` 创建（[OP 0007](../proposals/0007-oort-object-object-model.md)）。

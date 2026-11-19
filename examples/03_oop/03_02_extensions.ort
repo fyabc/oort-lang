@@ -1,0 +1,62 @@
+# Extension methods: `def C.f` outside the class, scoped lexically.
+
+class Counter {
+    def __init__(start) { this.n = start }
+    def increment { this.n = this.n + 1 }
+}
+
+def Counter.bump {
+    this.increment()
+    this.increment()
+    this
+}
+
+var counter = Counter(1)
+print(counter.bump().n)
+
+# Built-in types are ordinary receivers too.
+def Int.twice: this * 2
+def List.total {
+    var sum = 0
+    for x in this { sum = sum + x }
+    sum
+}
+print(3.twice(), [1, 2, 3].total())
+
+# Members always win; extensions are only a fallback.
+class Greeter { def greet: "member" }
+def Greeter.greet: "extension"
+print(Greeter().greet())
+
+# Extensions follow inheritance; the most specific definition wins.
+class Base {}
+class Child < Base {}
+def Base.kind: "base"
+def Child.kind: "child"
+print(Base().kind(), Child().kind())
+
+# `super` in an extension searches class members only.
+class Named { def name: "named" }
+class Person < Named {}
+def Person.describe: super.name() + " person"
+print(Person().describe())
+
+# Extension operators fill operators the class does not define.
+def String.operator "**"(times) {
+    var result = ""
+    var i = 0
+    while i < times {
+        result = result + this
+        i = i + 1
+    }
+    result
+}
+print("ab" ** 2)
+
+# Lexical scope: inner definitions shadow outer ones.
+def String.tag: "outer"
+def scoped() {
+    def String.tag: "inner"
+    "x".tag()
+}
+print("x".tag(), scoped())

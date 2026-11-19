@@ -14,6 +14,7 @@
 | [04-class-system.md](04-class-system.md) | 类、继承、元类、`this` / `super` |
 | [05-stdlib.md](05-stdlib.md) | 宿主边界、集合助手、`math` / `string` 原生模块 |
 | [06-iterators.md](06-iterators.md) | `__iter__` 协议、原生迭代器、流式 for |
+| [07-extensions.md](07-extensions.md) | 扩展方法/运算符：分类、扩展表、查找、导入、`super` |
 
 ## 当前实现边界
 

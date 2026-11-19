@@ -361,61 +361,70 @@ build_rect {
 
 ## 7. 扩展方法
 
-> **实现状态**：规划中，尚未实现。
+> **实现状态**：已实现（[OP 0014](../proposals/0014-extension-methods.md)，
+> 规范见 [10-extensions.md](../spec/10-extensions.md)）。
 
 ### 7.1 核心设计
 
 - **动态分发**：基于运行时类型 + MRO 查找（非 Kotlin 式静态解析）
-- **词法作用域**：扩展方法可见性由 `import`/定义位置控制（参考 Ruby Refinements）
+- **词法作用域**：扩展方法可见性由定义位置与 `import` 控制
 - **外部调度表**：存储在 `Environment` 中，不修改目标类（非 Monkey Patching）
-- **成员方法优先**：实例方法永远覆盖扩展方法
+- **成员/字段/类内运算符优先**：普通查找成功时永远不查扩展
 
 ### 7.2 实现机制
 
-`Environment` 通过链式 `parent` 指针形成作用域链。扩展方法查找键为 `(TargetType, MethodName)`：
+`Environment` 通过链式 `outer` 指针形成作用域链。每个环境持有
+`extensions[(TargetType, Name)]` 与
+`extension_operators[(TargetType, Symbol, Arity)]` 两张表。
+
+查找**先按作用域分层，再按 MRO 具体度**：
 
 ```python
-def lookup_extension(self, obj, name):
-    for cls in type(obj).__mro__:     # 1. 遍历类型继承链 → 动态多态
-        env = self
-        while env:                     # 2. 遍历作用域链 → 词法作用域
-            key = (cls, name)
-            if key in env.extensions:
-                return env.extensions[key]
-            env = env.parent
+def lookup_extension(self, receiver_type, name):
+    for env in self -> env.outer:                 # 1. 词法作用域：内层优先
+        # 1a. 本地扩展绝对优先（即使导入的扩展更“具体”）
+        for cls in receiver_type.mro():
+            if (cls, name) in env.extensions:
+                return env.extensions[(cls, name)], cls
+
+        # 1b. 本层导入的模块合成一个候选池，按 MRO 距离取最具体
+        best = min over scopes of mro_index(scope, receiver_type, name)
+        candidates = [matches at best]
+        if len(unique(candidates)) > 1:
+            raise AmbiguousExtension(...)          # 调用点报歧义
+        if candidates:
+            return candidates[0]
     return None
 ```
 
+旧版伪代码是 MRO-first（外层循环遍历 MRO），会让外层更具体的扩展压过内层
+扩展，与词法作用域直觉冲突；现已改为作用域分层优先。
+
 ### 7.3 调用分发优先级
 
-1. 实例/类原生方法（动态查找）
-2. 扩展方法（动态解析 + 作用域链）
+1. 实例字段、实例/类原生方法（动态查找）
+2. 扩展方法（动态解析 + 作用域链）；类内运算符同样先于扩展运算符
 3. 抛出 `AttributeError`
 
 ### 7.4 作用域与语法示例
 
 ```oort
-extend Int {
-    def double() -> Int { return this * 2 }
-}
+def Int.double: this * 2
+def String.shout: this + "!"
 
-extend String {
-    def shout() -> String { return this.to_upper() + "!" }
-}
-
-print("hello".shout())  # HELLO!
+print("hello".shout())  # hello!
 
 def local_scope() {
-    extend List {
-        def second() { return this[1] }
-    }
+    def List.second: this[1]
     [1, 2, 3].second()  # ✓ 作用域内可用
 }
-# [1, 2, 3].second()  # ✗ 离开作用域后失效
+# [1, 2, 3].second()    # ✗ 离开作用域后失效
 ```
 
-- `import` 时将模块扩展注册到当前 Environment，退出作用域后自动失效
-- **性能优化**：内联缓存 `(调用点, 对象类型) → 函数指针`，作用域变化时失效缓存
+- `import` / `from` 激活被导入模块顶层定义的扩展；非传递、不导出。
+- 扩展运算符与扩展方法共用上述规则；类/原生运算符永远优先。
+- **性能优化**：扩展查找只在普通属性/运算符 miss 时发生；当前不做内联缓存，
+  基准见 `benchmarks/test_extensions.py`。
 
 ### 7.5 参考语言对比
 

@@ -28,6 +28,9 @@ EXPECTED_OUTPUTS = {
         "rect has area 12\nrect has area 25\n<Type 'Factory'>\n<Type 'M'>\n"
     ),
     "03_oop/03_01_object_model.ort": "1\n0\ntrue\nfalse\nA\n",
+    "03_oop/03_02_extensions.ort": (
+        "3\n6 6\nmember\nbase child\nnamed person\nabab\nouter inner\n"
+    ),
     "04_modules/04_00_imports.ort": "Hello, Oort!\nHello, modules!\n2\n",
     "05_stdlib/05_00_collections.ort": (
         "[6, 2, 4]\n[3, 2]\n[(3, 10), (1, 20)]\n[(0, 3), (1, 1), (2, 2)]\n[1, 2, 3]\n[3, 2, 1]\n"

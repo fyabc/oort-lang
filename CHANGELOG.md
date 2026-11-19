@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   containers expose the same protocol through a native `Iterator` type.
 - User-iterator example under `examples/06_iterators/` and builtin/user iterator
   benchmarks in `benchmarks/test_iterators.py`.
+- Extension methods (OP 0014): `def C.f` defines a method on an existing type
+  from outside the class. Extensions are lexically scoped, activated by
+  `import`/`from`, dispatch on the runtime type MRO, and never override
+  members, fields, or built-in operators. `super` in an extension searches
+  class members only.
+- Extension operators: `def C.operator "+"(x)` fills operators the target type
+  does not define; class and native operators always win.
+- Extension example under `examples/03_oop/03_02_extensions.ort` and
+  `benchmarks/test_extensions.py`.
 
 ### Changed
 

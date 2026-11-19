@@ -164,6 +164,7 @@ c.f = 2             # 错误：不能用一个实例字段遮蔽方法 f
   `var`/`val` 已被显式拒绝，实例字段通过 `this.x = ...` 创建。
 - 缺失字段读取抛出 `OortAttributeError`；属性查找没有 `__getattr__` /
   `__setattr__` 等钩子。
-- 扩展方法（类外定义）未接入。
 - 属性钩子（`__getattr__` 等）、下标/属性重载、Trait/接口未实现。
+- 扩展方法与扩展运算符（类外 `def C.f` / `def C.operator`）见
+  [10-extensions.md](10-extensions.md)；它们不会被写入类本身。
 - 类属性的修改（`C.x = ...`）规则尚未定义。

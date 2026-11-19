@@ -118,6 +118,8 @@ def fib(n) {
 - 在类体顶层定义的 `def` 自动成为实例方法（`this` 绑定到实例）。
 - `def class.f` 定义类方法（`this` 绑定到类对象），详见 [类](05-classes.md)。
   `def class.f` 只能出现在类体内；在其他位置会被拒绝。
-- 扩展方法（在类外 `def C.f`）尚未实现，当前会显式报错。
+- 扩展方法在类外定义：`def C.f(...) { ... }`，按词法作用域生效，详见
+  [扩展方法](10-extensions.md)。
 - 运算符方法（`def operator "+"(other)`）是类体中的特殊方法，见
-  [表达式：运算符重载](02-expressions.md#运算符重载)；在类外定义会被拒绝。
+  [表达式：运算符重载](02-expressions.md#运算符重载)；扩展运算符写作
+  `def C.operator "+"(other)`，同样见 [扩展方法](10-extensions.md)。

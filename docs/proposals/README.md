@@ -35,6 +35,7 @@
 | [0011](0011-parameter-binding.md) | 参数绑定：默认值、关键字实参与变长参数 | Implemented |
 | [0012](0012-standard-library.md) | 最小标准库与宿主边界 | Implemented |
 | [0013](0013-iterator-protocol.md) | 迭代器协议（`__iter__` + `(value, valid)`） | Implemented |
+| [0014](0014-extension-methods.md) | 扩展方法与扩展运算符（`def C.f`） | Implemented |
 
 ## 流程
 
@@ -71,6 +72,7 @@
 | 2026-11-19 | 模块系统：顶层-only import（提升执行）、规范路径缓存、首版禁止循环、默认全公开；只导入 `.ort`，宿主模块留待 FFI；新增 `-I/--module-path` | [OP 0006](0006-modules-and-imports.md)（Implemented） |
 | 2026-11-20 | 标准库：集合助手为全局内建、急切返回 List、集合优先回调顺序；`sorted` 稳定并使用 Oort `<`；`math`/`string` 为封闭原生模块；`HostBridge`/HOST-VALUE-CONTEXT 宿主边界 | [OP 0012](0012-standard-library.md)（Implemented） |
 | 2026-11-20 | 迭代器：`__iter__()` 返回可调用迭代器，步进返回 `(value, valid)`；valid 为严格 Bool；内置容器实现同一协议，`for` 流式拉取 | [OP 0013](0013-iterator-protocol.md)（Implemented） |
+| 2026-11-20 | 扩展：`def C.f` / `def C.operator` 按词法作用域生效，成员/字段/类内运算符优先；作用域分层后按 MRO 具体度；导入直接激活、调用点歧义；扩展内允许 `super`（只查类成员） | [OP 0014](0014-extension-methods.md)（Implemented） |
 
 ## 设计原则（所有提案必须满足）
 

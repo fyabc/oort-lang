@@ -61,6 +61,8 @@ do(x): x + 1
 - `a b c` 不再解析为 `a.b(c)`；等 OP 0002 的显式 `infix` 声明落地后再启用。
 - 类外 `def C.f`、`class A.B`、显式 `super(...)` 调用统一报
   `UnsupportedSyntax`。父类初始化器使用 `super.__init__(...)`。
+  > 后续：[OP 0014](0014-extension-methods.md) 已实现类外 `def C.f`；
+  > `class A.B` 与显式 `super(...)` 仍被拒绝。
 
 ### 6. 小步补齐
 

@@ -25,6 +25,7 @@
 | [07-modules.md](07-modules.md) | 模块身份、导入语法、路径解析、缓存与循环诊断 |
 | [08-stdlib.md](08-stdlib.md) | 集合助手、`math` / `string` 原生模块 |
 | [09-iterators.md](09-iterators.md) | `__iter__` 协议、流式 `for`、内置迭代器 |
+| [10-extensions.md](10-extensions.md) | 扩展方法/运算符、作用域、导入、`super` |
 | [06-conformance.md](06-conformance.md) | 实现状态矩阵与诊断规则 |
 
 ## 术语

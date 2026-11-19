@@ -76,7 +76,13 @@ class Vec {
 - 没有对应方法时抛出 `OortTypeError`；方法内部抛出的 Python 类型错误会转换为
   `OortTypeError`。
 
-运算符方法只能定义在类体内；顶层或类方法形式的运算符定义会被拒绝。
+类内运算符方法只能在类体内定义；顶层裸 `def operator` 与
+`def class.operator` 会被拒绝。
+
+扩展运算符可以补上目标类型没有定义的运算符，写作
+`def C.operator "+"(other)`。查找顺序是类/继承/原生运算符优先，miss 后才查
+当前词法作用域可见的扩展运算符；`in`、`!=`、增强赋值等规则完全相同。
+详见 [扩展方法](10-extensions.md)。
 
 ## 下标与切片
 

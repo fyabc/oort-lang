@@ -7,7 +7,8 @@ tests/
 ├── assets/              # 固定的 .ort 源文件与期望 AST
 ├── unit/
 │   ├── frontend/        # 词法、解析、AST、语义分析、Binding、诊断、拒绝清单
-│   └── runtime/         # 解释器、函数/类/容器、模块加载、宿主边界、标准库与迭代器
+│   └── runtime/         # 解释器、函数/类/容器、模块加载、宿主边界、标准库、
+│                        # 迭代器与扩展方法
 ├── property/            # hypothesis 属性测试（CI 用 --with hypothesis）
 └── integration/         # CLI、REPL、全部示例程序
 ```
