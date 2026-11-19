@@ -286,6 +286,8 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         name = node.alias or loader.binding_name(node.module_path, node.position)
         if self.env.define(name, module, mutable=False) == DefineResult.REDEFINED:
             raise OortNameError(f"Name {name!r} is already defined", node.position)
+        # Importing a module activates its top-level extensions in this scope.
+        self.env.add_imported_extension_scope(module.env)
         return OortNull.get_null_value()
 
     def visit_import_from_stmt(self, node: nodes.ImportFromStmt) -> OortObject:
@@ -294,11 +296,12 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             raise OortImportError(
                 "Module imports are not available in this context.", node.position
             )
-        values = loader.import_names(node.module_path, list(node.names), node.position)
+        module, values = loader.import_names(node.module_path, list(node.names), node.position)
         for src, dst in node.names.items():
             name = dst or src
             if self.env.define(name, values[src], mutable=False) == DefineResult.REDEFINED:
                 raise OortNameError(f"Name {name!r} is already defined", node.position)
+        self.env.add_imported_extension_scope(module.env)
         return OortNull.get_null_value()
 
     def visit_block_expr(self, node: nodes.BlockExpr) -> OortObject:

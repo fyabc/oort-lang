@@ -231,8 +231,8 @@ class ModuleLoader:
         spec: str,
         names: Iterable[str],
         position: SourcePosition,
-    ) -> dict[str, OortObject]:
-        """Load a module and return the requested exported values."""
+    ) -> tuple[OortModule, dict[str, OortObject]]:
+        """Load a module and return it with the requested exported values."""
         module = self.import_module(spec, position)
         requested = list(names)
         missing = [name for name in requested if not module.has(name)]
@@ -245,7 +245,7 @@ class ModuleLoader:
             value = module.get(name)
             assert value is not None
             values[name] = value
-        return values
+        return module, values
 
     def binding_name(self, spec: str, position: SourcePosition) -> str:
         return derive_binding_name(spec, position)

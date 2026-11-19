@@ -2,6 +2,8 @@
 
 """Extension methods defined outside the target class (OP 0014)."""
 
+from pathlib import Path
+
 import pytest
 
 from oort_lang.driver.compiler import CompilerError
@@ -340,3 +342,148 @@ print(A().B())
 """
     ).stdout
     assert out == "extension\n"
+
+
+def _write(root: Path, name: str, text: str) -> Path:
+    path = root / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_import_activates_top_level_extensions(tmp_path, run_file):
+    _write(
+        tmp_path,
+        "lib.ort",
+        """\
+class Item {
+    def __init__(value) { this.value = value }
+}
+def Item.double: this.value * 2
+def Int.operator "%%"(n): this % n
+""",
+    )
+    main = _write(
+        tmp_path,
+        "main.ort",
+        'import "./lib"\nprint(lib.Item(3).double())\nprint(7 %% 3)\n',
+    )
+    assert run_file(main).stdout == "6\n1\n"
+
+
+def test_from_import_activates_top_level_extensions(tmp_path, run_file):
+    _write(
+        tmp_path,
+        "lib.ort",
+        """\
+class Item {
+    def __init__(value) { this.value = value }
+}
+def Item.double: this.value * 2
+""",
+    )
+    main = _write(tmp_path, "main.ort", 'from "./lib" import Item\nprint(Item(3).double())\n')
+    assert run_file(main).stdout == "6\n"
+
+
+def test_local_extension_shadows_imported_extension(tmp_path, run_file):
+    _write(tmp_path, "lib.ort", 'def String.tag: "lib"\n')
+    main = _write(
+        tmp_path,
+        "main.ort",
+        'import "./lib"\ndef String.tag: "local"\nprint("x".tag())\n',
+    )
+    assert run_file(main).stdout == "local\n"
+
+
+def test_same_module_imported_with_aliases_is_not_ambiguous(tmp_path, run_file):
+    _write(tmp_path, "lib.ort", 'def String.tag: "lib"\n')
+    main = _write(
+        tmp_path,
+        "main.ort",
+        'import "./lib" as a\nimport "./lib" as b\nprint("x".tag())\n',
+    )
+    assert run_file(main).stdout == "lib\n"
+
+
+def test_imported_extensions_are_not_transitively_reexported(tmp_path, run_file, caplog):
+    _write(
+        tmp_path,
+        "shared.ort",
+        """\
+class Widget {
+    def __init__ { this.n = 1 }
+}
+""",
+    )
+    _write(
+        tmp_path,
+        "third.ort",
+        'from "./shared" import Widget\ndef Widget.extra: this.n + 10\n',
+    )
+    _write(tmp_path, "ext.ort", 'import "./third"\n')
+    main = _write(
+        tmp_path,
+        "main.ort",
+        'import "./shared"\nimport "./ext"\nprint(shared.Widget().extra())\n',
+    )
+    with pytest.raises(CompilerError):
+        run_file(main)
+    assert "has no attribute 'extra'" in caplog.text
+
+
+def test_block_scoped_extensions_are_not_exported(tmp_path, run_file, caplog):
+    _write(
+        tmp_path,
+        "lib.ort",
+        """\
+if true {
+    def String.hidden: "hidden"
+}
+""",
+    )
+    main = _write(tmp_path, "main.ort", 'import "./lib"\nprint("x".hidden())\n')
+    with pytest.raises(CompilerError):
+        run_file(main)
+    assert "has no attribute 'hidden'" in caplog.text
+
+
+def test_ambiguous_imported_extensions_fail_at_use(tmp_path, run_file, caplog):
+    _write(tmp_path, "a.ort", 'def String.tag: "a"\n')
+    _write(tmp_path, "b.ort", 'def String.tag: "b"\n')
+    main = _write(
+        tmp_path,
+        "main.ort",
+        'import "./a"\nimport "./b"\nprint("x".tag())\n',
+    )
+    with pytest.raises(CompilerError):
+        run_file(main)
+    assert "Ambiguous extension method 'tag' for type 'String'" in caplog.text
+    assert "'a'" in caplog.text and "'b'" in caplog.text
+
+
+def test_unused_ambiguous_import_is_harmless(tmp_path, run_file):
+    _write(tmp_path, "a.ort", 'def String.tag: "a"\n')
+    _write(tmp_path, "b.ort", 'def String.tag: "b"\n')
+    main = _write(tmp_path, "main.ort", 'import "./a"\nimport "./b"\nprint("ok")\n')
+    assert run_file(main).stdout == "ok\n"
+
+
+def test_more_specific_imported_extension_wins(tmp_path, run_file):
+    _write(
+        tmp_path,
+        "common.ort",
+        """\
+class Base {}
+class Child < Base {}
+""",
+    )
+    _write(tmp_path, "a.ort", 'from "./common" import Base\ndef Base.pick: "base"\n')
+    _write(tmp_path, "b.ort", 'from "./common" import Child\ndef Child.pick: "child"\n')
+    main = _write(
+        tmp_path,
+        "main.ort",
+        'import "./common"\nimport "./a"\nimport "./b"\n'
+        "print(common.Child().pick(), common.Base().pick())\n",
+    )
+    assert run_file(main).stdout == "child base\n"
