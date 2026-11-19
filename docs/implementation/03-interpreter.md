@@ -49,7 +49,12 @@
 - 语义分析（`pass1.py`）为每个名字节点附加类型化的 `Binding`（作用域深度
   与槽位索引），运行时直接按深度访问，避免每次线性查找；
 - 函数对象保存定义时的 `Environment`，即形成闭包；
-- 只在全局作用域允许重定义同名变量，局部重复定义报错；
+- 模块顶层与入口模块的根环境允许重定义同名变量（`allow_redefine=True`），
+  局部作用域重复定义报错；
+- 每个环境都有 `module_root`：模块根指向自身，其余环境继承外层的值。
+  `Binding.depth is None` 的全局名按**定义模块**的根环境解析，因此 A 模块
+  的函数被 B 模块调用时，仍读取 A 的全局变量；
+- 模块根的外层是共享的 `<builtins>` 环境；内建名不属于模块命名空间；
 - `val` 的不可变性在赋值时检查。
 
 `for` 循环**每次迭代创建新的绑定环境**，因此闭包捕获的是当次迭代的值
@@ -62,6 +67,20 @@ for i in [1, 2] {
 }
 print(fs[0](), fs[1]())   # 1 2
 ```
+
+## 模块加载
+
+- `runtime/modules.py` 的 `ModuleLoader` 负责路径解析、缓存与初始化；它通过
+  回调注入编译（`Compiler.compile_unit`）、执行（`ASTInterpreter.run_module`）
+  与环境/模块工厂，不依赖 driver，满足 import-linter 的分层约束。
+- 缓存键是 `Path.resolve()`；记录状态为 `LOADING → LOADED / FAILED`。
+  重新进入 `LOADING` 记录即报告循环导入，链中包含入口文件。
+- 顶层 import 在 `visit_module` 中被提升到其他语句之前执行（ES/Go 式）。
+- `OortModule` 是 native 值，`get` 只读模块根环境的 `values`，因此导入名
+  自动再导出，而内建名与写入 (`m.x = ...`) 都不可见。
+- 被导入模块的编译/运行诊断与摘要错误都由入口或 REPL 统一 `report` 一次；
+  `CompilerErrorHandler` 保存 `(error, input_info)` 对，按
+  `(filename, line, column)` 排序，并为 traceback 位置单独查找输入。
 
 ## 控制流
 

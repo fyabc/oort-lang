@@ -1,0 +1,7 @@
+# 被导入的模块：顶层名字默认公开
+
+var count = 2
+
+def greet(name) {
+    "Hello, " + name + "!"
+}

@@ -10,7 +10,7 @@ forStmt
 whileStmt
 expression              # 表达式语句
 return / break / continue
-import ...              # 语法可解析，未实现
+import ...              # 仅模块顶层，见 07-modules.md
 @[ ... ]                # 编译器属性，未实现
 ```
 

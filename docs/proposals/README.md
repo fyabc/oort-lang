@@ -27,7 +27,7 @@
 | [0003](0003-grammar-cleanup.md) | 文法清理与语义收紧 | Implemented |
 | [0004](0004-bytecode-vm.md) | 字节码虚拟机（重新实现） | Draft |
 | [0005](0005-type-system.md) | 类型系统、泛型、ADT 与模式匹配 | Draft |
-| [0006](0006-modules-and-imports.md) | 模块与导入系统 | Draft |
+| [0006](0006-modules-and-imports.md) | 模块与导入系统 | Implemented |
 | [0007](0007-oort-object-object-model.md) | `oort-object` 动态对象模型 | Implemented |
 | [0008](0008-lexer-postprocessing-and-repl.md) | 词法后处理层与 REPL 重构 | Proposed |
 | [0009](0009-expression-and-surface-cleanup.md) | 表达式语义与语法表面积清理 | Implemented |
@@ -66,6 +66,7 @@
 | 2026-11-18 | 固定 token 职责：`:` 标签/体、`=` 绑定/命名实参、`->` 返回类型、`=>` 延迟/映射 | [OP 0010](0010-token-responsibilities-and-anonymous-parameters.md)（Implemented） |
 | 2026-11-18 | 实现匿名 lambda 参数 `$0` / `$1`；仅允许无显式参数列表的 lambda | [OP 0010](0010-token-responsibilities-and-anonymous-parameters.md)（Implemented） |
 | 2026-11-19 | 参数绑定：默认值调用时求值；`*args` 用 Tuple；`**kwargs` 用 Dict；尾随块与 `block = ...`；位置限定名可被 `**kwargs` 捕获 | [OP 0011](0011-parameter-binding.md)（Implemented） |
+| 2026-11-19 | 模块系统：顶层-only import（提升执行）、规范路径缓存、首版禁止循环、默认全公开；只导入 `.ort`，宿主模块留待 FFI；新增 `-I/--module-path` | [OP 0006](0006-modules-and-imports.md)（Implemented） |
 
 ## 设计原则（所有提案必须满足）
 

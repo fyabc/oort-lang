@@ -74,10 +74,18 @@ class Pass1Analyzer(ScopeResolverMixin, FunctionResolverMixin, ASTVisitor[T]):
         self.error_handler.add(UnsupportedSyntax(message, node.position), self.input_info)
 
     def visit_import_stmt(self, node: nodes.ImportStmt) -> T | None:
-        self._unsupported("The module system is not implemented yet.", node)
+        self._check_import_location(node)
 
     def visit_import_from_stmt(self, node: nodes.ImportFromStmt) -> T | None:
-        self._unsupported("The module system is not implemented yet.", node)
+        self._check_import_location(node)
+
+    def _check_import_location(self, node: nodes.ASTNode):
+        """Imports are static module declarations, not local statements."""
+        if self.scopes:
+            self.error_handler.add(
+                OortSyntaxError("Imports are only allowed at module top level.", node.position),
+                self.input_info,
+            )
 
     def visit_compiler_attribute(self, node: nodes.CompilerAttribute) -> T | None:
         self._unsupported("Compiler attributes are not implemented yet.", node)

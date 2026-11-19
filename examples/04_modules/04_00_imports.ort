@@ -1,0 +1,8 @@
+# 模块导入（OP 0006）
+
+import "./greeting"
+from "./greeting" import greet as hello
+
+print(greeting.greet("Oort"))
+print(hello("modules"))
+print(greeting.count)

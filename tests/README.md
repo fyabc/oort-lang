@@ -2,14 +2,14 @@
 
 ```
 tests/
-├── conftest.py          # 共享 fixture：run_source、compiler_factory
+├── conftest.py          # 共享 fixture：run_source、run_file、compiler_factory
 ├── helpers.py           # get_compiler、示例/资产路径
 ├── assets/              # 固定的 .ort 源文件与期望 AST
 ├── unit/
-│   ├── frontend/        # 词法、解析、AST、语义分析、Binding、拒绝清单
-│   └── runtime/         # 解释器：基础语句、控制流、函数、类、容器、内建、参数绑定
+│   ├── frontend/        # 词法、解析、AST、语义分析、Binding、诊断、拒绝清单
+│   └── runtime/         # 解释器：基础语句、控制流、函数、类、容器、内建、参数绑定、模块加载
 ├── property/            # hypothesis 属性测试（CI 用 --with hypothesis）
-└── integration/         # CLI 端到端、全部示例程序
+└── integration/         # CLI、REPL、全部示例程序
 ```
 
 ## 运行
@@ -32,11 +32,21 @@ uv run pytest tests/ -k "collections" # 按名字筛选
       assert result.value == 3
   ```
 
-- 需要构造编译器（例如测试错误路径）时，使用 `get_compiler("NOT_EXIST -t eval")`。
-  语法/语义错误通过 `SystemExit` 结束；运行期错误通过 `CompilerError` 结束。
+- 需要执行一个 `.ort` 文件（尤其是多文件模块）时，使用 `run_file` fixture：
+
+  ```python
+  def test_module(run_file, tmp_path):
+      result = run_file(tmp_path / "main.ort")
+      assert result.stdout == "42\n"
+  ```
+
+- 需要构造编译器（例如测试错误路径）时，使用 `get_compiler("NOT_EXIST -t eval")`
+  或参数列表 `get_compiler(["NOT_EXIST", "-t", "eval", "-I", str(path)])`。
+  语法/语义错误通过 `SystemExit` 结束；运行期/导入错误通过 `CompilerError` 结束。
 - 未实现特性的诊断放在 `unit/frontend/test_unsupported.py`，用参数化列表维护。
 - 新增示例时，在 `integration/test_examples.py` 的 `EXPECTED_OUTPUTS` 中登记输出；
-  非确定性输出（如计时）单独处理。
+  非确定性输出（如计时）单独处理。示例目录中的辅助模块不匹配
+  `NN_NN_` 命名，因此不会被当作独立示例运行。
 - 测试文件按**被测子系统**命名，而不是按实现文件命名。
 
 ## REPL 测试
@@ -63,7 +73,9 @@ REPL 按层次测试，不依赖手动输入：
 | AST 打印 | `unit/frontend/test_ast.py` |
 | 名称解析/作用域 | `unit/frontend/test_semantic.py` |
 | 类型化 Binding / 作用域布局 | `unit/frontend/test_bindings.py` |
+| 诊断配对/排序 | `unit/frontend/test_error_handler.py` |
 | 未实现特性诊断 | `unit/frontend/test_unsupported.py` |
+| 导入语法与 AST | `unit/frontend/test_imports.py` |
 | 基础语句/增强赋值 | `unit/runtime/test_basic.py` |
 | 控制流 | `unit/runtime/test_control_flow.py` |
 | 声明与解包 | `unit/runtime/test_declarations.py` |
@@ -71,6 +83,8 @@ REPL 按层次测试，不依赖手动输入：
 | 匿名 lambda 参数 | `unit/runtime/test_anonymous_params.py` |
 | 默认值/关键字/变长/块参数 | `unit/runtime/test_parameter_binding.py` |
 | 解释器运行时隔离 | `unit/runtime/test_runtime_isolation.py` |
+| 模块路径解析 | `unit/runtime/test_module_resolution.py` |
+| 模块加载/缓存/循环 | `unit/runtime/test_modules.py` |
 | 类与继承 | `unit/runtime/test_classes.py` |
 | 运算符重载 | `unit/runtime/test_operators.py` |
 | 容器与切片 | `unit/runtime/test_collections.py` |

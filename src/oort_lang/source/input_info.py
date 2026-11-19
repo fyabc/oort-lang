@@ -28,6 +28,16 @@ class InputInfo:
     def module_name(self) -> str:
         raise NotImplementedError
 
+    @property
+    def module_path(self) -> Path | None:
+        """Canonical path of this input's module, if it comes from a file."""
+        return None
+
+    @property
+    def module_dir(self) -> Path:
+        """Base directory used to resolve relative imports."""
+        return Path.cwd()
+
 
 class FileInputInfo(InputInfo):
     """File input information."""
@@ -35,6 +45,7 @@ class FileInputInfo(InputInfo):
     def __init__(self, input_file: os.PathLike, encoding: str = "utf-8-sig"):
         self._orig_input_file = Path(input_file)
         self.input_file = self._orig_input_file.absolute()
+        self._resolved = self._orig_input_file.resolve()
         # `utf-8-sig` accepts both plain UTF-8 and files with a BOM; the BOM is
         # stripped so it cannot be mistaken for part of the first token.
         self.encoding = encoding
@@ -62,6 +73,14 @@ class FileInputInfo(InputInfo):
     @property
     def module_name(self) -> str:
         return self.input_file.stem
+
+    @property
+    def module_path(self) -> Path:
+        return self._resolved
+
+    @property
+    def module_dir(self) -> Path:
+        return self._resolved.parent
 
 
 class StringInputInfo(InputInfo):

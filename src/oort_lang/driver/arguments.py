@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
 import argparse
+from collections.abc import Sequence
 
 from .. import __version__
 
@@ -44,12 +45,31 @@ def get_main_parser() -> argparse.ArgumentParser:
         default=None,
         help="Program passed in as string",
     )
+    parser.add_argument(
+        "-I",
+        "--module-path",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help=(
+            "Add DIR to the module search path (repeatable).\n"
+            "Unlike Python's -I, this does not enable isolated mode."
+        ),
+    )
 
     return parser
 
 
-def parse_main_args(parser: argparse.ArgumentParser, argv: str | None = None) -> argparse.Namespace:
-    args = parser.parse_args(None if argv is None else argv.split())
+def parse_main_args(
+    parser: argparse.ArgumentParser, argv: str | Sequence[str] | None = None
+) -> argparse.Namespace:
+    if argv is None:
+        arg_list = None
+    elif isinstance(argv, str):
+        arg_list = argv.split()
+    else:
+        arg_list = list(argv)
+    args = parser.parse_args(arg_list)
     args.logging_level = args.logging_level.upper()
 
     if args.cmd is not None and args.input_file is not None:

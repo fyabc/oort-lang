@@ -3,10 +3,12 @@
 import argparse
 import logging
 import os
-from typing import Any, NoReturn
+from pathlib import Path
+from typing import Any
 
 from antlr4 import CommonTokenStream
 
+from ..ast import nodes
 from ..ast.printer import ASTPrinter
 from ..diagnostics import OortException, OortSyntaxError
 from ..diagnostics.error_handler import CompilerErrorHandler
@@ -23,6 +25,7 @@ from ..parser.dialect import (
 from ..parser.grammar.OortLexer import OortLexer
 from ..parser.grammar.OortParser import OortParser
 from ..runtime.interpreter import ASTInterpreter
+from ..runtime.modules import ModuleLoader
 from ..semantics.pass1 import Pass1Analyzer
 from ..source.input_info import FileInputInfo, InputInfo, StringInputInfo
 from ..source.source_position import SourcePosition
@@ -40,11 +43,14 @@ class Compiler:
         self.args = args
 
         self.error_handler = CompilerErrorHandler()
+        self.module_paths = tuple(Path(path) for path in (getattr(args, "module_path", None) or []))
 
     def _run_input(self, input_info: InputInfo) -> Any:
         """Run a single input."""
 
+        self.error_handler.register_input(input_info)
         dialect = self._resolve_dialect(input_info)
+        assert dialect is not None
 
         parser = self._build_parser(input_info)
         ast = self.build_ast(parser, input_info, dialect=dialect)
@@ -74,13 +80,65 @@ class Compiler:
         assert self.args.target == "eval", f"Invalid target {self.args.target}"
 
         interpreter = ASTInterpreter(self.error_handler)
+        loader = self.make_module_loader(interpreter, input_info.module_dir)
+        interpreter.module_loader = loader
+        assert isinstance(ast, nodes.ModuleNode)
         try:
-            result = interpreter.run(ast)
+            result = loader.execute_entry(ast, interpreter.entry_env, input_info.module_path)
         except OortException as e:
-            self.error_handler.add(e, input_info)
+            matched = self.error_handler.input_info_for(e.position) or input_info
+            self.error_handler.add(e, matched)
             self.error_handler.report(exit_on_error=False, clear=True)
-            raise CompilerError()
+            raise CompilerError() from None
+        if self.error_handler.pending_count:
+            self.error_handler.report(exit_on_error=False, clear=True)
         return result.py_value
+
+    def compile_unit(self, input_info: InputInfo) -> nodes.ModuleNode | None:
+        """Compile one module without printing or clearing diagnostics."""
+        self.error_handler.register_input(input_info)
+        start = self.error_handler.error_count
+
+        dialect = self._resolve_dialect(input_info, exit_on_error=False)
+        if dialect is None:
+            return None
+
+        parser = self._build_parser(input_info)
+        ast = self.build_ast(
+            parser,
+            input_info,
+            dialect=dialect,
+            exit_on_error=False,
+            summary=False,
+            report_errors=False,
+        )
+        if ast is None or self.error_handler.error_count > start:
+            return None
+
+        pass1_analyzer: Pass1Analyzer = Pass1Analyzer(
+            self.error_handler, input_info, dialect=dialect
+        )
+        ast = self.semantic_analyze(
+            ast,
+            pass1_analyzer,
+            exit_on_error=False,
+            summary=False,
+            report_errors=False,
+        )
+        if ast is None or self.error_handler.error_count > start:
+            return None
+        assert isinstance(ast, nodes.ModuleNode)
+        return ast
+
+    def make_module_loader(self, interpreter: ASTInterpreter, entry_dir: Path) -> ModuleLoader:
+        return ModuleLoader(
+            compile_module=lambda path: self.compile_unit(FileInputInfo(path)),
+            execute_module=interpreter.run_module,
+            make_environment=interpreter.create_module_env,
+            make_module=interpreter.new_module,
+            entry_dir=entry_dir,
+            search_paths=self.module_paths,
+        )
 
     def run_file(self, input_file: os.PathLike) -> Any:
         return self._run_input(FileInputInfo(input_file))
@@ -88,12 +146,17 @@ class Compiler:
     def run_string(self, input_string: str, name: str = "<string>") -> Any:
         return self._run_input(StringInputInfo(input_string, name=name))
 
-    def _resolve_dialect(self, input_info: InputInfo) -> DialectConfig:
+    def _resolve_dialect(
+        self, input_info: InputInfo, exit_on_error: bool = True
+    ) -> DialectConfig | None:
         """Select the module dialect from its `#lang` directive."""
         directive = parse_lang_directive(input_info.get_source_text())
 
         if directive.error is not None:
-            self._report_dialect_error(directive.error, directive, input_info)
+            self._report_dialect_error(
+                directive.error, directive, input_info, exit_on_error=exit_on_error
+            )
+            return None
 
         if directive.dialect_name is None:
             return DEFAULT_DIALECT
@@ -105,22 +168,29 @@ class Compiler:
                 f"Unknown dialect {directive.dialect_name!r}. Known dialects: {known}.",
                 directive,
                 input_info,
+                exit_on_error=exit_on_error,
             )
+            return None
 
-        assert config is not None
         if not config.implemented:
             self._report_dialect_error(
                 f"The {config.name!r} dialect is not implemented yet.",
                 directive,
                 input_info,
+                exit_on_error=exit_on_error,
             )
+            return None
 
         logging.debug("Using dialect %s", config.name)
         return config
 
     def _report_dialect_error(
-        self, message: str, directive: LangDirective, input_info: InputInfo
-    ) -> NoReturn:
+        self,
+        message: str,
+        directive: LangDirective,
+        input_info: InputInfo,
+        exit_on_error: bool = True,
+    ) -> None:
         position = SourcePosition.from_location(
             directive.line,
             directive.column,
@@ -128,8 +198,8 @@ class Compiler:
             filename=input_info.input_filename,
         )
         self.error_handler.add(OortSyntaxError(message, position), input_info)
-        self.error_handler.report(exit_on_error=True)
-        raise CompilerError()  # Unreachable: `report` exits non-zero.
+        if exit_on_error:
+            self.error_handler.report(exit_on_error=True, clear=False)
 
     def _build_parser(self, input_info: InputInfo) -> OortParser:
         """Build parser."""
@@ -149,10 +219,15 @@ class Compiler:
         dialect: DialectConfig = DEFAULT_DIALECT,
         exit_on_error: bool = True,
         summary: bool = True,
+        report_errors: bool = True,
     ) -> ASTNode | None:
+        start_errors = self.error_handler.error_count
         tree = parser.startRule()
 
-        num_errors = self.error_handler.report(exit_on_error=exit_on_error, summary=summary)
+        if report_errors:
+            num_errors = self.error_handler.report(exit_on_error=exit_on_error, summary=summary)
+        else:
+            num_errors = self.error_handler.error_count - start_errors
         if num_errors > 0:
             return None
 
@@ -161,7 +236,10 @@ class Compiler:
         ast = builder.parse(tree)
         logging.debug("AST built successfully")
 
-        num_errors = self.error_handler.report(exit_on_error=exit_on_error, summary=summary)
+        if report_errors:
+            num_errors = self.error_handler.report(exit_on_error=exit_on_error, summary=summary)
+        else:
+            num_errors = self.error_handler.error_count - start_errors
         if num_errors > 0:
             return None
 
@@ -173,14 +251,19 @@ class Compiler:
         pass1_analyzer: Pass1Analyzer,
         exit_on_error: bool = True,
         summary: bool = True,
+        report_errors: bool = True,
     ) -> ASTNode | None:
         if not ast:
             return None
 
+        start_errors = self.error_handler.error_count
         pass1_analyzer.parse(ast)
         logging.debug("Semantic analyzation pass 1 done")
 
-        num_errors = self.error_handler.report(exit_on_error=exit_on_error, summary=summary)
+        if report_errors:
+            num_errors = self.error_handler.report(exit_on_error=exit_on_error, summary=summary)
+        else:
+            num_errors = self.error_handler.error_count - start_errors
         if num_errors > 0:
             return None
 

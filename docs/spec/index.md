@@ -22,6 +22,7 @@
 | [03-statements.md](03-statements.md) | 声明、赋值、控制流 |
 | [04-functions.md](04-functions.md) | 函数、lambda、闭包、尾随闭包 |
 | [05-classes.md](05-classes.md) | 类、继承、元类、`this` / `super` |
+| [07-modules.md](07-modules.md) | 模块身份、导入语法、路径解析、缓存与循环诊断 |
 | [06-conformance.md](06-conformance.md) | 实现状态矩阵与诊断规则 |
 
 ## 术语

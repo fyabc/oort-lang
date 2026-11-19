@@ -17,3 +17,7 @@ class OortTypeError(OortRuntimeError):
 
 class OortAttributeError(OortRuntimeError):
     pass
+
+
+class OortImportError(OortRuntimeError):
+    """Module resolution, loading or import-binding failure."""

@@ -30,10 +30,28 @@ class AssignResult(Enum):
 class Environment:
     """Oort environment in AST interpreter."""
 
-    def __init__(self, outer: Optional["Environment"] = None, name: str = GLOBAL_ENV_NAME):
+    def __init__(
+        self,
+        outer: Optional["Environment"] = None,
+        name: str = GLOBAL_ENV_NAME,
+        *,
+        allow_redefine: bool | None = None,
+        is_module_root: bool = False,
+    ):
         self.values: dict[str, Entry] = {}
         self.outer: Environment | None = outer
         self.name = name
+        # Only the outermost scope of a compilation unit (the entry module or
+        # a loaded module) allows top-level redefinition. Class bodies, blocks
+        # and call frames keep rejecting duplicates.
+        self.allow_redefine = (outer is None) if allow_redefine is None else allow_redefine
+        # `module_root` is the environment that owns `Binding.depth is None`.
+        # It cannot be derived from `outer is None` alone: module roots have a
+        # shared builtins environment as their outer scope.
+        if is_module_root or outer is None:
+            self.module_root: Environment = self
+        else:
+            self.module_root = outer.module_root
 
     def _ancestor(self, depth: int) -> "Environment":
         env: Environment | None = self
@@ -59,8 +77,7 @@ class Environment:
 
     def define(self, name: str, value: OortObject, mutable: bool = False) -> DefineResult:
         """Define a new name to value."""
-        if name in self.values and self.name != GLOBAL_ENV_NAME:
-            # Only allow redefinition in global env.
+        if name in self.values and not self.allow_redefine:
             return DefineResult.REDEFINED
         mut_s = "(mut) " if mutable else ""
         logging.debug(f"Define {name!r} to {mut_s}{value}.")
@@ -92,11 +109,11 @@ class Environment:
 
     def pprint(self):
         """Pretty print current environment."""
-        env_chain = []
-        env: Environment | None = self
-        while env is not None:
-            env_chain.append(env)
-            env = env.outer
+        env_chain: list[Environment] = []
+        current: Environment | None = self
+        while current is not None:
+            env_chain.append(current)
+            current = current.outer
         for env in reversed(env_chain):
             print(f"{env.name}:")
             for name, entry in env.values.items():

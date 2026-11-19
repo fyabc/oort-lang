@@ -3,6 +3,7 @@
 """AST interpreter."""
 
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from ..ast import nodes
 from ..ast.ast_visitor import ASTVisitor
@@ -10,6 +11,7 @@ from ..diagnostics import OortException, OortSyntaxError, UnsupportedSyntax
 from ..diagnostics.error_handler import CompilerErrorHandler
 from ..diagnostics.runtime_errors import (
     OortAttributeError,
+    OortImportError,
     OortNameError,
     OortRuntimeError,
     OortTypeError,
@@ -28,6 +30,7 @@ from .objects import (
     OortInstance,
     OortInt,
     OortList,
+    OortModule,
     OortNull,
     OortObject,
     OortSet,
@@ -38,6 +41,9 @@ from .objects import (
     wrap_value,
 )
 from .type_system import OortType, Runtime
+
+if TYPE_CHECKING:
+    from .modules import ModuleLoader
 
 _AUG_OPS = {
     "+=": "+",
@@ -62,20 +68,52 @@ def _is_truthy(value: OortObject) -> bool:
 
 
 class ASTInterpreter(ASTVisitor[OortObject]):
-    def __init__(self, error_handler: CompilerErrorHandler):
+    def __init__(
+        self,
+        error_handler: CompilerErrorHandler,
+        module_loader: "ModuleLoader | None" = None,
+    ):
         self.error_handler = error_handler
-
-        self._global_env = Environment(name="<global>")
-        self.env = self._global_env
         self._current_method = None
+
+        # Every interpreter owns one runtime and one shared builtins scope.
+        # Modules are separate roots whose outer scope is this builtins scope.
         self.runtime = Runtime()
+        self.builtins_env = Environment(name="<builtins>", allow_redefine=False)
         with self.runtime.activate():
-            setup_builtins(self.runtime, self.env)
+            setup_builtins(self.runtime, self.builtins_env)
+
+        self.entry_env = self.create_module_env("<global>")
+        self.env = self.entry_env
+        self.module_loader = module_loader
+
+    def create_module_env(self, name: str) -> Environment:
+        """Create an isolated top-level scope for one module."""
+        return Environment(
+            outer=self.builtins_env,
+            name=name,
+            allow_redefine=True,
+            is_module_root=True,
+        )
+
+    def new_module(self, name: str, env: Environment) -> OortModule:
+        """Create a module value under this interpreter's runtime."""
+        with self.runtime.activate():
+            return OortModule(name, env)
 
     def run(self, node: nodes.ASTNode) -> OortObject:
         with self.runtime.activate():
             result = node.accept(self)
             return self.runtime.null if result is None else result
+
+    def run_module(self, node: nodes.ModuleNode, env: Environment) -> OortObject:
+        """Execute a module body in its own top-level environment."""
+        prev = self.env
+        try:
+            self.env = env
+            return self.run(node)
+        finally:
+            self.env = prev
 
     def run_block(self, statements: Iterable[nodes.ASTNode], env: Environment) -> OortObject:
         """Run the block with given environment.
@@ -93,9 +131,49 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             self.env = prev
 
     def visit_module(self, node: nodes.ModuleNode) -> OortObject:
-        # Skip extra scope for `body`.
-        result = self.visit_children(node.body)
-        return OortNull.get_null_value() if result is None else result
+        # Static imports are hoisted: dependencies are initialized before the
+        # rest of the module body, in source order (ES module / Go style).
+        statements = list(node.body.statements)
+        imports = [
+            stmt
+            for stmt in statements
+            if isinstance(stmt, (nodes.ImportStmt, nodes.ImportFromStmt))
+        ]
+        others = [
+            stmt
+            for stmt in statements
+            if not isinstance(stmt, (nodes.ImportStmt, nodes.ImportFromStmt))
+        ]
+
+        result: OortObject = OortNull.get_null_value()
+        for stmt in imports + others:
+            result = stmt.accept(self)
+        return result
+
+    def visit_import_stmt(self, node: nodes.ImportStmt) -> OortObject:
+        loader = self.module_loader
+        if loader is None:
+            raise OortImportError(
+                "Module imports are not available in this context.", node.position
+            )
+        module = loader.import_module(node.module_path, node.position)
+        name = node.alias or loader.binding_name(node.module_path, node.position)
+        if self.env.define(name, module, mutable=False) == DefineResult.REDEFINED:
+            raise OortNameError(f"Name {name!r} is already defined", node.position)
+        return OortNull.get_null_value()
+
+    def visit_import_from_stmt(self, node: nodes.ImportFromStmt) -> OortObject:
+        loader = self.module_loader
+        if loader is None:
+            raise OortImportError(
+                "Module imports are not available in this context.", node.position
+            )
+        values = loader.import_names(node.module_path, list(node.names), node.position)
+        for src, dst in node.names.items():
+            name = dst or src
+            if self.env.define(name, values[src], mutable=False) == DefineResult.REDEFINED:
+                raise OortNameError(f"Name {name!r} is already defined", node.position)
+        return OortNull.get_null_value()
 
     def visit_block_expr(self, node: nodes.BlockExpr) -> OortObject:
         block_env = Environment(outer=self.env, name="<block>")
@@ -185,7 +263,7 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             binding = lhs.binding
             assert binding is not None and binding.name == lhs.id
             if binding.depth is None:
-                assign_result = self._global_env.assign(lhs.id, rhs)
+                assign_result = self.env.module_root.assign(lhs.id, rhs)
             else:
                 assign_result = self.env.assign_at(lhs.id, rhs, binding.depth)
             if assign_result == AssignResult.NOT_FOUND:
@@ -585,5 +663,5 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         binding = node.binding
         assert binding is not None and binding.name == name, "Name node was not resolved"
         if binding.depth is None:
-            return self._global_env.get(name)
+            return self.env.module_root.get(name)
         return self.env.get_at(name, binding.depth)

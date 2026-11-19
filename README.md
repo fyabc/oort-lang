@@ -36,11 +36,12 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 - 行首 `.` 方法链续行；`Bool` 与 `Int` 语义分离
 - 内建：`print`、`clock`、`type`、`super`、`len`、`range`、`str`、`repr`、
   `int`、`float`、`bool`
+- 模块：`import "./lib"`、`import "./lib" as l`、`from "./lib" import a, b as c`；
+  规范路径缓存、循环诊断、`-I/--module-path` 搜索路径
 - REPL（多行输入）
 
 ### 待实现（见 proposals）
 
-- 模块与导入系统 — [OP 0006](docs/proposals/0006-modules-and-imports.md)
 - 静态类型、泛型、ADT、模式匹配 — [OP 0005](docs/proposals/0005-type-system.md)
 - 自定义运算符声明与优先级 — [OP 0002](docs/proposals/0002-dsl-support.md)
 - 宏系统与 `comptime` — [设计笔记](docs/design/05-macro-system-design.md)

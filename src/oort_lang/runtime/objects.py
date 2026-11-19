@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from .context import get_runtime
 
 if TYPE_CHECKING:
+    from .environment import Environment
     from .type_system import OortType
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "OortInstance",
     "OortInt",
     "OortList",
+    "OortModule",
     "OortNativeMixin",
     "OortNull",
     "OortObject",
@@ -101,6 +103,25 @@ class OortNativeMixin(OortObject):
     @property
     def is_native(self) -> bool:
         return True
+
+
+class OortModule(OortNativeMixin, OortObject):
+    """A loaded Oort module: a live, read-only view of its global environment."""
+
+    def __init__(self, name: str, env: "Environment"):
+        super().__init__(type_=self.get_type_object())
+        self.module_name = name
+        self.env = env
+
+    def __repr__(self):
+        return f"<module {self.module_name!r}>"
+
+    def get(self, name: str) -> "OortObject | None":
+        entry = self.env.values.get(name)
+        return None if entry is None else entry.value
+
+    def has(self, name: str) -> bool:
+        return name in self.env.values
 
 
 class OortSuperProxy(OortNativeMixin, OortObject):

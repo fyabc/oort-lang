@@ -71,6 +71,7 @@ target/
 /.claude/
 
 # Generated grammar files.
+/grammars/.antlr/
 /src/oort_lang/parser/grammar/Oort.interp
 /src/oort_lang/parser/grammar/Oort.tokens
 /src/oort_lang/parser/grammar/OortLexer.interp

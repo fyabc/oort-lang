@@ -12,8 +12,6 @@ import pytest
 from tests.helpers import get_compiler
 
 UNSUPPORTED_CASES = [
-    ('import "math"', "module system"),
-    ('from "math" import sqrt', "module system"),
     ("macro m {}", "macro system"),
     ("@m(1)", "macro system"),
     ("def f() { yield 1 }", "Generators"),

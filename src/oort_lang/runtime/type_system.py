@@ -23,6 +23,7 @@ from .objects import (
     OortInstance,
     OortInt,
     OortList,
+    OortModule,
     OortNull,
     OortObject,
     OortSet,
@@ -219,6 +220,7 @@ class TypeSystem:
         self.function_type = self._add_basic_type("Function", OortFunctionMixin)
         self.method_type = self._add_basic_type("Method", OortMethodMixin)
         self.super_proxy_type = self._add_basic_type("SuperProxy", OortSuperProxy)
+        self.module_type = self._add_basic_type("Module", OortModule)
         self.null_type = self._add_basic_type("Null", OortNull)
         self.int_type = self._add_basic_type("Int", OortInt)
         # Bool is deliberately not a subtype of Int. `true + true` and

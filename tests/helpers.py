@@ -2,6 +2,7 @@
 
 """Shared helpers for the test suite."""
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from oort_lang.ast.nodes import ASTNode
@@ -15,7 +16,7 @@ REPO_ROOT = Path(__file__).parent.parent
 EXAMPLES_DIR = REPO_ROOT / "examples"
 
 
-def get_compiler(argv: str) -> Compiler:
+def get_compiler(argv: str | Sequence[str]) -> Compiler:
     """Build a compiler from command-line style arguments."""
     parser = get_main_parser()
     args = parse_main_args(parser, argv)

@@ -16,6 +16,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 语句 | `var`/`val`（含多目标解包）、赋值（含 `//=` 等增强赋值、元组交换）、`if`/`elif`/`else`、`while`、`for`、`return`、`break expr`、`continue` |
 | 函数 | `def`、`do` lambda、闭包、递归、尾随闭包；所有显式形参列表都使用括号；lambda 支持 `$0`/`$1` 匿名参数；默认值、关键字实参、`/`、`*`、`*args`、`**kwargs`、`&block` |
 | 类 | 定义、实例化、`__init__`、方法、类方法、单/多重继承、C3 MRO、元类、`this`/`super`；开放字段袋、方法遮蔽检查、身份相等/哈希 |
+| 模块 | `.ort` 文件模块；`import "m" [as x]`、`from "m" import a, b as c`；相对/裸名解析、`-I` 搜索路径、规范路径缓存、急切初始化与循环诊断；模块命名空间只读、导入名可再导出 |
 | 内建 | `print`、`clock`、`type`、`super`（仅 `super.method` / `super.__init__`）、`len`、`range`、`str`、`repr`、`int`、`float`、`bool` |
 
 ## 可解析但被拒绝
@@ -24,7 +25,6 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 
 | 特性 | 示例 | 诊断信息 |
 |------|------|----------|
-| 模块系统 | `import "math"` | The module system is not implemented yet. |
 | 宏系统 | `macro m {}`、`@m(1)` | The macro system is not implemented yet. |
 | 生成器 | `yield expr` | Generators (`yield`) are not implemented yet. |
 | 异步 | `await expr` | Async/await is not implemented yet. |
@@ -65,6 +65,12 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 - 自定义 `==` 不会改变哈希，相关字典键/集合元素行为尚未定义。
 - 匿名参数 `$0` / `$1` 只允许出现在无显式参数列表的 lambda 中；
   `def`、`do()`、`do(x)` 以及显式声明 `$n` 都会报错。
+- 模块系统（OP 0006）：
+  - `import` 只允许在模块顶层；函数、块、类体中的 import 报
+    `Imports are only allowed at module top level.`。
+  - 顶层 import 会提升到模块正文之前执行；模块只初始化一次并按规范路径缓存。
+  - 首版禁止循环导入；目录包、OS 绝对路径、宿主语言模块与 `import lazy`
+    均未实现。详见 [07-modules.md](07-modules.md)。
 - 参数绑定（OP 0011）：
   - 默认值每次调用求值，只能引用更早的参数；不能引用 `this` 或更晚参数。
   - `*args` 是 Tuple，`**kwargs` 是 String 键 Dict。
@@ -83,7 +89,11 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 
 ## 测试对应关系
 
-- 单元测试：`tests/unit/frontend/`（词法、解析、AST、语义、诊断）、
-  `tests/unit/runtime/`（解释器、类、函数、容器、内建、匿名参数、参数绑定）。
-- 集成测试：`tests/integration/`（CLI、全部示例程序）。
+- 单元测试：`tests/unit/frontend/`（词法、解析、AST、语义、诊断、错误配对）、
+  `tests/unit/runtime/`（解释器、类、函数、容器、内建、匿名参数、参数绑定、
+  模块解析与加载）。
+- 集成测试：`tests/integration/`（CLI、REPL、全部示例程序）。
 - 每个已实现特性至少有一个测试；拒绝清单由 `test_unsupported.py` 参数化覆盖。
+- 模块系统由 `tests/unit/runtime/test_module_resolution.py`、
+  `test_modules.py`、`tests/unit/frontend/test_imports.py` 与
+  `tests/integration/test_cli.py`、`test_repl.py` 覆盖。

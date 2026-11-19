@@ -2,6 +2,8 @@
 
 """Run every example program as an integration test."""
 
+import re
+
 import pytest
 
 from tests.helpers import EXAMPLES_DIR
@@ -26,15 +28,20 @@ EXPECTED_OUTPUTS = {
         "rect has area 12\nrect has area 25\n<Type 'Factory'>\n<Type 'M'>\n"
     ),
     "03_oop/03_01_object_model.ort": "1\n0\ntrue\nfalse\nA\n",
+    "04_modules/04_00_imports.ort": "Hello, Oort!\nHello, modules!\n2\n",
 }
 
-EXAMPLE_FILES = sorted(p.relative_to(EXAMPLES_DIR).as_posix() for p in EXAMPLES_DIR.rglob("*.ort"))
+EXAMPLE_NAME = re.compile(r"^\d{2}_\d{2}_")
+EXAMPLE_FILES = sorted(
+    p.relative_to(EXAMPLES_DIR).as_posix()
+    for p in EXAMPLES_DIR.rglob("*.ort")
+    if EXAMPLE_NAME.match(p.name)
+)
 
 
 @pytest.mark.parametrize("rel_path", EXAMPLE_FILES)
-def test_example_runs(rel_path: str, run_source):
-    code = (EXAMPLES_DIR / rel_path).read_text(encoding="utf-8")
-    result = run_source(code)
+def test_example_runs(rel_path: str, run_file):
+    result = run_file(EXAMPLES_DIR / rel_path)
 
     if rel_path == "01_functions/01_00_fibonacci.ort":
         # The elapsed time is non-deterministic; check the result only.

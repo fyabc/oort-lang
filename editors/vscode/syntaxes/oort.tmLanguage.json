@@ -10,6 +10,7 @@
     { "include": "#comments" },
     { "include": "#strings" },
     { "include": "#numbers" },
+    { "include": "#import-keywords" },
     { "include": "#keywords" },
     { "include": "#builtin-types" },
     { "include": "#container-punctuation" },
@@ -139,11 +140,11 @@
         },
         {
           "name": "keyword.operator.word.oort",
-          "match": "\\b(?:and|or|not|in|is|as)\\b"
+          "match": "\\b(?:and|or|not|in|is)\\b"
         },
         {
           "name": "storage.type.oort",
-          "match": "\\b(?:var|val|def|class|macro|import)\\b"
+          "match": "\\b(?:var|val|def|class|macro)\\b"
         },
         {
           "name": "variable.language.oort",
@@ -155,9 +156,13 @@
         },
         {
           "name": "keyword.other.soft.oort",
-          "match": "\\b(?:operator|infix|from)\\b"
+          "match": "\\b(?:operator|infix)\\b"
         }
       ]
+    },
+    "import-keywords": {
+      "name": "keyword.control.import.oort",
+      "match": "\\b(?:import|from|as)\\b"
     },
     "builtin-types": {
       "name": "support.type.builtin.oort",

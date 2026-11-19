@@ -45,11 +45,12 @@ ANTLR 语法与 Pratt 表达式解析、AST、名称解析、树遍历解释器�
 - 运算符重载（用户类与内建类型共用方法表）；
 - 表达式/表面语法清理（[OP 0009](proposals/0009-expression-and-surface-cleanup.md)）；
 - 小型 lambda 匿名参数（[OP 0010](proposals/0010-token-responsibilities-and-anonymous-parameters.md)）；
-- 完整参数绑定（[OP 0011](proposals/0011-parameter-binding.md)）。
+- 完整参数绑定（[OP 0011](proposals/0011-parameter-binding.md)）；
+- 模块与导入加载器、规范路径缓存、循环诊断与 `-I/--module-path`
+  （[OP 0006](proposals/0006-modules-and-imports.md)）。
 
 待完成（P1）：
 
-- 模块与导入加载器、缓存与循环诊断（[OP 0006](proposals/0006-modules-and-imports.md)）；
 - 最小标准库：`map`/`filter`/`sorted`/`zip`/`enumerate`、`math`、`string`；
 - 用户对象迭代器协议；
 - 类外扩展方法 `def C.f`；

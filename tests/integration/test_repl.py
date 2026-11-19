@@ -52,5 +52,33 @@ def test_repl_continuation_with_backslash(monkeypatch, capsys):
     assert "3" in capsys.readouterr().out
 
 
+def test_repl_import_relative_to_cwd(monkeypatch, capsys, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "lib.ort").write_text("var value = 3\n", encoding="utf-8")
+
+    lines = ['import "./lib"', "print(lib.value)"]
+    assert _run_repl(monkeypatch, lines) == 0
+    assert "3" in capsys.readouterr().out
+
+
+def test_repl_from_import_persists(monkeypatch, capsys, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "lib.ort").write_text("var value = 4\n", encoding="utf-8")
+
+    lines = ['from "./lib" import value', "print(value)"]
+    assert _run_repl(monkeypatch, lines) == 0
+    assert "4" in capsys.readouterr().out
+
+
+def test_repl_recovers_from_import_error(monkeypatch, capsys, caplog, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "lib.ort").write_text("var value = 5\n", encoding="utf-8")
+
+    lines = ['import "./missing"', 'import "./lib"', "print(lib.value)"]
+    assert _run_repl(monkeypatch, lines) == 0
+    assert "Cannot find module './missing'" in caplog.text
+    assert "5" in capsys.readouterr().out
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

@@ -1,9 +1,12 @@
 #! /usr/bin/env python
 
+from pathlib import Path
+
 from antlr4 import CommonTokenStream, InputStream
 from rich.console import Console
 
 from .. import __version__
+from ..ast import nodes
 from ..diagnostics import OortException
 from ..diagnostics.error_listener import OortErrorListener
 from ..parser.grammar.OortLexer import OortLexer
@@ -29,11 +32,14 @@ Type 'ctrl + C' to exit.[/]""")
     token_stream = CommonTokenStream(None)
     parser = OortParser(None)
     input_info = ReplInputInfo()
+    compiler.error_handler.register_input(input_info)
     parser.removeErrorListeners()
     parser.addErrorListener(OortErrorListener(compiler.error_handler, input_info))
 
     pass1_analyzer: Pass1Analyzer = Pass1Analyzer(compiler.error_handler, input_info)
     ast_interpreter = ASTInterpreter(compiler.error_handler)
+    module_loader = compiler.make_module_loader(ast_interpreter, Path.cwd())
+    ast_interpreter.module_loader = module_loader
 
     stmt_count = 0
     continuation_mode = False
@@ -84,13 +90,19 @@ Type 'ctrl + C' to exit.[/]""")
                     ast, pass1_analyzer, exit_on_error=False, summary=False
                 )
             if ast:
+                assert isinstance(ast, nodes.ModuleNode)
                 try:
-                    result = ast_interpreter.run(ast)
+                    result = module_loader.execute_entry(ast, ast_interpreter.entry_env)
                 except OortException as e:
-                    compiler.error_handler.add(e, input_info)
+                    matched = compiler.error_handler.input_info_for(e.position) or input_info
+                    compiler.error_handler.add(e, matched)
 
                     compiler.error_handler.report(exit_on_error=False, clear=True, summary=False)
                 else:
+                    if compiler.error_handler.pending_count:
+                        compiler.error_handler.report(
+                            exit_on_error=False, clear=True, summary=False
+                        )
                     # Skip null values.
                     if result is not ast_interpreter.runtime.null:
                         output = repr(result)

@@ -84,8 +84,11 @@ trait AddAssign[Rhs = Self] {
 ```oort
 import "module"
 from "module" import name1, name2
-import lazy "module"   # 显式懒加载
+import lazy "module"   # 显式懒加载（后续设计，当前文法未提供）
 ```
+
+> 2026-11-19：本版只实现急切导入（[OP 0006](../proposals/0006-modules-and-imports.md)，
+> 已实现）。`import lazy` 保留为后续提案的设计方向，词法与语法尚未加入。
 
 ### 3.2 执行时机
 

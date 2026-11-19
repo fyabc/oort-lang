@@ -18,6 +18,7 @@
 - [语句](spec/03-statements.md) — 声明、赋值、控制流
 - [函数](spec/04-functions.md) — `def`、lambda、闭包、尾随闭包
 - [类](spec/05-classes.md) — 继承、元类、`this` / `super`
+- [模块与导入](spec/07-modules.md) — 路径解析、缓存、循环诊断
 - [实现状态矩阵](spec/06-conformance.md) — 已实现 / 被拒绝 / 计划中的特性
 
 ## 提案
@@ -30,7 +31,7 @@ Oort 的语言变更采用类 PEP/RFC 流程：
 - [OP 0003: 文法清理与语义收紧](proposals/0003-grammar-cleanup.md)（已实现）
 - [OP 0004: 字节码虚拟机](proposals/0004-bytecode-vm.md)
 - [OP 0005: 类型系统、泛型、ADT 与模式匹配](proposals/0005-type-system.md)
-- [OP 0006: 模块与导入系统](proposals/0006-modules-and-imports.md)
+- [OP 0006: 模块与导入系统](proposals/0006-modules-and-imports.md)（已实现）
 - [OP 0007: `oort-object` 动态对象模型](proposals/0007-oort-object-object-model.md)（已实现）
 - [OP 0008: 词法后处理层与 REPL 重构](proposals/0008-lexer-postprocessing-and-repl.md)
 - [OP 0009: 表达式语义与语法表面积清理](proposals/0009-expression-and-surface-cleanup.md)（已实现）

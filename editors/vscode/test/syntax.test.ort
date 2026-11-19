@@ -51,3 +51,11 @@ val n = 1 + 2 * 3
 
 # a normal comment
 # ^^^^^^^^^^^^^^^^ comment.line.number-sign.oort
+
+import "./greeting" as g
+# <------ keyword.control.import.oort
+#                   ^^ keyword.control.import.oort
+
+from "./greeting" import greet as hello
+# <--- keyword.control.import.oort
+#                              ^^ keyword.control.import.oort

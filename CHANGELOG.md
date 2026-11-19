@@ -6,6 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Module system (OP 0006): `.ort` modules with `import "m" [as x]` and
+  `from "m" import a, b as c`, eager top-level-hoisted initialization,
+  canonical-path caching, circular-import diagnostics, module namespaces with
+  automatic re-export, and `-I/--module-path` search directories.
+- Multi-file example under `examples/04_modules/`.
+- Diagnostics now keep each error paired with its own source input and sort
+  across files, so imported-module errors point at the right file and line.
+
+### Changed
+
+- Imports are only allowed at module top level; nested imports are rejected
+  with an explicit diagnostic.
+- Each module owns an isolated global environment; global lookups resolve
+  against the defining module, so functions and methods keep their own module
+  globals when called from elsewhere.
+
+### Fixed
+
+- The VSCode grammar now colors `import`, `from` and `as` as import keywords
+  (`keyword.control.import.oort`); `as` previously shared the operator-word
+  scope and could be left uncolored by some themes. Extension version 0.1.1.
+
 ## [0.2.0] - 2026-11-19
 
 ### Added

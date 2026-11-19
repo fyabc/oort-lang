@@ -21,6 +21,11 @@ class ImportStmt(ASTNode):
     def _accept(self, visitor: ASTVisitor):
         return visitor.visit_import_stmt(self)
 
+    def str_attrs(self) -> str | None:
+        if self.alias is None:
+            return f"module_path={self.module_path!r}"
+        return f"module_path={self.module_path!r}, alias={self.alias!r}"
+
 
 class ImportFromStmt(ASTNode):
     def __init__(
@@ -35,3 +40,9 @@ class ImportFromStmt(ASTNode):
 
     def _accept(self, visitor: ASTVisitor):
         return visitor.visit_import_from_stmt(self)
+
+    def str_attrs(self) -> str | None:
+        entries = ", ".join(
+            src if dst is None else f"{src} as {dst}" for src, dst in self.names.items()
+        )
+        return f"module_path={self.module_path!r}, names=[{entries}]"
