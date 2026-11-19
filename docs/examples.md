@@ -44,6 +44,16 @@
 | [集合助手](https://github.com/fyabc/oort-lang.py/blob/main/examples/05_stdlib/05_00_collections.ort) | `map` / `filter` / `sorted` / `zip` |
 | [math 与 string](https://github.com/fyabc/oort-lang.py/blob/main/examples/05_stdlib/05_01_math_string.ort) | 原生标准库模块 |
 
+## Showcase
+
+| 示例 | 内容 |
+|---|---|
+| [JSON 解析/格式化 CLI](https://github.com/fyabc/oort-lang.py/blob/main/examples/07_showcase/07_00_json.ort) | `io` / `os`、递归下降解析、`\uXXXX`、pretty-print、错误退出码 |
+
+```bash
+oort examples/07_showcase/07_00_json.ort examples/07_showcase/sample.json
+```
+
 ## 运行
 
 ```bash

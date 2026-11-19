@@ -91,6 +91,10 @@ class ASTInterpreter(ASTVisitor[OortObject]):
     ):
         self.error_handler = error_handler
         self._current_method = None
+        # Process-level context for the `os` native module. The compiler sets
+        # these for file/-c runs; REPL and embedded interpreters keep defaults.
+        self.script_args: tuple[str, ...] = ()
+        self.script_path: str | None = None
 
         # Every interpreter owns one runtime and one shared builtins scope.
         # Modules are separate roots whose outer scope is this builtins scope.

@@ -1,6 +1,6 @@
 # OP 0015: 最小 I/O、命令行参数与退出码
 
-- **状态**：Proposed（2026-11-20）
+- **状态**：Implemented（2026-11-20）
 - **作者**：Oort 设计讨论
 - **相关**：[OP 0012](0012-standard-library.md)、
   [规范：标准库](../spec/08-stdlib.md)
@@ -73,7 +73,7 @@ string.chr(65)     # "A"
   异常处理；首版只能选择“运行时错误”或 `null + 错误信息`。
 - `os.exit(code)` 在几乎所有语言里都存在，语义一致：立即结束进程。
 
-## 决策（建议）
+## 决策（已确认）
 
 ### D1：模块划分
 
@@ -132,11 +132,24 @@ Ruby `ARGV`、Kotlin `args` 一致；需要原始 argv 的用户可以组合两�
 - `string.ord/chr`：ASCII、中文、emoji/增补平面、非法长度与非法码点。
 - JSON CLI 示例：合法/非法 JSON、`\uXXXX`、代理对、格式化输出、错误退出码。
 
+## 实现与测试
+
+- 原生模块：`runtime/stdlib/io_module.py`、`runtime/stdlib/os_module.py`；
+  `string` 增加 `ord` / `chr`。
+- CLI：`oort script.ort a b` 与 `oort -c CODE a b` 都填充 `os.args`；
+  `Compiler` 把参数与脚本路径传给解释器，REPL 保持空参数。
+- 测试：`tests/unit/runtime/test_io_os_modules.py`、`tests/integration/test_json_example.py`。
+- 示例：`examples/07_showcase/07_00_json.ort`（可读取文件参数）。
+
+## 已决问题
+
+- 文件读取失败：首版用运行时错误（无用户级捕获）；未来有 `Result` 后再评估
+  显式返回。
+- `os.args` 是 List 值（`os.args[0]`），只含用户参数；脚本路径在 `os.script`。
+- `ord`/`chr` 留在 `string` 模块内，避免污染全局命名空间。
+- `os.exit` 状态范围 0–255；0 表示成功。
+
 ## 未决问题
 
-- 文件读取失败：首版用运行时错误（无用户级捕获）；未来有 `Result` 后是否改为
-  显式返回？
-- `os.args` 是 List 值还是函数？建议 List 值（`os.args[0]`），与 `ARGV` 一致。
 - 是否需要 `io.read_stdin()` / `print_error()`？首版不做。
-- 是否把 `ord`/`chr` 放在全局内建而不是 `string` 模块？建议留在模块内，避免
-  污染全局命名空间。
+- 二进制读写、目录操作、环境变量与工作目录：后续按需提案。

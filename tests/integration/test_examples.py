@@ -37,6 +37,19 @@ EXPECTED_OUTPUTS = {
     ),
     "05_stdlib/05_01_math_string.ort": "3\ntrue\na-b\nOORT\n[a, b, c]\ntrue\n",
     "06_iterators/06_00_user_iterators.ort": ("3\n2\n1\n(a, true) (b, true) (null, false)\n1\n"),
+    "07_showcase/07_00_json.ort": (
+        "{:\n"
+        '  "active": true,\n'
+        '  "name": "Oort",\n'
+        '  "owner": null,\n'
+        '  "tags": [\n'
+        '    "language",\n'
+        '    "interpreter"\n'
+        "  ],\n"
+        '  "unicode": "你好 😀",\n'
+        '  "version": 0.3\n'
+        ":}\n"
+    ),
 }
 
 EXAMPLE_NAME = re.compile(r"^\d{2}_\d{2}_")

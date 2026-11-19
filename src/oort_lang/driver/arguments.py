@@ -18,6 +18,12 @@ def get_main_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument("input_file", nargs="?", help="Input filename")
+    parser.add_argument(
+        "script_args",
+        nargs="*",
+        metavar="ARG",
+        help="Arguments passed to the Oort program (os.args)",
+    )
     parser.add_argument("--version", action="version", version=f"Oort {__version__}")
     parser.add_argument(
         "-l",
@@ -73,6 +79,9 @@ def parse_main_args(
     args.logging_level = args.logging_level.upper()
 
     if args.cmd is not None and args.input_file is not None:
-        raise ValueError("Cannot specify both input file and command.")
+        # argparse cannot distinguish `-c CODE ARG...`: a positional after
+        # `-c` lands in `input_file`. Treat it (and the rest) as program args.
+        args.script_args.insert(0, args.input_file)
+        args.input_file = None
 
     return args

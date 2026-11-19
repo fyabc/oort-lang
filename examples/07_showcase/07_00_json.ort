@@ -1,0 +1,381 @@
+# A small JSON parser and pretty-printer.
+#
+# Usage:
+#   oort examples/07_showcase/07_00_json.ort [file.json]
+#
+# Without a file it parses an embedded sample. Errors are reported through
+# `JsonParser.error` (Oort has no user-level exceptions yet) and exit code 1.
+
+import "io"
+import "os"
+import "string"
+
+class JsonParser {
+    def __init__(text) {
+        this.text = text
+        this.pos = 0
+        this.length = len(text)
+        this.error = null
+    }
+
+    def fail(message) {
+        if this.error == null {
+            this.error = message + " at position " + str(this.pos)
+        }
+        null
+    }
+
+    def peek() {
+        if this.pos >= this.length: return null
+        this.text[this.pos]
+    }
+
+    def is_digit(c) {
+        c != null and c >= "0" and c <= "9"
+    }
+
+    def skip_space() {
+        while this.pos < this.length {
+            val c = this.text[this.pos]
+            if c == " " or c == "\n" or c == "\r" or c == "\t" {
+                this.pos = this.pos + 1
+            } else {
+                break
+            }
+        }
+    }
+
+    def parse() {
+        this.skip_space()
+        val value = this.parse_value()
+        if this.error != null: return null
+        this.skip_space()
+        if this.pos != this.length: return this.fail("trailing data")
+        value
+    }
+
+    def parse_value() {
+        this.skip_space()
+        val c = this.peek()
+        if c == null: return this.fail("unexpected end of input")
+        if c == "{": return this.parse_object()
+        if c == "[": return this.parse_array()
+        if c == "\"": return this.parse_string()
+        if c == "t": return this.parse_literal("true", true)
+        if c == "f": return this.parse_literal("false", false)
+        if c == "n": return this.parse_literal("null", null)
+        if c == "-" or this.is_digit(c): return this.parse_number()
+        this.fail("unexpected character '" + c + "'")
+    }
+
+    def parse_literal(word, value) {
+        val end = this.pos + len(word)
+        if end <= this.length and this.text[this.pos:end] == word {
+            this.pos = end
+            return value
+        }
+        this.fail("invalid literal")
+    }
+
+    def parse_array() {
+        this.pos = this.pos + 1
+        var result = []
+        this.skip_space()
+        if this.peek() == "]" {
+            this.pos = this.pos + 1
+            return result
+        }
+        while true {
+            val value = this.parse_value()
+            if this.error != null: return null
+            result = result + [value]
+            this.skip_space()
+            val c = this.peek()
+            if c == "," {
+                this.pos = this.pos + 1
+                this.skip_space()
+            } elif c == "]" {
+                this.pos = this.pos + 1
+                return result
+            } else {
+                return this.fail("expected ',' or ']'")
+            }
+        }
+    }
+
+    def parse_object() {
+        this.pos = this.pos + 1
+        var result = {:}
+        this.skip_space()
+        if this.peek() == "}" {
+            this.pos = this.pos + 1
+            return result
+        }
+        while true {
+            this.skip_space()
+            if this.peek() != "\"": return this.fail("expected object key")
+            val key = this.parse_string()
+            if this.error != null: return null
+            this.skip_space()
+            if this.peek() != ":": return this.fail("expected ':'")
+            this.pos = this.pos + 1
+            val value = this.parse_value()
+            if this.error != null: return null
+            result[key] = value
+            this.skip_space()
+            val c = this.peek()
+            if c == "," {
+                this.pos = this.pos + 1
+            } elif c == "}" {
+                this.pos = this.pos + 1
+                return result
+            } else {
+                return this.fail("expected ',' or '}'")
+            }
+        }
+    }
+
+    def parse_string() {
+        this.pos = this.pos + 1
+        var result = ""
+        while this.pos < this.length {
+            val c = this.text[this.pos]
+            this.pos = this.pos + 1
+            if c == "\"": return result
+            if c == "\\" {
+                if this.pos >= this.length: return this.fail("unterminated escape")
+                val escape = this.text[this.pos]
+                this.pos = this.pos + 1
+                if escape == "\"" {
+                    result = result + "\""
+                } elif escape == "\\" {
+                    result = result + "\\"
+                } elif escape == "/" {
+                    result = result + "/"
+                } elif escape == "b" {
+                    result = result + string.chr(8)
+                } elif escape == "f" {
+                    result = result + string.chr(12)
+                } elif escape == "n" {
+                    result = result + "\n"
+                } elif escape == "r" {
+                    result = result + "\r"
+                } elif escape == "t" {
+                    result = result + "\t"
+                } elif escape == "u" {
+                    val escaped = this.parse_unicode_escape()
+                    if this.error != null: return null
+                    result = result + escaped
+                } else {
+                    return this.fail("invalid escape '" + escape + "'")
+                }
+            } else {
+                if string.ord(c) < 32 {
+                    return this.fail("unescaped control character")
+                }
+                result = result + c
+            }
+        }
+        this.fail("unterminated string")
+    }
+
+    def parse_unicode_escape() {
+        val code = this.parse_hex4()
+        if code < 0: return ""
+        if code >= 0xD800 and code <= 0xDBFF {
+            if this.peek() != "\\" or this.pos + 1 >= this.length {
+                this.fail("unpaired high surrogate")
+                return ""
+            }
+            if this.text[this.pos + 1] != "u" {
+                this.fail("unpaired high surrogate")
+                return ""
+            }
+            this.pos = this.pos + 2
+            val low = this.parse_hex4()
+            if low < 0: return ""
+            if low < 0xDC00 or low > 0xDFFF {
+                this.fail("invalid low surrogate")
+                return ""
+            }
+            return string.chr(0x10000 + (code - 0xD800) * 0x400 + (low - 0xDC00))
+        }
+        if code >= 0xDC00 and code <= 0xDFFF {
+            this.fail("unpaired low surrogate")
+            return ""
+        }
+        string.chr(code)
+    }
+
+    def parse_hex4() {
+        var value = 0
+        var i = 0
+        while i < 4 {
+            if this.pos >= this.length {
+                this.fail("incomplete unicode escape")
+                return -1
+            }
+            val digit = this.hex_digit(this.text[this.pos])
+            if digit < 0 {
+                this.fail("invalid unicode escape")
+                return -1
+            }
+            this.pos = this.pos + 1
+            value = value * 16 + digit
+            i = i + 1
+        }
+        value
+    }
+
+    def hex_digit(c) {
+        val code = string.ord(c)
+        if code >= 48 and code <= 57: return code - 48
+        if code >= 97 and code <= 102: return code - 87
+        if code >= 65 and code <= 70: return code - 55
+        -1
+    }
+
+    def parse_number() {
+        val start = this.pos
+        if this.peek() == "-" {
+            this.pos = this.pos + 1
+        }
+        val first = this.peek()
+        if first == null: return this.fail("invalid number")
+        if first == "0" {
+            this.pos = this.pos + 1
+        } elif first >= "1" and first <= "9" {
+            this.pos = this.pos + 1
+            while this.is_digit(this.peek()) {
+                this.pos = this.pos + 1
+            }
+        } else {
+            return this.fail("invalid number")
+        }
+
+        var is_float = false
+        if this.peek() == "." {
+            is_float = true
+            this.pos = this.pos + 1
+            if not this.is_digit(this.peek()): return this.fail("invalid number")
+            while this.is_digit(this.peek()) {
+                this.pos = this.pos + 1
+            }
+        }
+
+        val exponent = this.peek()
+        if exponent == "e" or exponent == "E" {
+            is_float = true
+            this.pos = this.pos + 1
+            val sign = this.peek()
+            if sign == "+" or sign == "-" {
+                this.pos = this.pos + 1
+            }
+            if not this.is_digit(this.peek()): return this.fail("invalid number")
+            while this.is_digit(this.peek()) {
+                this.pos = this.pos + 1
+            }
+        }
+
+        val raw = this.text[start:this.pos]
+        if is_float: return float(raw)
+        int(raw)
+    }
+}
+
+def indent(depth) {
+    var result = ""
+    var i = 0
+    while i < depth {
+        result = result + "  "
+        i = i + 1
+    }
+    result
+}
+
+def hex4(code) {
+    val digits = "0123456789abcdef"
+    var result = ""
+    var value = code
+    var i = 0
+    while i < 4 {
+        result = digits[value % 16] + result
+        value = value // 16
+        i = i + 1
+    }
+    result
+}
+
+def quote(text) {
+    var result = "\""
+    for c in text {
+        if c == "\"" {
+            result = result + "\\\""
+        } elif c == "\\" {
+            result = result + "\\\\"
+        } elif c == "\n" {
+            result = result + "\\n"
+        } elif c == "\r" {
+            result = result + "\\r"
+        } elif c == "\t" {
+            result = result + "\\t"
+        } elif string.ord(c) < 32 {
+            result = result + "\\u" + hex4(string.ord(c))
+        } else {
+            result = result + c
+        }
+    }
+    result + "\""
+}
+
+def pretty(value, depth) {
+    if value == null: return "null"
+    val kind = type(value)
+    if kind == Bool {
+        if value == true: return "true"
+        return "false"
+    }
+    if kind == Int or kind == Float: return str(value)
+    if kind == String: return quote(value)
+    if kind == List {
+        if len(value) == 0: return "[]"
+        var parts = []
+        for item in value {
+            parts = parts + [indent(depth + 1) + pretty(item, depth + 1)]
+        }
+        return "[\n" + string.join(parts, ",\n") + "\n" + indent(depth) + "]"
+    }
+    if kind == Dict {
+        if len(value) == 0: return "{:}"
+        var parts = []
+        for key in sorted(value) {
+            parts = parts + [
+                indent(depth + 1) + quote(key) + ": " + pretty(value[key], depth + 1)
+            ]
+        }
+        return "{:\n" + string.join(parts, ",\n") + "\n" + indent(depth) + ":}"
+    }
+    "null"
+}
+
+val sample = r"""{
+  "name": "Oort",
+  "version": 0.3,
+  "tags": ["language", "interpreter"],
+  "active": true,
+  "owner": null,
+  "unicode": "你好 😀"
+}"""
+
+var source = sample
+if len(os.args) > 0 {
+    source = io.read_file(os.args[0])
+}
+
+val parser = JsonParser(source)
+val value = parser.parse()
+if parser.error != null {
+    print("JSON error: " + parser.error)
+    os.exit(1)
+}
+print(pretty(value, 0))

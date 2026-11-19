@@ -83,6 +83,10 @@ class Compiler:
         assert self.args.target == "eval", f"Invalid target {self.args.target}"
 
         interpreter = ASTInterpreter(self.error_handler)
+        interpreter.script_args = tuple(getattr(self.args, "script_args", ()) or ())
+        interpreter.script_path = (
+            str(input_info.module_path) if input_info.module_path is not None else None
+        )
         loader = self.make_module_loader(interpreter, input_info.module_dir)
         interpreter.module_loader = loader
         assert isinstance(ast, nodes.ModuleNode)

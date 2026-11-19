@@ -20,7 +20,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 迭代 | `__iter__` 返回 `(value, valid)` 迭代器；流式 `for`；内置 List/Tuple/Set/Dict/String 的原生 `__iter__`，`Iterator` 类型与手动迭代 |
 | 模块 | `.ort` 文件模块；`import "m" [as x]`、`from "m" import a, b as c`；相对/裸名解析、`-I` 搜索路径、规范路径缓存、急切初始化与循环诊断；模块命名空间只读、导入名可再导出；`math` / `string` 内置原生模块 |
 | 内建 | `print`、`clock`、`type`、`super`（仅 `super.method` / `super.__init__`）、`len`、`range`、`str`、`repr`、`int`、`float`、`bool`；集合助手 `map`、`filter`、`zip`、`enumerate`、`sorted` |
-| 标准库 | 原生模块 `math`（常量/数学函数）与 `string`（切分/连接/大小写/查找/替换）；裸名优先于同名文件，`./math` 可加载本地模块 |
+| 标准库 | 原生模块 `io`（UTF-8 整文件读写）、`math`（常量/数学函数）、`os`（参数、脚本路径、退出码）与 `string`（切分/连接/大小写/查找/替换/`ord`/`chr`）；裸名优先于同名文件，`./math` 等可加载本地模块 |
 
 ## 可解析但被拒绝
 

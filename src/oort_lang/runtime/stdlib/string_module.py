@@ -66,6 +66,21 @@ def _replace(text, old, new):
     return _text(text).replace(_text(old), _text(new))
 
 
+def _ord(text):
+    value = _text(text)
+    if len(value) != 1:
+        raise ValueError("string.ord() expects exactly one character")
+    return ord(value)
+
+
+def _chr(code):
+    if isinstance(code, bool) or not isinstance(code, int):
+        raise TypeError("string.chr() expects an Int code point")
+    if not 0 <= code <= 0x10FFFF or 0xD800 <= code <= 0xDFFF:
+        raise ValueError("string.chr() expects a Unicode scalar value")
+    return chr(code)
+
+
 _FUNCTIONS: dict[str, Callable] = {
     "split": _split,
     "join": _join,
@@ -78,6 +93,8 @@ _FUNCTIONS: dict[str, Callable] = {
     "endswith": _endswith,
     "find": _find,
     "replace": _replace,
+    "ord": _ord,
+    "chr": _chr,
 }
 
 

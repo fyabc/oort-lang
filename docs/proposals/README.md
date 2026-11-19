@@ -36,7 +36,7 @@
 | [0012](0012-standard-library.md) | 最小标准库与宿主边界 | Implemented |
 | [0013](0013-iterator-protocol.md) | 迭代器协议（`__iter__` + `(value, valid)`） | Implemented |
 | [0014](0014-extension-methods.md) | 扩展方法与扩展运算符（`def C.f`） | Implemented |
-| [0015](0015-minimal-io-and-process.md) | 最小 I/O、命令行参数与退出码 | Proposed |
+| [0015](0015-minimal-io-and-process.md) | 最小 I/O、命令行参数与退出码 | Implemented |
 
 ## 流程
 
@@ -74,6 +74,7 @@
 | 2026-11-20 | 标准库：集合助手为全局内建、急切返回 List、集合优先回调顺序；`sorted` 稳定并使用 Oort `<`；`math`/`string` 为封闭原生模块；`HostBridge`/HOST-VALUE-CONTEXT 宿主边界 | [OP 0012](0012-standard-library.md)（Implemented） |
 | 2026-11-20 | 迭代器：`__iter__()` 返回可调用迭代器，步进返回 `(value, valid)`；valid 为严格 Bool；内置容器实现同一协议，`for` 流式拉取 | [OP 0013](0013-iterator-protocol.md)（Implemented） |
 | 2026-11-20 | 扩展：`def C.f` / `def C.operator` 按词法作用域生效，成员/字段/类内运算符优先；作用域分层后按 MRO 具体度；导入直接激活、调用点歧义；扩展内允许 `super`（只查类成员） | [OP 0014](0014-extension-methods.md)（Implemented） |
+| 2026-11-20 | 真实程序支持：`io.read_file/write_file`（UTF-8 整文件，失败为运行时错误）；`os.args`（仅用户参数）、`os.script`、`os.exit`；`string.ord/chr` | [OP 0015](0015-minimal-io-and-process.md)（Implemented） |
 
 ## 设计原则（所有提案必须满足）
 

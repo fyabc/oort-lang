@@ -1,0 +1,12 @@
+{
+  "project": "Oort",
+  "version": 0.3,
+  "features": ["modules", "iterators", "extensions"],
+  "compiler": {
+    "host": "Python",
+    "frontend": "ANTLR + Pratt",
+    "runtime": "tree-walking"
+  },
+  "stable": false,
+  "unicode": "你好"
+}

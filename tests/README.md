@@ -90,6 +90,7 @@ REPL 按层次测试，不依赖手动输入：
 | 集合助手 | `unit/runtime/test_collection_builtins.py` |
 | `math` / `string` 模块 | `unit/runtime/test_math_string_modules.py` |
 | 原生标准库导入 | `unit/runtime/test_native_modules.py` |
+| `io` / `os` / `ord` / `chr` | `unit/runtime/test_io_os_modules.py` |
 | 模块路径解析 | `unit/runtime/test_module_resolution.py` |
 | 模块加载/缓存/循环 | `unit/runtime/test_modules.py` |
 | 类与继承 | `unit/runtime/test_classes.py` |
@@ -100,4 +101,5 @@ REPL 按层次测试，不依赖手动输入：
 | CLI | `integration/test_cli.py` |
 | REPL | `integration/test_repl.py` |
 | 示例程序 | `integration/test_examples.py` |
+| JSON showcase | `integration/test_json_example.py` |
 | 属性测试 | `property/test_properties.py`（`uv run --with hypothesis pytest tests/property`） |

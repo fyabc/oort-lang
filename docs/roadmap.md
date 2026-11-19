@@ -56,7 +56,9 @@ ANTLR 语法与 Pratt 表达式解析、AST、名称解析、树遍历解释器�
   导入激活、调用点歧义、继承与 `super`
   （[OP 0014](proposals/0014-extension-methods.md)）；
 - 文法去宿主化、token 后处理层与 REPL 分层重构
-  （[OP 0008](proposals/0008-lexer-postprocessing-and-repl.md)）。
+  （[OP 0008](proposals/0008-lexer-postprocessing-and-repl.md)）；
+- 最小 I/O、命令行参数、退出码与 `string.ord/chr`
+  （[OP 0015](proposals/0015-minimal-io-and-process.md)）。
 
 P1 已完成。后续打磨（P2）：
 

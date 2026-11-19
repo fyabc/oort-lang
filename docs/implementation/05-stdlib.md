@@ -42,8 +42,13 @@
 
 `runtime/stdlib/`：
 
+- `io_module.py`：UTF-8 整文件读写，HOST 模式；OSError/解码错误由解释器转成
+  `OortRuntimeError`；
 - `math_module.py`：常量与数学函数，HOST 模式，Bool/非数字被拒绝；
-- `string_module.py`：字符串函数，HOST 模式，显式类型检查；
+- `os_module.py`：`args`（List 值）、`script`（String/null）与 `exit`
+  （HOST 模式，抛 `SystemExit`）；参数来自 `ASTInterpreter.script_args` /
+  `script_path`，由 `Compiler` 从 CLI 注入；
+- `string_module.py`：字符串函数（含 `ord`/`chr`），HOST 模式，显式类型检查；
 - `__init__.py`：`native_module_factories(interpreter)` 返回惰性工厂。
 
 `ModuleLoader` 接收 `native_modules` 映射；`import_module` 在文件解析前检查
@@ -56,4 +61,6 @@
 - `test_collection_builtins.py`：五个助手的语义与错误；
 - `test_math_string_modules.py`：数学/字符串 API 与错误；
 - `test_native_modules.py`：导入、from-import、优先级、缓存；
-- `examples/05_stdlib/` 与 `benchmarks/test_stdlib.py`。
+- `test_io_os_modules.py`：文件读写、参数、退出码与 `ord`/`chr`；
+- `test_json_example.py`：JSON showcase 的文件输入与错误退出；
+- `examples/05_stdlib/`、`examples/07_showcase/` 与 `benchmarks/test_stdlib.py`。

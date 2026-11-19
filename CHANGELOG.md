@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   does not define; class and native operators always win.
 - Extension example under `examples/03_oop/03_02_extensions.ort` and
   `benchmarks/test_extensions.py`.
+- Minimal I/O and process support (OP 0015): `io.read_file` / `io.write_file`
+  for UTF-8 whole-file access, `os.args` / `os.script` / `os.exit`, and
+  `string.ord` / `string.chr`.
+- JSON parser/formatter showcase at `examples/07_showcase/07_00_json.ort`,
+  including `\uXXXX`/surrogate handling and a CLI file argument.
 
 ### Changed
 

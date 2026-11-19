@@ -1,7 +1,8 @@
 # 标准库
 
-> 本页描述 `oort-object` v1 的最小标准库（[OP 0012](../proposals/0012-standard-library.md)）。
-> 集合助手是全局内建；`math` 与 `string` 是封闭的宿主原生模块。
+> 本页描述 `oort-object` v1 的最小标准库（[OP 0012](../proposals/0012-standard-library.md)、
+> [OP 0015](../proposals/0015-minimal-io-and-process.md)）。
+> 集合助手是全局内建；`io`、`math`、`os`、`string` 是封闭的宿主原生模块。
 > 所有集合助手都是**急切**的：返回新的 List，不返回惰性迭代器。
 > 用户定义的可迭代对象遵循 [09-iterators.md](09-iterators.md)；助手会接受
 > 有限用户迭代器并立即 drain 成 List。
@@ -85,20 +86,64 @@ print(string.join(["a", "b"], "-"))    # a-b
 | `startswith(text, prefix)`、`endswith(text, suffix)` | 返回 Bool |
 | `find(text, needle)` | 返回首个下标，找不到为 -1 |
 | `replace(text, old, new)` | 替换全部出现 |
+| `ord(text)` | 单字符的 Unicode 码点（Int） |
+| `chr(code)` | Unicode 标量值对应的单字符 String |
 
 - 参数必须是 String（`join` 的 parts 必须是字符串 List/Tuple）；类型错误报
   `OortTypeError`，位置在调用点。
 - `join` 采用集合优先顺序，与 Go 的 `strings.Join(elems, sep)` 一致。
 
+## `io`
+
+```oort
+import "io"
+val text = io.read_file("data.json")
+io.write_file("copy.json", text)
+```
+
+| 函数 | 说明 |
+|------|------|
+| `read_file(path)` | 读取整个文件并按 UTF-8 解码，返回 String |
+| `write_file(path, text)` | 以 UTF-8 覆盖写入；父目录必须存在；返回 `null` |
+
+- 路径按当前工作目录解析；相对路径与脚本所在目录无关。
+- 文件不存在、权限不足、解码失败都在调用点报 `OortRuntimeError`。
+- 这是整文件、同步 API；没有文件句柄、流式读写或目录操作。
+
+## `os`
+
+```oort
+import "os"
+print(os.args)          # 用户参数，如 ["input.json"]
+print(os.script)        # 脚本路径；-c 与 REPL 为 null
+if len(os.args) != 1 {
+    os.exit(2)
+}
+```
+
+| 名称 | 类型/签名 | 说明 |
+|------|-----------|------|
+| `args` | List[String] | 脚本路径之后的用户参数 |
+| `script` | String 或 null | 入口脚本路径；`-c` / REPL 为 `null` |
+| `exit(code)` | `(Int) -> never` | 立即以给定状态码结束进程 |
+
+- `oort app.ort a b` → `os.args == ["a", "b"]`，`os.script` 是 `app.ort` 的
+  绝对路径。
+- `oort -c "..." a b` → `os.args == ["a", "b"]`，`os.script == null`。
+- REPL 中 `os.args == []`、`os.script == null`。
+- `exit` 接受 0–255；0 表示成功。它立即终止进程，不执行清理。
+- 模块是封闭原生的：`./os` / `./io` 可加载本地同名文件。
+
 ## 原生标准库模块
 
-- `import "math"`、`import "string"`、`from "math" import sqrt` 等工作方式与
-  普通模块一致；模块对象只读，重复导入返回同一对象。
+- `import "io"`、`import "math"`、`import "os"`、`import "string"`、
+  `from "math" import sqrt` 等工作方式与普通模块一致；模块对象只读，重复导入
+  返回同一对象。
 - 标准库名称是保留的**裸名**：`import "math"` 总是得到原生模块，即使项目里
   有 `math.ort`；要加载本地同名文件请写 `import "./math"`。
 - 带扩展名的 `import "math.ort"` 不匹配原生注册表，按普通文件解析。
-- 这是运行时内部的封闭注册表（目前只有 `math`、`string`），不是用户可用的
-  宿主模块或 FFI 机制；用户不能通过 `import` 加载 Python/C 模块。
+- 这是运行时内部的封闭注册表（目前为 `io`、`math`、`os`、`string`），不是
+  用户可用的宿主模块或 FFI 机制；用户不能通过 `import` 加载 Python/C 模块。
 
 ## 错误
 
