@@ -80,10 +80,27 @@ def process_tokens(tokens: Iterable[Token]) -> TokenizedInput:
 
         last_significant = token
 
+    # A line starting with `.` continues a method chain: the grammar accepts
+    # `atomExpr NEWLINE* DOT`, but the documented rule is that the newline is
+    # not part of the parser stream at all.
+    filtered: list[Token] = []
+    index = 0
+    while index < len(kept):
+        token = kept[index]
+        if token.type == OortLexer.NEWLINE:
+            next_index = index
+            while next_index < len(kept) and kept[next_index].type == OortLexer.NEWLINE:
+                next_index += 1
+            if next_index < len(kept) and kept[next_index].type == OortLexer.DOT:
+                index = next_index
+                continue
+        filtered.append(token)
+        index += 1
+
     incomplete = bool(stack) or (
         last_significant is not None and last_significant.type == OortLexer.LINE_ESCAPE
     )
-    return TokenizedInput(tokens=kept, bracket_depth=len(stack), incomplete=incomplete)
+    return TokenizedInput(tokens=filtered, bracket_depth=len(stack), incomplete=incomplete)
 
 
 def tokenize(lexer: Lexer) -> TokenizedInput:

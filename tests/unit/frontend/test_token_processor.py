@@ -95,6 +95,17 @@ def test_incomplete_detection(text: str, expected: bool):
     assert _process(text).incomplete is expected
 
 
+def test_newline_before_a_line_leading_dot_is_removed():
+    assert _kinds("value\n.method()") == [
+        "IDENTIFIER",
+        "DOT",
+        "IDENTIFIER",
+        "LPA",
+        "RPA",
+    ]
+    assert _kinds("value\n\n.method()")[0] == "IDENTIFIER"
+
+
 def test_line_escapes_are_removed_from_the_parser_stream():
     result = _process("1 + \\\n2\n")
     assert [token.text for token in result.tokens[:-1]] == ["1", "+", "2", "\n"]
