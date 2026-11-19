@@ -88,6 +88,7 @@ nav:
       - OP 0013 迭代器协议: proposals/0013-iterator-protocol.md
       - OP 0014 扩展方法与运算符: proposals/0014-extension-methods.md
       - OP 0015 最小 I/O 与进程: proposals/0015-minimal-io-and-process.md
+      - OP 0016 统一相等性: proposals/0016-equality-protocol.md
   - 设计:
       - 设计索引: design/00-INDEX.md
       - 运行时值表示: design/01-runtime-value-representation.md
