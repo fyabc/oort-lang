@@ -32,7 +32,7 @@ class FunctionResolverMixin(ASTVisitor):
     _unsupported: Callable[[str, nodes.ASTNode], None]
 
     # Implemented by ScopeResolverMixin, which comes first in the analyzer MRO.
-    def begin_scope(self):
+    def begin_scope(self, function: nodes.FunctionDef | None = None):
         raise NotImplementedError
 
     def end_scope(self):
@@ -189,7 +189,7 @@ class FunctionResolverMixin(ASTVisitor):
         else:
             self._current_decl = OutsideDeclType.FUNCTION
 
-        self.begin_scope()
+        self.begin_scope(function=node)
         # Anonymous parameters are synthesized by the AST builder and are not
         # user declarations, so they bypass the explicit-name check.
         for index in range(node.anonymous_count):

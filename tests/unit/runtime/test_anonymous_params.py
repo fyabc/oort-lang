@@ -38,6 +38,19 @@ def test_gap_in_indices_binds_all_arguments(run_source):
     assert out == "20\n"
 
 
+def test_explicit_lambda_still_captures_named_locals(run_source):
+    out = run_source(
+        """\
+def make() {
+    val offset = 3
+    do(x): x + offset
+}
+print(make()(4))
+"""
+    ).stdout
+    assert out == "7\n"
+
+
 def test_anonymous_parameters_scope_to_nearest_lambda(run_source):
     out = run_source(
         """\
@@ -55,6 +68,14 @@ print(inner(4))
         ("def f { $0 }\n", "Anonymous parameters are only allowed in lambdas."),
         ("do(x): $0\n", "cannot be combined with an explicit parameter list"),
         ("do(): $0\n", "cannot be combined with an explicit parameter list"),
+        (
+            "val f = do: $0 + (do(x): $0)(10)\n",
+            "cannot be combined with an explicit parameter list",
+        ),
+        (
+            "val f = do { val inner = do(x): $1\n inner }\n",
+            "cannot be combined with an explicit parameter list",
+        ),
         ("$0\n", "Anonymous parameters are only allowed inside a lambda."),
         ("var $0 = 1\n", "Anonymous parameter names cannot be declared explicitly."),
         ("def f($0): $0\n", "Anonymous parameter names cannot be declared explicitly."),

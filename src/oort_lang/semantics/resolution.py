@@ -18,8 +18,8 @@ class ScopeResolverMixin:
     input_info: InputInfo
     _current_func: nodes.FunctionDef | None
 
-    def begin_scope(self):
-        self.scopes.append(ScopeLayout())
+    def begin_scope(self, function: nodes.FunctionDef | None = None):
+        self.scopes.append(ScopeLayout(function))
 
     def end_scope(self):
         self.scopes.pop()
@@ -53,7 +53,12 @@ class ScopeResolverMixin:
 
     def resolve_local(self, node: nodes.ASTNode, name: str) -> Binding:
         """Resolve a name and attach its typed binding to the AST node."""
+        anonymous = anonymous_param_index(name) is not None
         for depth, scope in enumerate(reversed(self.scopes)):
+            # A lambda with an explicit parameter list is a barrier for `$n`:
+            # its body must not silently capture an outer anonymous parameter.
+            if anonymous and scope.function is not None and scope.function.has_explicit_param_list:
+                break
             binding = scope.resolve(name, depth)
             if binding is not None:
                 node.binding = binding

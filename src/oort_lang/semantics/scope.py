@@ -4,8 +4,12 @@
 
 import dataclasses
 from collections import UserDict
+from typing import TYPE_CHECKING
 
 from ..ast.binding import Binding
+
+if TYPE_CHECKING:
+    from ..ast import nodes
 
 
 @dataclasses.dataclass
@@ -17,7 +21,15 @@ class ScopeEntry:
 
 
 class ScopeLayout(UserDict[str, ScopeEntry]):
-    """Ordered slot layout for one lexical scope."""
+    """Ordered slot layout for one lexical scope.
+
+    `function` marks a scope introduced by a function/lambda definition; the
+    resolver uses it as a barrier for anonymous `$n` parameters.
+    """
+
+    def __init__(self, function: "nodes.FunctionDef | None" = None):
+        super().__init__()
+        self.function = function
 
     def __delitem__(self, key):
         raise TypeError("Cannot delete name from scope")
