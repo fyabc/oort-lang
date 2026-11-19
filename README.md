@@ -3,6 +3,8 @@
 [![CI](https://github.com/fyabc/oort-lang.py/actions/workflows/ci.yml/badge.svg)](https://github.com/fyabc/oort-lang.py/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+文档站点：<https://fyabc.github.io/oort-lang.py/>（规范、提案、设计与示例）
+
 ## 简介
 
 Oort 是一门用于**编译原理与编程语言设计学习**的玩具语言。Python 实现目前作为原型，

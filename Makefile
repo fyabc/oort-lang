@@ -1,4 +1,4 @@
-.PHONY: help install dev test benchmark benchmark-json lint format format-check type-check imports security audit deps dead-code property markdown quality clean build-grammar check
+.PHONY: help install dev test benchmark benchmark-json lint format format-check type-check imports security audit deps dead-code property markdown docs docs-serve quality clean build-grammar check
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -50,6 +50,12 @@ property: ## Run property-based tests
 
 markdown: ## Lint Markdown documents
 	npx --yes markdownlint-cli2@0.18.1 "README.md" "CONTRIBUTING.md" "docs/**/*.md" "benchmarks/README.md" "tests/README.md"
+
+docs: ## Build the documentation site
+	uv run --frozen --with "mkdocs-material>=9.6" mkdocs build --strict
+
+docs-serve: ## Serve the documentation site locally
+	uv run --frozen --with "mkdocs-material>=9.6" mkdocs serve
 
 quality: security audit deps dead-code property markdown ## Run optional quality/security gates
 

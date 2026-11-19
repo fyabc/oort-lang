@@ -64,7 +64,8 @@
 
 回归跟踪由 `.github/workflows/benchmark.yml` 在 `main` 上写入历史，并在
 较基线回退 150% 时告警。运行方式、基线与 profiling 工具
-（py-spy / Scalene / Memray）见 [`benchmarks/README.md`](../../benchmarks/README.md)。
+（py-spy / Scalene / Memray）见
+[`benchmarks/README.md`](https://github.com/fyabc/oort-lang.py/blob/main/benchmarks/README.md)。
 
 ### 扩展计划
 

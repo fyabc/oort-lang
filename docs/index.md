@@ -4,9 +4,10 @@
 
 ## 快速入门
 
-- [安装与使用](../README.md#安装与使用) — 安装 Oort 并运行第一个程序
-- [示例代码](../examples/) — 通过示例学习 Oort 语法
-- [VSCode 插件](../editors/vscode/README.md) — `.ort` 语法高亮与本地安装
+- [开始使用](getting-started.md) — 安装 Oort 并运行第一个程序
+- [示例代码](examples.md) — 通过示例学习 Oort 语法
+- [VSCode 插件](https://github.com/fyabc/oort-lang.py/tree/main/editors/vscode) —
+  `.ort` 语法高亮与本地安装
 
 ## 语言规范
 
@@ -52,5 +53,7 @@ Oort 的语言变更采用类 PEP/RFC 流程：
 
 ## 开发
 
-- [测试](../tests/) — 单元测试与集成测试的使用方式见 `tests/README.md`
-- [基准测试](../benchmarks/) — AST 解释器性能基线
+- [测试指南](https://github.com/fyabc/oort-lang.py/blob/main/tests/README.md) —
+  单元测试与集成测试的使用方式
+- [基准测试](https://github.com/fyabc/oort-lang.py/blob/main/benchmarks/README.md) —
+  AST 解释器性能基线

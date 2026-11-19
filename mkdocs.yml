@@ -1,0 +1,112 @@
+site_name: Oort
+site_description: Oort 编程语言文档：规范、提案、设计与实现笔记
+site_url: https://fyabc.github.io/oort-lang.py/
+repo_url: https://github.com/fyabc/oort-lang.py
+repo_name: fyabc/oort-lang.py
+edit_uri: edit/main/docs/
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: 切换到深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: 切换到浅色模式
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+      # Keep CJK characters in anchors so existing GitHub-style links such as
+      # `02-expressions.md#运算符重载` keep working on the site.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+nav:
+  - 首页: index.md
+  - 开始使用: getting-started.md
+  - 示例: examples.md
+  - 语言规范:
+      - 规范索引: spec/index.md
+      - 词法结构: spec/01-lexical.md
+      - 表达式: spec/02-expressions.md
+      - 语句: spec/03-statements.md
+      - 函数: spec/04-functions.md
+      - 类: spec/05-classes.md
+      - 实现状态: spec/06-conformance.md
+      - 模块与导入: spec/07-modules.md
+      - 标准库: spec/08-stdlib.md
+      - 迭代器: spec/09-iterators.md
+      - 扩展方法与运算符: spec/10-extensions.md
+  - 提案:
+      - 提案索引与流程: proposals/README.md
+      - OP 0000 模板: proposals/0000-template.md
+      - OP 0001 特性分层与方言: proposals/0001-feature-layers-and-dialects.md
+      - OP 0002 嵌入式 DSL: proposals/0002-dsl-support.md
+      - OP 0003 文法清理: proposals/0003-grammar-cleanup.md
+      - OP 0004 字节码 VM: proposals/0004-bytecode-vm.md
+      - OP 0005 类型系统: proposals/0005-type-system.md
+      - OP 0006 模块与导入: proposals/0006-modules-and-imports.md
+      - OP 0007 动态对象模型: proposals/0007-oort-object-object-model.md
+      - OP 0008 词法后处理与 REPL: proposals/0008-lexer-postprocessing-and-repl.md
+      - OP 0009 表达式与表面清理: proposals/0009-expression-and-surface-cleanup.md
+      - OP 0010 Token 与匿名参数: proposals/0010-token-responsibilities-and-anonymous-parameters.md
+      - OP 0011 参数绑定: proposals/0011-parameter-binding.md
+      - OP 0012 标准库与宿主边界: proposals/0012-standard-library.md
+      - OP 0013 迭代器协议: proposals/0013-iterator-protocol.md
+      - OP 0014 扩展方法与运算符: proposals/0014-extension-methods.md
+  - 设计:
+      - 设计索引: design/00-INDEX.md
+      - 运行时值表示: design/01-runtime-value-representation.md
+      - 字节码 VM 设计: design/02-bytecode-vm-design.md
+      - 类型系统设计: design/03-type-system-design.md
+      - 类与对象模型: design/04-class-object-model.md
+      - 宏系统设计: design/05-macro-system-design.md
+      - 语言语法设计: design/06-language-syntax-design.md
+      - 并发与 ABI: design/07-concurrency-abi-design.md
+      - 性能基准: design/08-performance-benchmarking.md
+      - 版本命名: design/09-version-naming.md
+      - 范畴论笔记: design/10-category-theory-notes.md
+      - 2025 研究: design/11-latest-research-2025.md
+      - 宿主边界: design/12-host-boundary.md
+  - 实现:
+      - 实现笔记: implementation/index.md
+      - 参考资料: implementation/00-references.md
+      - 语法设计: implementation/01-syntax-design.md
+      - 解析器: implementation/02-parser.md
+      - 解释器: implementation/03-interpreter.md
+      - 类系统: implementation/04-class-system.md
+      - 标准库与宿主边界: implementation/05-stdlib.md
+      - 迭代器: implementation/06-iterators.md
+      - 扩展方法: implementation/07-extensions.md
+  - 路线图: roadmap.md

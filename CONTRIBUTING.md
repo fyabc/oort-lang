@@ -24,6 +24,13 @@ python scripts/build_grammar.py   # or: make build-grammar
 
 Do not hand-edit files in `src/oort_lang/parser/grammar/`; they are generated.
 
+The documentation site is built with MkDocs Material:
+
+```bash
+make docs-serve   # preview at http://127.0.0.1:8000/
+make docs         # strict build, same as CI
+```
+
 ## Where things live
 
 | Path | What |
@@ -31,6 +38,7 @@ Do not hand-edit files in `src/oort_lang/parser/grammar/`; they are generated.
 | `docs/spec/` | Normative language reference (must match the implementation) |
 | `docs/proposals/` | PEP/RFC-style design proposals |
 | `docs/implementation/` | Compiler implementation notes |
+| `mkdocs.yml` | Documentation site navigation and theme configuration |
 | `src/oort_lang/source/` | Source text, positions and input abstractions |
 | `src/oort_lang/diagnostics/` | Exceptions, error handler and ANTLR error listener |
 | `src/oort_lang/ast/` | AST nodes, visitor, typed bindings and printer |

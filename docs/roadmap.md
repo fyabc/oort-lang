@@ -89,7 +89,7 @@ LLVM IR、静态模块单态化、GC/ARC 选择，以及关键路径的 Rust 重
 
 - **语言变更**：先写 `docs/proposals/`，再更新 `docs/spec/` 与测试。
 - **公开进度**：本文件保持高层阶段与目标；已完成项记录在
-  [CHANGELOG](../CHANGELOG.md)。
+  [CHANGELOG](https://github.com/fyabc/oort-lang.py/blob/main/CHANGELOG.md)。
 - **任务级事项**：GitHub issues + milestones。
 - **日常决策与未合并工作**：维护在私有工作台账（不随仓库发布）。
 
