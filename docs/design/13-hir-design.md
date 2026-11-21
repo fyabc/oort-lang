@@ -1,11 +1,11 @@
 # HIR 设计（共享后端）
 
-> **状态**：HIR、32 位字节码编码/反汇编与寄存器 VM 第一切片已实现，当前子集
-> 包含 lambda/闭包、一等函数值、完整参数绑定、动态/静态类、模块导入与
-> `oort-core` 的 ADT/match（`src/oort_lang/hir/`、`bytecode/`、
-> `runtime/bytecode_vm.py`）。
-> `-t eval` 仍是默认；差分测试已覆盖当前 HIR 子集，`examples/08_core` 全部
-> 可在 `-t vm` 下运行。字节码 ISA 参考
+> **状态**：HIR、32 位字节码编码/反汇编与寄存器 VM 已实现，当前子集包含
+> lambda/闭包、一等函数值、完整参数绑定、动态/静态类、模块导入与 `oort-core` 的
+> ADT/match（`src/oort_lang/hir/`、`bytecode/`、`runtime/bytecode_vm.py`）。
+> **`-t vm` 是文件/`-c` 的默认后端**，`-t eval` 为回退（REPL 仍用 eval）；差分测试
+> 已覆盖当前 HIR 子集，`examples/08_core` 全部可在 `-t vm` 下运行。规范性行为见
+> [spec 12](../spec/12-hir-bytecode-vm.md)；字节码 ISA 长期目标参考
 > [02-bytecode-vm-design.md](02-bytecode-vm-design.md)，重实现约束见
 > [OP 0004](../proposals/0004-bytecode-vm.md)。
 
@@ -27,13 +27,14 @@ HIR 是 AST 与字节码之间的**线性寄存器中间表示**：
 
 | 文档 | 角色 |
 |---|---|
+| [spec 12](../spec/12-hir-bytecode-vm.md) | **正式规范**：当前 `-t vm`/`-t bc` 实际接受/拒绝的行为 |
 | 本文（13） | **当前实现参考**：已支持子集、HIR 指令、编码约定、VM 行为 |
 | [02-bytecode-vm-design.md](02-bytecode-vm-design.md) | 长期设计目标：ISA 备选、寄存器分配、JIT 路线；未实现部分不作为规范 |
 | [OP 0004](../proposals/0004-bytecode-vm.md) | 决策与实现进展记录（为什么做、做到哪一步） |
 | [08-performance-benchmarking.md](08-performance-benchmarking.md) | 基准方法与 VM/解释器对比 |
 
-正式的 HIR/字节码/VM 规范尚未编写；当前以本文、`opcodes.py` 与差分测试为
-事实来源。等默认后端/优化方向稳定后再提炼为 `docs/spec` 下的规范性文档。
+正式规范已提炼为 [spec 12](../spec/12-hir-bytecode-vm.md)（默认后端切 VM、优化
+方向稳定后）；本文保留为实现参考，事实来源仍锚定 `opcodes.py` 与差分测试。
 
 ## 2. 第一切片范围
 
@@ -232,8 +233,8 @@ dump 用于调试。
   超过 256 报 `UnsupportedSyntax`。
 - 每个机器字对应一条 line_table 记录；`Proto` 携带参数、寄存器数、常量池、
   指令字与行号表。
-- `-t bc` 打印反汇编（文件名保持 `-t ast`/`-t astm` 的调试风格）；`eval`
-  仍是默认执行后端。
+- `-t bc` 打印反汇编（文件名保持 `-t ast`/`-t astm` 的调试风格）；`vm`
+  是文件/`-c` 的默认执行后端，`eval` 为回退。
 
 ## 8. 寄存器 VM（第一切片）
 
@@ -268,12 +269,14 @@ dump 用于调试。
   使 `__init__` 能初始化只读 `val` 槽。
 - Int 算术/比较和一元运算有快速路径；其余类型回退到解释器的
   `apply_binary`/`apply_unary`，除法零仍产生带位置的 `OortRuntimeError`。
-- `-t vm` 执行当前 HIR 子集；`-t eval` 保持默认，未支持的构造由 HIR 明确拒绝。
+- `-t vm` 执行当前 HIR 子集，是文件/`-c` 的默认后端；`-t eval` 为回退。未支持的
+  构造由 HIR 明确拒绝。
 
 ## 9. 下一步
 
 1. 完成剩余显式拒绝项：调用侧 `*`/`**`、`match` arm 内控制流、类体成员默认值等。
 2. 扩大差分/错误路径测试，覆盖更多动态示例与边界组合。
-3. 评估把 CLI 默认后端切到 VM（先做性能与兼容性基线）。
-4. 继续优化：寄存器复用、常量内联、当前帧内联、类型特化；用基准证明。
-5. HIR/VM 稳定后再补正式规范（参考 Lua/CPython/JVM）。
+3. ~~评估把 CLI 默认后端切到 VM~~（已完成，fib/loop 稳定 ≥2×，见 design 08）。
+4. Python VM 微优化已冻结（寄存器复用/帧内联/类型特化降级为可选）；真性能留给
+   typed IR/VM 与 Rust 后端（design 02）。
+5. ~~HIR/VM 稳定后再补正式规范~~（已提炼为 [spec 12](../spec/12-hir-bytecode-vm.md)）。

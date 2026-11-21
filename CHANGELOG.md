@@ -65,6 +65,10 @@
 
 ### 文档
 
+- 新增 [spec 12](docs/spec/12-hir-bytecode-vm.md)：HIR、32 位字节码编码与寄存器 VM
+  的正式规范（类型擦除后端；指令集、调用约定、闭包/cell、显式拒绝、差分一致性）。
+  收口 design 13 预留的「正式规范」项；同步修正 design 13/02、spec index/11 中
+  「`-t eval` 仍是默认」的过时表述（默认已是 VM）。
 - `oort-lang 0.4.0` 已发布到 PyPI；README 增加 PyPI 徽章与 `pip install oort-lang`
   安装说明，Getting Started 补充 PyPI 与源码安装路径，并链接到发布流程文档。
 

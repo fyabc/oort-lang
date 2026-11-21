@@ -1,9 +1,10 @@
 # Oort 字节码虚拟机设计
 
 > **状态：设计目标；第一切片已实现。** 当前实际子集、指令语义、opcode 编号
-> 与编码以 [HIR 设计](13-hir-design.md) 和 `src/oort_lang/bytecode/opcodes.py`
-> 为准。本文保留字节码 ISA、寄存器分配、闭包模型、错误定位与 JIT 的长期
-> 设计讨论；部分 opcode 名称是目标方案，尚未与当前实现一一对应。
+> 与编码的正式规范见 [spec 12](../spec/12-hir-bytecode-vm.md)，实现参考见
+> [HIR 设计](13-hir-design.md) 与 `src/oort_lang/bytecode/opcodes.py`。本文保留
+> 字节码 ISA、寄存器分配、闭包模型、错误定位与 JIT 的长期设计讨论；部分 opcode
+> 名称是目标方案，尚未与当前实现一一对应。
 > 早期寄存器 VM 原型曾因“未实现节点静默穿透、产生错误结果”整体移除，教训见
 > [提案 0004](../proposals/0004-bytecode-vm.md)。
 

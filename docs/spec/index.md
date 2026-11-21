@@ -27,11 +27,13 @@
 | [09-iterators.md](09-iterators.md) | `__iter__` 协议、流式 `for`、内置迭代器 |
 | [10-extensions.md](10-extensions.md) | 扩展方法/运算符、作用域、导入、`super` |
 | [11-core-probe.md](11-core-probe.md) | `oort-core` 薄探针：Int/Float/Bool/String、集合/循环、静态类/槽、函数、Unit、单态 ADT/`match`、拒绝清单 |
+| [12-hir-bytecode-vm.md](12-hir-bytecode-vm.md) | 共享后端：HIR、32 位字节码编码、寄存器 VM 语义与调用约定、显式拒绝 |
 | [06-conformance.md](06-conformance.md) | 实现状态矩阵与诊断规则 |
 
 ## 术语
 
-- **动态方言**：默认的 `oort-object`，树遍历执行（`oort -t eval`），不做类型检查。
+- **动态方言**：默认的 `oort-object`，不做类型检查。文件/`-c` 默认经寄存器 VM
+  执行（`-t vm`，见 [12](12-hir-bytecode-vm.md)），`-t eval` 树遍历为回退。
 - **静态方言**：`oort-core`，当前只实现薄探针子集；类型标注在 `oort-core` 中检查。
 - **语义分析**：`Pass1Analyzer` 负责名称解析、作用域检查和显式拒绝未实现特性；
   `oort-core` 还运行独立的 `CoreTypeChecker`。

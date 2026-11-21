@@ -22,7 +22,7 @@
 | [10-category-theory-notes.md](10-category-theory-notes.md) | 范畴论在编译器中的应用笔记 |
 | [11-latest-research-2025.md](11-latest-research-2025.md) | 2025–2026 年语言设计前沿调研 |
 | [12-host-boundary.md](12-host-boundary.md) | 宿主边界、HostBridge、原生调用模式与 Rust 迁移 |
-| [13-hir-design.md](13-hir-design.md) | 当前 HIR / 32 位字节码 / 寄存器 VM 实现：指令、子集范围、调用约定与下一步 |
+| [13-hir-design.md](13-hir-design.md) | 当前 HIR / 32 位字节码 / 寄存器 VM 实现参考；正式规范见 [spec 12](../spec/12-hir-bytecode-vm.md) |
 | [14-core-typechecking.md](14-core-typechecking.md) | oort-core 已实现的双向检查与局部推断算法（含函数返回推断）；03 是远期目标 |
 
 ## 使用注意
