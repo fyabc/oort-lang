@@ -43,9 +43,20 @@ make docs         # strict build, same as CI
 | `src/oort_lang/ast/` | AST 节点、visitor、类型化绑定与打印器 |
 | `src/oort_lang/parser/` | 文法、Pratt 解析器与 AST 构建器 |
 | `src/oort_lang/semantics/` | 名称解析与语义检查 |
-| `src/oort_lang/runtime/` | 树遍历运行时与对象模型 |
+| `src/oort_lang/hir/` | 线性寄存器中间表示与 AST 降低 |
+| `src/oort_lang/bytecode/` | 32 位字节码编码、编译与反汇编 |
+| `src/oort_lang/runtime/` | 树遍历解释器、字节码 VM 与对象模型 |
 | `src/oort_lang/driver/` | 编译器、REPL 与 CLI 入口 |
 | `tests/unit/`, `tests/integration/` | 单元测试、CLI/REPL/示例测试 |
+
+### 结构同步清单
+
+新增 `src/oort_lang/` 顶层包或测试子目录时，以下各处会漂移，需同步更新：
+
+- `README.md` 的目录结构；
+- 本文件「各部分的位置」表；
+- `pyproject.toml` 的 `[tool.importlinter]` layers（必要时补 `ignore_imports` 边）；
+- `tests/README.md` 的覆盖范围表。
 
 ## 语言变更规则
 

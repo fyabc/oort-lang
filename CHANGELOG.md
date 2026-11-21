@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+### 修复
+
+- 词法错误（如未闭合的字符串 `'1`）现在转换为带位置与源码行的 Oort 诊断
+  （`Invalid token`）并以非零码退出；此前 ANTLR 词法错误直接透出到 stderr，
+  且程序可能以退出码 0 静默"成功"。
+
+### 工程化
+
+- import-linter 分层契约纳入 `hir`/`bytecode`（driver > bytecode > hir >
+  runtime|semantics > parser > ast|diagnostics > source；VM 执行器到
+  bytecode 的两条边显式豁免）。
+- README 与 CONTRIBUTING 的目录结构同步补上 `hir/`、`bytecode/`；新增
+  AGENTS.md 与「结构同步清单」，防止新顶层包造成文档/契约漂移。
+- 新增 `scripts/profile_run.py`：单程序 cProfile 热函数报告与计时
+  （`-t eval|vm`、`--repeat`、`--sort`）。
+
 ### 文档
 
 - `oort-lang 0.4.0` 已发布到 PyPI；README 增加 PyPI 徽章与 `pip install oort-lang`

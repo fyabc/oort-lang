@@ -83,6 +83,9 @@ make 等价目标：`benchmark-json`、`benchmark-reference-json`、
 基准告诉我们*是否*回退；profiler 告诉我们*在哪里*回退。
 
 ```bash
+# 单程序热函数（cProfile，默认只看 oort_lang 帧；--repeat 计时）
+uv run --frozen python scripts/profile_run.py -c 'fib(18)' -t vm --top 15
+
 # 宏基准套件的采样 profile
 uvx py-spy record -o profile.svg -- uv run pytest benchmarks/test_macro.py -q
 

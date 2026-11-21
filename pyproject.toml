@@ -216,13 +216,21 @@ name = "Layered architecture"
 type = "layers"
 layers = [
     "oort_lang.driver",
+    "oort_lang.bytecode",
+    "oort_lang.hir",
     "oort_lang.runtime | oort_lang.semantics",
     "oort_lang.parser",
     "oort_lang.ast | oort_lang.diagnostics",
     "oort_lang.source",
 ]
+# `hir`/`bytecode` reuse the runtime signature specs (they sit above the
+# runtime layer), while the VM executor consumes compiled bytecode modules.
 # Annotation-only import for the cached call signature.
-ignore_imports = ["oort_lang.ast.nodes.function_def -> oort_lang.runtime.signature"]
+ignore_imports = [
+    "oort_lang.ast.nodes.function_def -> oort_lang.runtime.signature",
+    "oort_lang.runtime.bytecode_vm -> oort_lang.bytecode",
+    "oort_lang.runtime.bytecode_vm -> oort_lang.bytecode.opcodes",
+]
 
 [tool.bandit]
 exclude_dirs = ["src/oort_lang/parser/grammar"]

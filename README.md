@@ -177,7 +177,9 @@ src/oort_lang/
 ├── parser/           # 语法、Pratt 解析器与 AST 构建
 │   └── grammar/      # ANTLR 生成的词法/语法分析器（勿手改）
 ├── semantics/        # 名字解析与语义检查
-├── runtime/          # 树遍历解释器、对象模型、内建
+├── hir/              # 线性寄存器中间表示与 AST 降低
+├── bytecode/         # 32 位字节码编码、编译与反汇编
+├── runtime/          # 树遍历解释器、字节码 VM、对象模型、内建
 └── driver/           # 编译器、REPL 与命令行入口
 grammars/Oort.g4      # 语法定义
 tests/                # 单元测试与集成测试
