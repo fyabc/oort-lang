@@ -88,6 +88,52 @@ def test_lexer_error_reports_oort_diagnostic(monkeypatch, caplog, source, messag
     assert "<string>:1:" in caplog.text
 
 
+@pytest.mark.parametrize(
+    ("source", "message", "position"),
+    [
+        ("{: '1':", "'{:' was never closed", "<string>:1:1:"),
+        ("(1 + 2", "'(' was never closed", "<string>:1:1:"),
+        ("[1, 2", "'[' was never closed", "<string>:1:1:"),
+        ("if true { print(1)", "'{' was never closed", "<string>:1:9:"),
+        ("def f( {}", "'(' was never closed", "<string>:1:6:"),
+        ("]", "Unmatched ']'", "<string>:1:1:"),
+        ("}", "Unmatched '}'", "<string>:1:1:"),
+        (")", "Unmatched ')'", "<string>:1:1:"),
+    ],
+)
+def test_delimiter_error_points_at_the_bracket(monkeypatch, caplog, source, message, position):
+    # Broken bracket pairs must point at the bracket itself (Python-style
+    # "'X' was never closed" / "Unmatched 'X'"), not wherever the parser
+    # happened to give up.
+    assert _run_cli(monkeypatch, ["-c", source]) != 0
+    assert f"OortSyntaxError: {message}" in caplog.text
+    assert position in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("source", "hint"),
+    [
+        ("val _ = {1, 2}", "Did you mean a Set literal '{. item, ... .}'?"),
+        ("val _ = {1: 2}", "Did you mean a Dict literal '{: key: value :}'?"),
+        ("val _ = {1: 2, 3: 4}", "Did you mean a Dict literal '{: key: value :}'?"),
+    ],
+)
+def test_brace_literal_hint(monkeypatch, caplog, source, hint):
+    # Python habits (`{1, 2}` / `{1: 2}`) parse as code blocks; the parser
+    # error alone is confusing, so a warning suggests Oort's delimiters.
+    assert _run_cli(monkeypatch, ["-c", source]) != 0
+    assert "OortSyntaxWarning" in caplog.text
+    assert hint in caplog.text
+
+
+def test_brace_literal_hint_not_fired_for_code_blocks(monkeypatch, caplog):
+    # A one-line block wrapping a call (commas nested in parentheses) parses
+    # fine and must stay silent; statement keywords are not literal bodies.
+    assert _run_cli(monkeypatch, ["-c", "def g(a, b) { a }\nval _ = { g(1, 2) }"]) == 0
+    assert _run_cli(monkeypatch, ["-c", "val x = 1\nif true { print(x) }"]) == 0
+    assert "OortSyntaxWarning" not in caplog.text
+
+
 def test_print_ast_with_metadata(monkeypatch, capsys):
     assert _run_cli(monkeypatch, ["-t", "astm", "-c", "print(1)"]) == 0
     out = capsys.readouterr().out
@@ -277,7 +323,10 @@ def test_repl_empty_piped_input_exits_zero():
 def test_repl_incomplete_input_at_eof_reports_syntax_error():
     proc = _run_repl_subprocess("print(\n")
     assert proc.returncode == 0
-    assert "Invalid syntax" in proc.stdout
+    # The console wraps the message mid-phrase; the tail survives on one line.
+    assert "OortSyntaxError" in proc.stdout
+    assert "was never closed" in proc.stdout
+    assert "print(" in proc.stdout
     assert "Traceback" not in proc.stdout
     assert "Traceback" not in proc.stderr
 

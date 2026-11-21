@@ -13,7 +13,9 @@ Rules, matching the historical lexer behavior:
 - line escapes (``\\`` + newline) are removed for the parser and mark a
   trailing escape as incomplete input;
 - unmatched closing brackets are passed through unchanged so the parser
-  reports a normal syntax error instead of the lexer crashing.
+  reports a normal syntax error instead of the lexer crashing; both they and
+  unclosed opening brackets are recorded so diagnostics can point at the
+  bracket instead of wherever the parser gave up.
 """
 
 from __future__ import annotations
@@ -46,11 +48,14 @@ class TokenizedInput:
     tokens: list[Token]
     bracket_depth: int
     incomplete: bool
+    unclosed_openers: tuple[Token, ...] = ()
+    unmatched_closers: tuple[Token, ...] = ()
 
 
 def process_tokens(tokens: Iterable[Token]) -> TokenizedInput:
     """Filter newlines/line escapes according to bracket nesting."""
-    stack: list[int] = []
+    stack: list[Token] = []
+    unmatched_closers: list[Token] = []
     kept: list[Token] = []
     last_significant: Token | None = None
 
@@ -67,16 +72,18 @@ def process_tokens(tokens: Iterable[Token]) -> TokenizedInput:
             last_significant = token
             continue
 
-        if token_type == OortLexer.NEWLINE and stack and stack[-1] != OortLexer.LBC:
+        if token_type == OortLexer.NEWLINE and stack and stack[-1].type != OortLexer.LBC:
             continue
 
         kept.append(token)
 
         if token_type in _OPEN_TO_CLOSE:
-            stack.append(token_type)
+            stack.append(token)
         elif token_type in _CLOSERS:
-            if stack and _OPEN_TO_CLOSE[stack[-1]] == token_type:
+            if stack and _OPEN_TO_CLOSE[stack[-1].type] == token_type:
                 stack.pop()
+            else:
+                unmatched_closers.append(token)
 
         last_significant = token
 
@@ -100,7 +107,13 @@ def process_tokens(tokens: Iterable[Token]) -> TokenizedInput:
     incomplete = bool(stack) or (
         last_significant is not None and last_significant.type == OortLexer.LINE_ESCAPE
     )
-    return TokenizedInput(tokens=filtered, bracket_depth=len(stack), incomplete=incomplete)
+    return TokenizedInput(
+        tokens=filtered,
+        bracket_depth=len(stack),
+        incomplete=incomplete,
+        unclosed_openers=tuple(stack),
+        unmatched_closers=tuple(unmatched_closers),
+    )
 
 
 def tokenize(lexer: Lexer) -> TokenizedInput:

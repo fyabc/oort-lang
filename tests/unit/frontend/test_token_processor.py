@@ -110,3 +110,22 @@ def test_line_escapes_are_removed_from_the_parser_stream():
     result = _process("1 + \\\n2\n")
     assert [token.text for token in result.tokens[:-1]] == ["1", "+", "2", "\n"]
     assert result.tokens[-1].type == Token.EOF
+
+
+@pytest.mark.parametrize(
+    ("text", "unclosed", "unmatched"),
+    [
+        ("(1 + 2\n", ["("], []),
+        ("{: 'a': 1\n", ["{:"], []),
+        ("if true { print(1)\n", ["{"], []),
+        ("[1, (2\n", ["[", "("], []),
+        ("]\n", [], ["]"]),
+        ("1 ) 2\n", [], [")"]),
+        ("(]\n", ["("], ["]"]),
+        ("(1)\n[2]\n", [], []),
+    ],
+)
+def test_delimiter_tracking(text: str, unclosed: list[str], unmatched: list[str]):
+    result = _process(text)
+    assert [token.text for token in result.unclosed_openers] == unclosed
+    assert [token.text for token in result.unmatched_closers] == unmatched

@@ -27,6 +27,7 @@ from ..source.source_position import SourcePosition
 if TYPE_CHECKING:
     from antlr4 import Parser
 
+    from ..parser.token_processor import TokenizedInput
     from ..runtime.objects import OortObject
     from .compiler import Compiler
 
@@ -83,8 +84,8 @@ class ReplSession:
         """Parse a still-incomplete buffer at EOF so diagnostics are not lost."""
         if not self._pending:
             return None
-        parser, _ = self.compiler.prepare_parser(self.input_info)
-        return self._submit(parser)
+        parser, tokenized = self.compiler.prepare_parser(self.input_info)
+        return self._submit(parser, tokenized=tokenized)
 
     def feed_line(self, line: str) -> ReplResult:
         if not self._pending and not line.strip():
@@ -99,7 +100,7 @@ class ReplSession:
             return ReplResult(ReplAction.CONTINUE)
         return self._submit(parser)
 
-    def _submit(self, parser: Parser) -> ReplResult:
+    def _submit(self, parser: Parser, tokenized: TokenizedInput | None = None) -> ReplResult:
         directive = parse_lang_directive(self.input_info.get_source_text())
         if directive.has_directive:
             message = directive.error or (
@@ -122,6 +123,7 @@ class ReplSession:
             dialect=DEFAULT_DIALECT,
             exit_on_error=False,
             summary=False,
+            tokenized=tokenized,
         )
         if ast is not None:
             analyzer = self.compiler.make_semantic_analyzer(self.input_info, DEFAULT_DIALECT)

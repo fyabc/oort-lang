@@ -8,11 +8,19 @@
 
 ### 修复
 
-- 词法错误（如未闭合的字符串 `'1`）现在转换为带位置与源码行的 Oort 诊断
-  并以非零码退出；此前 ANTLR 词法错误直接透出到 stderr，且程序可能以
-  退出码 0 静默"成功"。消息按类别命名（对齐 Python/javac 惯例）：
-  `Unterminated string literal`、`Unterminated triple-quoted string
-  literal`、`Invalid character '\\` (U+005C)`；兜底仍为 `Invalid token`。
+- 诊断消息分类与定位（OP 0020，方法论对齐 Python 3.10+）：
+  - 词法错误（如未闭合的字符串 `'1`）转换为带位置与源码行的 Oort 诊断
+    并以非零码退出；此前 ANTLR 词法错误直接透出到 stderr，且程序可能以
+    退出码 0 静默"成功"。消息按类别命名：
+    `Unterminated string literal`、`Unterminated triple-quoted string
+    literal`、`Invalid character 'x' (U+XXXX)`（Python 风格码点）；
+  - 定界符错误指向根因而非解析器放弃处：`{: '1':` 报
+    `'{:' was never closed`（指向开括号），`]` 报 `Unmatched ']'`；
+    级联解析错误被替换为该单条诊断；REPL 的未闭合判定与 EOF 诊断同步
+    受益。
+  - Python 习惯的 `{1, 2}` / `{1: 2}` 在解析失败时附带
+    `Did you mean a Set/Dict literal …?` 警告（定向 did-you-mean），
+    指向 Oort 的 `{. … .}` / `{: … :}` 定界符。
 
 ### 工程化
 

@@ -7,12 +7,12 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from antlr4 import CommonTokenStream
+from antlr4 import CommonTokenStream, Token
 from antlr4.ListTokenSource import ListTokenSource
 
 from ..ast import nodes
 from ..ast.printer import ASTPrinter
-from ..diagnostics import OortException, OortSyntaxError, TypeCheckError
+from ..diagnostics import OortException, OortSyntaxError, OortSyntaxWarning, TypeCheckError
 from ..diagnostics.error_handler import CompilerErrorHandler
 from ..diagnostics.error_listener import OortErrorListener
 from ..diagnostics.runtime_errors import OortImportError
@@ -49,6 +49,30 @@ class CompilerError(Exception):
     pass
 
 
+# Tokens that start statements inside a code block; a `{` followed by one of
+# them is control flow, not a mistyped collection literal.
+_STATEMENT_START_TOKENS = frozenset(
+    token_type
+    for name in (
+        "VAR",
+        "VAL",
+        "DEF",
+        "CLASS",
+        "ENUM",
+        "MATCH",
+        "IF",
+        "FOR",
+        "WHILE",
+        "RETURN",
+        "BREAK",
+        "CONTINUE",
+        "IMPORT",
+        "FROM",
+    )
+    if (token_type := getattr(OortLexer, name, None)) is not None
+)
+
+
 @dataclasses.dataclass(frozen=True)
 class CompiledUnit:
     """A compiled module plus the static interface of an `oort-core` module."""
@@ -81,8 +105,8 @@ class Compiler:
         dialect = self._resolve_dialect(input_info)
         assert dialect is not None
 
-        parser = self._build_parser(input_info)
-        ast = self.build_ast(parser, input_info, dialect=dialect)
+        parser, tokenized = self.prepare_parser(input_info)
+        ast = self.build_ast(parser, input_info, dialect=dialect, tokenized=tokenized)
         if not ast:
             raise CompilerError()
 
@@ -193,7 +217,7 @@ class Compiler:
         if dialect is None:
             return None
 
-        parser = self._build_parser(input_info)
+        parser, tokenized = self.prepare_parser(input_info)
         ast = self.build_ast(
             parser,
             input_info,
@@ -201,6 +225,7 @@ class Compiler:
             exit_on_error=False,
             summary=False,
             report_errors=False,
+            tokenized=tokenized,
         )
         if ast is None or self.error_handler.error_count > start:
             return None
@@ -369,9 +394,13 @@ class Compiler:
         exit_on_error: bool = True,
         summary: bool = True,
         report_errors: bool = True,
+        tokenized: TokenizedInput | None = None,
     ) -> ASTNode | None:
         start_errors = self.error_handler.error_count
+        start_entries = self.error_handler.pending_count
         tree = parser.startRule()
+        self._report_delimiter_diagnostic(tokenized, input_info, start_entries)
+        self._report_brace_literal_hint(tokenized, input_info, start_entries)
 
         if report_errors:
             num_errors = self.error_handler.report(exit_on_error=exit_on_error, summary=summary)
@@ -393,6 +422,88 @@ class Compiler:
             return None
 
         return ast
+
+    def _report_delimiter_diagnostic(
+        self,
+        tokenized: TokenizedInput | None,
+        input_info: InputInfo,
+        start_entries: int,
+    ) -> None:
+        """Replace cascading parse errors for broken bracket pairs.
+
+        When a bracket is unclosed or unmatched, ANTLR fails wherever it runs
+        out of input, far from the real mistake. Python-style messages point
+        at the bracket instead: ``'(' was never closed`` / ``Unmatched ']'``.
+        """
+        if tokenized is None:
+            return
+        error: OortSyntaxError | None = None
+        if tokenized.unmatched_closers:
+            token = tokenized.unmatched_closers[0]
+            error = OortSyntaxError(f"Unmatched '{token.text}'", SourcePosition.from_token(token))
+        elif tokenized.unclosed_openers:
+            token = tokenized.unclosed_openers[0]
+            error = OortSyntaxError(
+                f"'{token.text}' was never closed", SourcePosition.from_token(token)
+            )
+        if error is None:
+            return
+        if self.error_handler.pending_count <= start_entries:
+            # The parse survived the delimiters; keep its own diagnostics.
+            return
+        self.error_handler.retract_since(start_entries)
+        self.error_handler.add(error, input_info)
+
+    def _report_brace_literal_hint(
+        self,
+        tokenized: TokenizedInput | None,
+        input_info: InputInfo,
+        start_entries: int,
+    ) -> None:
+        """Suggest collection delimiters when a one-line block looks like one.
+
+        Python habits (`{1, 2}` / `{1: 2}`) parse as code blocks and fail with
+        confusing parser messages. A Python-style "did you mean" warning
+        points at Oort's `{. ... .}` / `{: ... :}` literals instead.
+        """
+        if tokenized is None or self.error_handler.pending_count <= start_entries:
+            return
+        tokens = tokenized.tokens
+        for index, token in enumerate(tokens):
+            if token.type != OortLexer.LBC:
+                continue
+            hint = self._brace_literal_hint(tokens[index + 1 :], token)
+            if hint is not None:
+                self.error_handler.add(
+                    OortSyntaxWarning(hint, SourcePosition.from_token(token)),
+                    input_info,
+                )
+                return  # one hint per input is enough
+
+    @staticmethod
+    def _brace_literal_hint(tokens: list[Token], opener: Token) -> str | None:
+        """Classify a same-line block body by its first top-level separator."""
+        first = tokens[0] if tokens else None
+        if first is None or first.type in _STATEMENT_START_TOKENS:
+            return None
+        depth = 0
+        for token in tokens:
+            if token.type == Token.EOF or token.line != opener.line:
+                return None
+            token_type = token.type
+            if token_type in (OortLexer.LPA, OortLexer.LBK, OortLexer.LBC):
+                depth += 1
+            elif token_type in (OortLexer.RPA, OortLexer.RBK):
+                depth -= 1
+            elif token_type == OortLexer.RBC:
+                if depth == 0:
+                    return None  # the block closed without a separator
+                depth -= 1
+            elif depth == 0 and token_type == OortLexer.COLON:
+                return "Did you mean a Dict literal '{: key: value :}'? '{' opens a code block."
+            elif depth == 0 and token_type == OortLexer.COMMA:
+                return "Did you mean a Set literal '{. item, ... .}'? '{' opens a code block."
+        return None
 
     def make_semantic_analyzer(
         self,

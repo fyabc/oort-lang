@@ -66,6 +66,16 @@ class CompilerErrorHandler:
     def clear(self):
         self._entries.clear()
 
+    def retract_since(self, count: int) -> list[tuple[OortException, InputInfo]]:
+        """Remove and return the entries added after `count` pending entries.
+
+        Used to replace cascading diagnostics (e.g. parser errors trailing an
+        unclosed bracket) with one focused message.
+        """
+        removed = self._entries[count:]
+        del self._entries[count:]
+        return removed
+
     def report(self, exit_on_error: bool = False, clear: bool = True, summary: bool = True) -> int:
         """Report errors.
 
