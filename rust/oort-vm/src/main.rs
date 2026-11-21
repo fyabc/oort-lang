@@ -4,6 +4,10 @@
 //! Program `print` output goes to stdout; the final value is reported on stderr
 //! (prefixed `value:`) for differential comparison. Errors exit non-zero.
 
+// The spike parses the full .obc format but only executes a Phase 0 subset, so
+// many descriptor fields are intentionally unused for now.
+#![allow(dead_code)]
+
 mod obc;
 mod vm;
 
