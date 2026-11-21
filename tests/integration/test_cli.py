@@ -79,6 +79,18 @@ def test_core_astm_shows_types(monkeypatch, capsys):
     assert "type='Int'" in capsys.readouterr().out
 
 
+def test_core_astm_shows_float_and_string_types(monkeypatch, capsys):
+    source = """\
+#lang oort-core
+val x = 1.5
+val s = "a" + "b"
+"""
+    assert _run_cli(monkeypatch, ["-t", "astm", "-c", source]) == 0
+    out = capsys.readouterr().out
+    assert "type='Float'" in out
+    assert "type='String'" in out
+
+
 def test_core_module_import_from_file(monkeypatch, capsys, tmp_path):
     (tmp_path / "lib.ort").write_text(
         "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",

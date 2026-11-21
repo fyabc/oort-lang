@@ -48,6 +48,49 @@ class TestCorePositive:
         )
         assert result.stdout == "4\ntrue\ntrue\ntrue\nfalse\ntrue\ntrue\n-1\n"
 
+    def test_float_arithmetic_and_division(self, run_source):
+        result = run_source(
+            core(
+                "val half = 5 / 2\n"
+                "val mixed = 1 + 2.5\n"
+                "print(half)\n"
+                "print(mixed * 2.0)\n"
+                "print(5 // 2.0, 5 % 2.0)\n"
+                "print(-1.5)\n"
+            )
+        )
+        assert result.stdout == "2.5\n7.0\n2.0 1.0\n-1.5\n"
+
+    def test_numeric_comparisons_allow_mixed_int_and_float(self, run_source):
+        result = run_source(core("print(1 == 1.0, 1 < 1.5, 2.5 >= 2, 1 != 2.5)\n"))
+        assert result.stdout == "true true true true\n"
+
+    def test_string_concatenation_and_comparison(self, run_source):
+        result = run_source(
+            core(
+                'val name: String = "oort"\n'
+                'print(name + "!")\n'
+                'print("a" < "b", "a" == "a", "a" != "b")\n'
+                'print("a" <= "a", "b" > "a")\n'
+            )
+        )
+        assert result.stdout == "oort!\ntrue true true\ntrue true\n"
+
+    def test_float_and_string_annotations_in_functions(self, run_source):
+        result = run_source(
+            core(
+                "def average(a: Float, b: Float) -> Float {\n"
+                "    (a + b) / 2.0\n"
+                "}\n"
+                "def greet(who: String) -> String {\n"
+                '    "Hello, " + who\n'
+                "}\n"
+                "print(average(1.0, 2.0))\n"
+                'print(greet("Oort"))\n'
+            )
+        )
+        assert result.stdout == "1.5\nHello, Oort\n"
+
     def test_functions_and_recursion(self, run_source):
         result = run_source(
             core(
@@ -142,8 +185,15 @@ class TestCoreRejections:
     def test_unknown_type_name(self, caplog):
         check_error(
             caplog,
+            "var x: Nope = 1\n",
+            "Unknown type 'Nope' in oort-core",
+        )
+
+    def test_numeric_annotations_do_not_coerce(self, caplog):
+        check_error(
+            caplog,
             "var x: Float = 1\n",
-            "Unknown type 'Float' in oort-core",
+            "Expected Float, got Int.",
         )
 
     def test_non_name_annotation(self, caplog):
@@ -216,25 +266,37 @@ class TestCoreRejections:
             "branches of this if have incompatible types",
         )
 
-    def test_arithmetic_requires_int(self, caplog):
+    def test_branches_do_not_promote_int_to_float(self, caplog):
+        check_error(
+            caplog,
+            "val x = if true { 1 } else { 1.5 }\n",
+            "branches of this if have incompatible types",
+        )
+
+    def test_arithmetic_requires_numbers_or_strings(self, caplog):
         check_error(
             caplog,
             "def f(x: Int) -> Int { x + true }\n",
-            "Expected Int, got Bool.",
+            "Operator '+' requires two numbers or two String operands",
+        )
+        check_error(
+            caplog,
+            'print(1 - "x")\n',
+            "Operator '-' requires two numbers",
         )
 
-    def test_comparison_requires_int(self, caplog):
+    def test_comparison_requires_numbers_or_strings(self, caplog):
         check_error(
             caplog,
             "print(1 < true)\n",
-            "Expected Int, got Bool.",
+            "requires two numbers or two String operands",
         )
 
-    def test_equality_requires_same_type(self, caplog):
+    def test_equality_requires_comparable_types(self, caplog):
         check_error(
             caplog,
             "print(1 == true)\n",
-            "requires two Int or two Bool operands",
+            "requires two numbers, two Bool or two String operands",
         )
 
     def test_boolean_operators_require_bool(self, caplog):
@@ -249,13 +311,6 @@ class TestCoreRejections:
             caplog,
             "print(not 1)\n",
             "Expected Bool, got Int.",
-        )
-
-    def test_integer_division_is_rejected(self, caplog):
-        check_error(
-            caplog,
-            "print(1 / 2)\n",
-            "The '/' operator is not supported in oort-core yet",
         )
 
     def test_power_is_rejected(self, caplog):
@@ -309,8 +364,6 @@ class TestCoreRejections:
             ("print((1, 2))\n", "Tuples are not supported"),
             ("print({: 1: 2 :})\n", "Dicts are not supported"),
             ("print({. 1 .})\n", "Sets are not supported"),
-            ("print(1.5)\n", "Float is not supported"),
-            ('print("x")\n', "String is not supported"),
             ("print(null)\n", "null is not supported"),
             (
                 "val f = do: 1\n",
@@ -628,7 +681,7 @@ class TestCoreFunctionValueRejections:
         check_error(
             caplog,
             "val f = do(x: Int) -> Int { x }\nprint(f)\n",
-            "only accepts Int, Bool, Unit or enum",
+            "only accepts Int, Float, Bool, String, Unit or enum",
         )
 
 

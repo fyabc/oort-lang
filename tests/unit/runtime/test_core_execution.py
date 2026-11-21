@@ -25,3 +25,18 @@ def test_core_recursion_executes(run_source):
         )
     )
     assert result.value == 720
+
+
+def test_core_float_arithmetic_executes(run_source):
+    result = run_source(core("1.5 + 2.5\n"))
+    assert result.value == 4.0
+
+
+def test_core_division_produces_float(run_source):
+    result = run_source(core("7 / 2\n"))
+    assert result.value == 3.5
+
+
+def test_core_string_concatenation_executes(run_source):
+    result = run_source(core('"oo" + "rt"\n'))
+    assert result.value == "oort"

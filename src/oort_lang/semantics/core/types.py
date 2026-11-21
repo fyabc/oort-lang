@@ -100,7 +100,9 @@ class NeverType(Type):
 
 
 INT = PrimitiveType("Int")
+FLOAT = PrimitiveType("Float")
 BOOL = PrimitiveType("Bool")
+STRING = PrimitiveType("String")
 UNIT = PrimitiveType("Unit")
 UNKNOWN = UnknownType()
 NEVER = NeverType()

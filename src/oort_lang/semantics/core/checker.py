@@ -2,7 +2,8 @@
 
 """Independent static checker for the `oort-core` thin probe.
 
-The checker is intentionally small: `Int`, `Bool`, `Unit` and functions.
+The checker is intentionally small: `Int`, `Float`, `Bool`, `String`, `Unit`,
+functions and monomorphic enums.
 It runs after pass 1 (name resolution / unsupported-feature checks) and only
 when pass 1 succeeded, so it can assume bindings exist and focus on types.
 """
@@ -20,8 +21,10 @@ from ...source.input_info import InputInfo
 from ...source.source_position import SourcePosition
 from .types import (
     BOOL,
+    FLOAT,
     INT,
     NEVER,
+    STRING,
     UNIT,
     UNKNOWN,
     AdtType,
@@ -42,6 +45,10 @@ ModuleResolver = Callable[[str, Path, SourcePosition], CoreModuleInfo | None]
 _ARITHMETIC = frozenset({"+", "-", "*", "//", "%"})
 _ORDERING = frozenset({"<", "<=", ">", ">="})
 _EQUALITY = frozenset({"==", "!="})
+
+
+def _is_numeric(type_: Type) -> bool:
+    return type_ in (INT, FLOAT)
 
 
 @dataclasses.dataclass(slots=True)
@@ -312,7 +319,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
             )
         if node.type_params:
             return self._unsupported(node, "Generic enums are not supported in oort-core yet.")
-        if node.name in {"Int", "Bool", "Unit", "_"}:
+        if node.name in {"Int", "Float", "Bool", "String", "Unit", "_"}:
             self._error(
                 f"Enum name '{node.name}' is reserved in oort-core.",
                 node.name_position,
@@ -528,6 +535,12 @@ class CoreTypeChecker(ASTVisitor[Type]):
     def visit_int_constant(self, node: nodes.IntConstant) -> Type:
         return self._record(node, INT)
 
+    def visit_float_constant(self, node: nodes.FloatConstant) -> Type:
+        return self._record(node, FLOAT)
+
+    def visit_string_constant(self, node: nodes.StringConstant) -> Type:
+        return self._record(node, STRING)
+
     def visit_boolean_constant(self, node: nodes.BooleanConstant) -> Type:
         return self._record(node, BOOL)
 
@@ -623,10 +636,12 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 arg_type = UNKNOWN
             if isinstance(arg_type, (UnknownType, NeverType)):
                 continue
-            if arg_type not in (INT, BOOL, UNIT) and not isinstance(arg_type, AdtType):
+            if arg_type not in (INT, FLOAT, BOOL, STRING, UNIT) and not isinstance(
+                arg_type, AdtType
+            ):
                 self._error(
-                    "The built-in 'print' only accepts Int, Bool, Unit or enum "
-                    f"arguments in oort-core, got {describe_type(arg_type)}.",
+                    "The built-in 'print' only accepts Int, Float, Bool, String, "
+                    f"Unit or enum arguments in oort-core, got {describe_type(arg_type)}.",
                     arg.value.position,
                 )
         return self._record(node, UNIT)
@@ -636,9 +651,17 @@ class CoreTypeChecker(ASTVisitor[Type]):
         if operand_type is None:
             operand_type = UNKNOWN
         operator = node.op.text
+        if isinstance(operand_type, UnknownType):
+            return self._record(node, UNKNOWN)
         if operator in {"+", "-"}:
-            self.expect(INT, operand_type, node.operand)
-            return self._record(node, INT)
+            if not _is_numeric(operand_type):
+                self._error(
+                    f"Unary operator '{operator}' requires a number, "
+                    f"got {describe_type(operand_type)}.",
+                    node.position,
+                )
+                return self._record(node, UNKNOWN)
+            return self._record(node, operand_type)
         if operator == "not":
             self.expect(BOOL, operand_type, node.operand)
             return self._record(node, BOOL)
@@ -655,27 +678,54 @@ class CoreTypeChecker(ASTVisitor[Type]):
             right_type = UNKNOWN
         operator = node.op.text
 
-        if operator in _ARITHMETIC:
-            self.expect(INT, left_type, node.lhs)
-            self.expect(INT, right_type, node.rhs)
-            return self._record(node, INT)
+        if operator in _ARITHMETIC or operator == "/":
+            return self._check_arithmetic(node, left_type, right_type)
         if operator in _ORDERING:
-            self.expect(INT, left_type, node.lhs)
-            self.expect(INT, right_type, node.rhs)
-            return self._record(node, BOOL)
+            return self._check_ordering(node, left_type, right_type)
         if operator in _EQUALITY:
             return self._check_equality(node, left_type, right_type)
-        if operator == "/":
-            return self._unsupported(
-                node, "The '/' operator is not supported in oort-core yet; it produces a Float."
-            )
         if operator == "**":
             return self._unsupported(
                 node,
-                "The '**' operator is not supported in oort-core yet; a negative "
-                "exponent produces a Float.",
+                "The '**' operator is not supported in oort-core yet; its result "
+                "type depends on the exponent.",
             )
         return self._unsupported(node, f"Operator '{operator}' is not supported in oort-core yet.")
+
+    def _check_arithmetic(self, node: nodes.BinaryExpr, left: Type, right: Type) -> Type:
+        operator = node.op.text
+        if isinstance(left, UnknownType) or isinstance(right, UnknownType):
+            return self._record(node, UNKNOWN)
+        if operator == "+" and left == STRING and right == STRING:
+            return self._record(node, STRING)
+        if _is_numeric(left) and _is_numeric(right):
+            if operator == "/" or FLOAT in (left, right):
+                return self._record(node, FLOAT)
+            return self._record(node, INT)
+        if operator == "+":
+            message = (
+                "Operator '+' requires two numbers or two String operands, "
+                f"got {describe_type(left)} and {describe_type(right)}."
+            )
+        else:
+            message = (
+                f"Operator '{operator}' requires two numbers, "
+                f"got {describe_type(left)} and {describe_type(right)}."
+            )
+        self._error(message, node.position)
+        return self._record(node, UNKNOWN)
+
+    def _check_ordering(self, node: nodes.BinaryExpr, left: Type, right: Type) -> Type:
+        if isinstance(left, UnknownType) or isinstance(right, UnknownType):
+            return self._record(node, BOOL)
+        if (_is_numeric(left) and _is_numeric(right)) or (left == STRING and right == STRING):
+            return self._record(node, BOOL)
+        self._error(
+            f"Operator '{node.op.text}' requires two numbers or two String operands, "
+            f"got {describe_type(left)} and {describe_type(right)}.",
+            node.position,
+        )
+        return self._record(node, UNKNOWN)
 
     def _check_equality(self, node: nodes.BinaryExpr, left: Type, right: Type) -> Type:
         if isinstance(left, UnknownType) or isinstance(right, UnknownType):
@@ -686,11 +736,11 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 node.position,
             )
             return self._record(node, UNKNOWN)
-        if left == right and (left in (INT, BOOL)):
+        if (_is_numeric(left) and _is_numeric(right)) or (left == right and left in (BOOL, STRING)):
             return self._record(node, BOOL)
         self._error(
-            f"Operator '{node.op.text}' requires two Int or two Bool operands, "
-            f"got {describe_type(left)} and {describe_type(right)}.",
+            f"Operator '{node.op.text}' requires two numbers, two Bool or two String "
+            f"operands, got {describe_type(left)} and {describe_type(right)}.",
             node.position,
         )
         return self._record(node, UNKNOWN)
@@ -924,14 +974,19 @@ class CoreTypeChecker(ASTVisitor[Type]):
             return UNKNOWN
         if not isinstance(node, nodes.Name):
             self._error(
-                "Only Int, Bool, Unit and enum type names are supported in oort-core.",
+                "Only Int, Float, Bool, String, Unit and enum type names are supported "
+                "in oort-core.",
                 node.position,
             )
             return UNKNOWN
         if node.id == "Int":
             return INT
+        if node.id == "Float":
+            return FLOAT
         if node.id == "Bool":
             return BOOL
+        if node.id == "String":
+            return STRING
         if node.id == "Unit":
             if allow_unit:
                 return UNIT
@@ -943,7 +998,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
         enum_type = self.enums.get(node.id)
         if enum_type is not None:
             return enum_type
-        known = ", ".join(["Int", "Bool", "Unit", *self.enums])
+        known = ", ".join(["Int", "Float", "Bool", "String", "Unit", *self.enums])
         self._error(
             f"Unknown type '{node.id}' in oort-core. Known types: {known}.",
             node.position,
@@ -1131,12 +1186,6 @@ class CoreTypeChecker(ASTVisitor[Type]):
 
     def visit_set_literal(self, node: nodes.SetLiteral) -> Type:
         return self._unsupported(node, "Sets are not supported in oort-core yet.")
-
-    def visit_float_constant(self, node: nodes.FloatConstant) -> Type:
-        return self._unsupported(node, "Float is not supported in oort-core yet.")
-
-    def visit_string_constant(self, node: nodes.StringConstant) -> Type:
-        return self._unsupported(node, "String is not supported in oort-core yet.")
 
     def visit_null_constant(self, node: nodes.NullConstant) -> Type:
         return self._unsupported(node, "null is not supported in oort-core yet.")

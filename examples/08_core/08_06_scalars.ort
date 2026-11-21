@@ -1,0 +1,19 @@
+#lang oort-core
+
+# `/` 固定返回 Float；`//` 在 Int 之间保持 Int，混入 Float 时返回 Float。
+# String 支持 `+` 拼接、字典序比较与值相等。
+
+val half: Float = 5 / 2
+val whole: Int = 5 // 2
+val mixed_floor: Float = 5 // 2.0
+val greeting: String = "Hello, " + "Oort"
+
+def average(a: Float, b: Float) -> Float {
+    (a + b) / 2.0
+}
+
+print(half)
+print(whole, mixed_floor)
+print(average(1.0, 2.0))
+print(greeting)
+print(1 == 1.0, "a" < "b")
