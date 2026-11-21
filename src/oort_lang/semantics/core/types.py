@@ -50,6 +50,46 @@ class CoreModuleInfo:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class ConstructorInfo:
+    """One enum constructor and its payload field types."""
+
+    name: str
+    field_names: tuple[str, ...]
+    payload: tuple[Type, ...]
+
+
+@dataclasses.dataclass(eq=False, slots=True)
+class AdtType(Type):
+    """A nominal tagged-union type.
+
+    Equality and hashing use `(origin, name)` only; `constructors` is filled
+    after the declaration is registered so recursive payloads can refer back
+    to the type being declared.
+    """
+
+    origin: str
+    name: str
+    constructors: tuple[ConstructorInfo, ...] = ()
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, AdtType) and self.origin == other.origin and self.name == other.name
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.origin, self.name))
+
+    def __repr__(self) -> str:
+        return f"<AdtType {self.name!r} @ {self.origin!r}>"
+
+    def constructor(self, name: str) -> ConstructorInfo | None:
+        for constructor in self.constructors:
+            if constructor.name == name:
+                return constructor
+        return None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class UnknownType(Type):
     """Error-recovery type; compatible with everything."""
 
@@ -74,6 +114,8 @@ def describe_type(type_: Type) -> str:
         return f"({params}) -> {describe_type(type_.ret)}"
     if isinstance(type_, ModuleType):
         return f"<module {type_.name}>"
+    if isinstance(type_, AdtType):
+        return type_.name
     if isinstance(type_, UnknownType):
         return "Unknown"
     if isinstance(type_, NeverType):
@@ -94,6 +136,8 @@ def is_assignable(expected: Type, actual: Type) -> bool:
     if isinstance(expected, FunctionType) and isinstance(actual, FunctionType):
         return expected == actual
     if isinstance(expected, ModuleType) and isinstance(actual, ModuleType):
+        return expected == actual
+    if isinstance(expected, AdtType) and isinstance(actual, AdtType):
         return expected == actual
     return False
 

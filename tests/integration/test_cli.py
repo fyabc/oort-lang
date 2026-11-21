@@ -185,3 +185,18 @@ def test_print_ast_with_metadata_accepts_import(monkeypatch, capsys, tmp_path):
 
     assert _run_cli(monkeypatch, ["-t", "astm", str(main)]) == 0
     assert "ImportFromStmt(module_path='./lib', names=[value])" in capsys.readouterr().out
+
+
+def test_core_enum_match_eval(monkeypatch, capsys):
+    source = "#lang oort-core\nenum E { A, B(x: Int) }\nprint(match B(3) { A => 0, B(v) => v })\n"
+    assert _run_cli(monkeypatch, ["-c", source]) == 0
+    assert capsys.readouterr().out == "3\n"
+
+
+def test_core_enum_match_astm(monkeypatch, capsys):
+    source = "#lang oort-core\nenum E { A }\nval x = match A { A => 1 }\n"
+    assert _run_cli(monkeypatch, ["-t", "astm", "-c", source]) == 0
+    out = capsys.readouterr().out
+    assert "EnumDef" in out
+    assert "MatchExpr" in out
+    assert "type='Int'" in out

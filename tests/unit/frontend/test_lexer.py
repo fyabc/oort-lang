@@ -111,3 +111,11 @@ def test_keywords_and_soft_keywords():
         ("DO", "do"),
         ("IN", "in"),
     ]
+
+
+def test_adt_tokens():
+    assert _tokens("enum match =>") == [
+        ("ENUM", "enum"),
+        ("MATCH", "match"),
+        ("FATARROW", "=>"),
+    ]

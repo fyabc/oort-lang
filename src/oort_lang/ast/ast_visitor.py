@@ -100,6 +100,30 @@ class ASTVisitor(Generic[T]):
     def visit_class_def(self, node) -> T | None:
         return self.visit_children(node)
 
+    def visit_enum_def(self, node) -> T | None:
+        return self.visit_children(node)
+
+    def visit_enum_constructor(self, node) -> T | None:
+        return self.visit_children(node)
+
+    def visit_enum_field(self, node) -> T | None:
+        return self.visit_children(node)
+
+    def visit_match_expr(self, node) -> T | None:
+        return self.visit_children(node)
+
+    def visit_match_arm(self, node) -> T | None:
+        return self.visit_children(node)
+
+    def visit_wildcard_pattern(self, node) -> T | None:
+        return self.visit_children(node)
+
+    def visit_name_pattern(self, node) -> T | None:
+        return self.visit_children(node)
+
+    def visit_constructor_pattern(self, node) -> T | None:
+        return self.visit_children(node)
+
     def visit_function_def(self, node) -> T | None:
         return self.visit_children(node)
 

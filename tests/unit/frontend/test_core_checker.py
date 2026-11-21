@@ -150,7 +150,7 @@ class TestCoreRejections:
         check_error(
             caplog,
             "var x: List[Int] = 1\n",
-            "Only Int, Bool and Unit type names are supported",
+            "Generic type applications are not supported",
         )
 
     def test_if_condition_must_be_bool(self, caplog):
@@ -350,3 +350,170 @@ class TestCoreRejections:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestCoreAdt:
+    def test_enum_construction_and_match(self, run_source):
+        result = run_source(
+            core(
+                "enum Shape { Circle(r: Int), Rect(w: Int, h: Int), Empty }\n"
+                "val s = Circle(3)\n"
+                "print(match s { Circle(r) => r, Rect(w, h) => w * h, Empty => 0 })\n"
+            )
+        )
+        assert result.stdout == "3\n"
+
+    def test_nullary_constructor_and_wildcard(self, run_source):
+        result = run_source(
+            core(
+                "enum Color { Red, Green }\n"
+                "print(match Green { Red => 1, Green => 2 })\n"
+                "print(match Red { _ => 9 })\n"
+            )
+        )
+        assert result.stdout == "2\n9\n"
+
+    def test_recursive_enum(self, run_source):
+        result = run_source(
+            core(
+                "enum IntList { Cons(head: Int, tail: IntList), Nil }\n"
+                "val xs = Cons(1, Cons(2, Nil))\n"
+                "def total(xs: IntList) -> Int { "
+                "match xs { Cons(h, t) => h + total(t), Nil => 0 } }\n"
+                "print(total(xs))\n"
+            )
+        )
+        assert result.stdout == "3\n"
+
+    def test_nested_match(self, run_source):
+        result = run_source(
+            core(
+                "enum Inner { A(x: Int), B }\n"
+                "enum Outer { Wrap(inner: Inner), Empty }\n"
+                "val o = Wrap(A(7))\n"
+                "print(match o { Wrap(inner) => match inner { A(v) => v, B => 0 }, "
+                "Empty => -1 })\n"
+            )
+        )
+        assert result.stdout == "7\n"
+
+    def test_print_enum_value(self, run_source):
+        result = run_source(core("enum E { A, B(x: Int) }\nprint(A)\nprint(B(2))\n"))
+        assert result.stdout == "A\nB(2)\n"
+
+    def test_return_from_match_arm(self, run_source):
+        result = run_source(
+            core(
+                "enum E { A, B }\n"
+                "def f(x: E) -> Int { match x { A => return 1, B => 2 } }\n"
+                "print(f(A))\nprint(f(B))\n"
+            )
+        )
+        assert result.stdout == "1\n2\n"
+
+
+class TestCoreAdtRejections:
+    def test_non_exhaustive_match(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A, B }\nval x = A\nprint(match x { A => 1 })\n",
+            "Match is not exhaustive; missing: B.",
+        )
+
+    def test_unknown_constructor_pattern(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A, B }\nval x = A\nprint(match x { A => 1, C() => 2 })\n",
+            "Enum 'E' has no constructor 'C'.",
+        )
+
+    def test_constructor_pattern_arity(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A(x: Int), B }\nval x = A(1)\nprint(match x { A() => 1, B => 0 })\n",
+            "Constructor 'A' expects 1 argument(s), got 0.",
+        )
+
+    def test_constructor_payload_type(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A(x: Int) }\nprint(A(true))\n",
+            "Expected Int, got Bool.",
+        )
+
+    def test_duplicate_pattern_binding(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A(x: Int) }\nprint(match A(1) { A(v, v) => v })\n",
+            "already defined",
+        )
+
+    def test_incompatible_arm_types(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A, B }\nprint(match A { A => 1, B => true })\n",
+            "arms of this match have incompatible types",
+        )
+
+    def test_generic_enum_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "enum E[T] { A }\n",
+            "Generic enums are not supported in oort-core yet.",
+        )
+
+    def test_empty_enum_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "enum E { }\n",
+            "An enum must declare at least one constructor.",
+        )
+
+    def test_reserved_enum_name(self, caplog):
+        check_error(
+            caplog,
+            "enum Int { A }\n",
+            "Enum name 'Int' is reserved in oort-core.",
+        )
+
+    def test_match_on_non_enum(self, caplog):
+        check_error(
+            caplog,
+            "print(match 1 { _ => 1 })\n",
+            "The scrutinee of match must have an enum type in oort-core, got Int.",
+        )
+
+    def test_enum_equality_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A }\nprint(A == A)\n",
+            "Enum equality is not supported in oort-core yet; use match.",
+        )
+
+    def test_nested_enum_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "def f() -> Unit { enum E { A } }\n",
+            "Enum declarations are only allowed at module top level",
+        )
+
+    def test_unknown_field_type(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A(x: Missing) }\n",
+            "Unknown type 'Missing' in oort-core.",
+        )
+
+    def test_duplicate_constructor(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A, A }\n",
+            "Constructor 'A' is already declared",
+        )
+
+    def test_payload_constructor_bare_pattern(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A(x: Int) }\nprint(match A(1) { A => 1 })\n",
+            "Constructor 'A' expects 1 argument(s).",
+        )

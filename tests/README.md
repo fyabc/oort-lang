@@ -81,6 +81,7 @@ REPL 按层次测试，不依赖手动输入：
 | 方言分析器分发 | `unit/frontend/test_analyzer_dispatch.py` |
 | `oort-core` 类型模型 | `unit/frontend/test_core_types.py` |
 | `oort-core` 类型检查 | `unit/frontend/test_core_checker.py` |
+| `oort-core` ADT 类型 | `unit/frontend/test_core_types.py` |
 | 类型化 Binding / 作用域布局 | `unit/frontend/test_bindings.py` |
 | 诊断配对/排序 | `unit/frontend/test_error_handler.py` |
 | 未实现特性诊断 | `unit/frontend/test_unsupported.py` |
@@ -94,6 +95,7 @@ REPL 按层次测试，不依赖手动输入：
 | 解释器运行时隔离 | `unit/runtime/test_runtime_isolation.py` |
 | `oort-core` 执行 | `unit/runtime/test_core_execution.py` |
 | `oort-core` 模块导入 | `unit/runtime/test_core_modules.py` |
+| `oort-core` ADT/match 执行 | `unit/runtime/test_core_adt_execution.py` |
 | 宿主投影/原生模式 | `unit/runtime/test_host_boundary.py` |
 | 迭代器协议/流式 for | `unit/runtime/test_iterators.py` |
 | 集合助手 | `unit/runtime/test_collection_builtins.py` |

@@ -95,3 +95,23 @@ def test_implicit_infix_is_rejected(caplog: pytest.LogCaptureFixture):
     with pytest.raises(SystemExit):
         compiler.run_string("a b c\n")
     assert "Infix call 'b' is not supported yet" in caplog.text
+
+
+def test_enum_and_match_parse(capsys):
+    compiler = get_compiler("NOT_EXIST -t ast")
+    compiler.run_string(
+        "#lang oort-core\nenum E { A(x: Int), B }\nval v = match A(1) { A(x) => x, B => 0 }\n"
+    )
+    out = capsys.readouterr().out
+    assert "EnumDef(name='E')" in out
+    assert "EnumConstructor(name='A')" in out
+    assert "MatchExpr" in out
+    assert "ConstructorPattern(name='A')" in out
+    assert "NamePattern(name='x')" in out
+
+
+def test_fat_arrow_is_not_a_normal_operator(caplog):
+    compiler = get_compiler("NOT_EXIST -t ast")
+    with pytest.raises(SystemExit):
+        compiler.run_string("1 => 2\n")
+    assert "mismatched input '=>'" in caplog.text

@@ -18,6 +18,8 @@ UNSUPPORTED_CASES = [
     ("def f() { await g() }", "Async/await"),
     ("def f[T](a) {}", "Generic functions"),
     ("class C[T] {}", "Generic classes"),
+    ("enum E { A }", "Enums are only supported in oort-core yet."),
+    ("match 1 { _ => 1 }", "match is only supported in oort-core yet."),
     ("def f { $0 }", "Anonymous parameters"),
     ("@[]", "Compiler attributes"),
     ('print(f"{1}")', "Formatted string"),
@@ -31,6 +33,7 @@ UNSUPPORTED_CASES = [
     ('class C { def operator "foo"(a) {} }', "Invalid operator symbol"),
     ('class C { def operator "*"() {} }', "cannot be defined as a unary operator"),
     ('class C { def operator "is"(a) {} }', "cannot be overloaded"),
+    ('class C { def operator "=>"(a) {} }', "cannot be overloaded"),
     ('class C { def class.operator "+"(a) {} }', "Class operator methods"),
 ]
 

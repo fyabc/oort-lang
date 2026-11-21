@@ -51,6 +51,8 @@ class OortType(OortInstance, OortCallableMixin):
         self.bases: list[OortType] = bases or []
         self._mro_cache: list[OortType] | None = None
         self._has_class_method: bool = False
+        # Variant name -> payload arity for enum/ADT types, else None.
+        self.adt_variants: dict[str, int] | None = None
         # Operator methods, keyed by (symbol, operand count).
         self.operators: dict[tuple[str, int], OortObject] = {}
 

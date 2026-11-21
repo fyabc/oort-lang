@@ -8,6 +8,8 @@ from oort_lang.semantics.core.types import (
     NEVER,
     UNIT,
     UNKNOWN,
+    AdtType,
+    ConstructorInfo,
     FunctionType,
     ModuleType,
     UnknownType,
@@ -67,3 +69,28 @@ def test_module_type_exports():
     assert module.get("missing") is None
     assert describe_type(module) == "<module ./lib>"
     assert is_assignable(module, module)
+
+
+def test_adt_type_is_nominal():
+    first = AdtType("main.ort", "Option")
+    same = AdtType("main.ort", "Option")
+    other_module = AdtType("lib.ort", "Option")
+    other_name = AdtType("main.ort", "Result")
+    assert first == same
+    assert first != other_module
+    assert first != other_name
+    assert hash(first) == hash(same)
+
+
+def test_adt_type_constructors_and_description():
+    adt = AdtType("main.ort", "Option")
+    some = ConstructorInfo("Some", ("value",), (INT,))
+    none = ConstructorInfo("None", (), ())
+    adt.constructors = (some, none)
+    assert adt.constructor("Some") is some
+    assert adt.constructor("Missing") is None
+    assert describe_type(adt) == "Option"
+    assert is_assignable(adt, AdtType("main.ort", "Option"))
+    assert not is_assignable(adt, AdtType("main.ort", "Result"))
+    assert join_types(adt, AdtType("main.ort", "Option")) == adt
+    assert join_types(adt, AdtType("main.ort", "Result")) is None

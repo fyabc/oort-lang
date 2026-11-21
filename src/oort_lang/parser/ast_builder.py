@@ -234,6 +234,66 @@ class ASTBuilder(ExpressionParsingMixin, ParameterParsingMixin, OortVisitor):
             name_position=name_position,
         )
 
+    def visitEnumDecl(self, ctx: OortParser.EnumDeclContext) -> EnumDef:
+        name_ctx = ctx.identifier()
+        type_param_def_ctx = ctx.typeParameterDef()
+        type_params = self.parseTypeParameterList(
+            None if type_param_def_ctx is None else type_param_def_ctx.typeParameterList()
+        )
+        constructor_list = ctx.enumConstructorList()
+        constructors = (
+            []
+            if constructor_list is None
+            else [self.visitEnumConstructor(item) for item in constructor_list.enumConstructor()]
+        )
+        return EnumDef(
+            ctx,
+            name_ctx.getText(),
+            type_params,
+            constructors,
+            name_position=SourcePosition.from_context(name_ctx),
+        )
+
+    def visitEnumConstructor(self, ctx: OortParser.EnumConstructorContext) -> EnumConstructor:
+        field_list = ctx.enumFieldList()
+        fields = (
+            []
+            if field_list is None
+            else [self.visitEnumField(field) for field in field_list.enumField()]
+        )
+        return EnumConstructor(ctx, ctx.identifier().getText(), fields)
+
+    def visitEnumField(self, ctx: OortParser.EnumFieldContext) -> EnumField:
+        type_expr = ctx.expression()
+        return EnumField(
+            ctx,
+            ctx.identifier().getText(),
+            None if type_expr is None else self.visit(type_expr),
+        )
+
+    def visitMatchExpr(self, ctx: OortParser.MatchExprContext) -> MatchExpr:
+        arm_list = ctx.matchArmList()
+        arms = [] if arm_list is None else [self.visitMatchArm(arm) for arm in arm_list.matchArm()]
+        return MatchExpr(ctx, self.visit(ctx.expression()), arms)
+
+    def visitMatchArm(self, ctx: OortParser.MatchArmContext) -> MatchArm:
+        return MatchArm(ctx, self.visit(ctx.pattern()), self.visit(ctx.expression()))
+
+    def visitNamePattern(self, ctx: OortParser.NamePatternContext) -> Pattern:
+        name = ctx.identifier().getText()
+        if name == "_":
+            return WildcardPattern(ctx)
+        return NamePattern(ctx, name)
+
+    def visitConstructorPattern(self, ctx: OortParser.ConstructorPatternContext) -> Pattern:
+        pattern_list = ctx.patternList()
+        args = (
+            []
+            if pattern_list is None
+            else [self.visit(pattern) for pattern in pattern_list.pattern()]
+        )
+        return ConstructorPattern(ctx, ctx.identifier().getText(), args)
+
     def parseClassName(self, ctx: OortParser.ClassNameContext) -> list[str]:
         if ctx is None:
             return []

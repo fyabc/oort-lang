@@ -1,0 +1,22 @@
+#lang oort-core
+
+# 单态 ADT + match：构造、解构与顶层穷尽性检查。
+
+enum Shape {
+    Circle(radius: Int),
+    Rect(width: Int, height: Int),
+    Empty
+}
+
+def area(shape: Shape) -> Int {
+    match shape {
+        Circle(r) => r * r * 3,
+        Rect(w, h) => w * h,
+        Empty => 0
+    }
+}
+
+print(area(Circle(2)))
+print(area(Rect(3, 4)))
+print(area(Empty))
+print(Circle(1))

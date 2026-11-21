@@ -40,7 +40,9 @@ from .functions import (
     OortNativeFunction,
     OortNativeMethod,
 )
+from .native import NativeMode
 from .objects import (
+    OortADT,
     OortBool,
     OortDict,
     OortFloat,
@@ -791,6 +793,101 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         finally:
             self.env = prev
         return cls
+
+    def visit_enum_def(self, node: nodes.EnumDef) -> OortType:
+        enum_type = OortType.create_type_object(node.name, bases=[self.runtime.types.object_type])
+        enum_type.adt_variants = {
+            constructor.name: len(constructor.fields) for constructor in node.constructors
+        }
+
+        for constructor in node.constructors:
+            arity = len(constructor.fields)
+            if arity == 0:
+                value: OortObject = OortADT(enum_type, constructor.name)
+            else:
+
+                def construct(
+                    *values: OortObject,
+                    _name: str = constructor.name,
+                    _arity: int = arity,
+                ) -> OortADT:
+                    if len(values) != _arity:
+                        raise TypeError(
+                            f"Constructor {_name!r} expects {_arity} argument(s), got {len(values)}"
+                        )
+                    return OortADT(enum_type, _name, values)
+
+                value = OortNativeFunction(
+                    construct,
+                    name=constructor.name,
+                    mode=NativeMode.VALUE,
+                )
+            if self.env.define(constructor.name, value, mutable=False) == DefineResult.REDEFINED:
+                raise OortSyntaxError(
+                    f"Constructor {constructor.name!r} is already defined.",
+                    constructor.position,
+                )
+        return enum_type
+
+    def visit_match_expr(self, node: nodes.MatchExpr) -> OortObject:
+        value = node.scrutinee.accept(self)
+        for arm in node.arms:
+            bindings: dict[str, OortObject] = {}
+            if not self._match_pattern(arm.pattern, value, bindings):
+                continue
+
+            arm_env = Environment(outer=self.env, name="<match-arm>")
+            for name, bound in bindings.items():
+                arm_env.define(name, bound, mutable=False)
+            prev = self.env
+            try:
+                self.env = arm_env
+                return arm.body.accept(self)
+            finally:
+                self.env = prev
+
+        raise OortRuntimeError(
+            f"No match arm matched value {value!r}.",
+            node.position,
+        )
+
+    def _match_pattern(
+        self,
+        pattern: nodes.Pattern,
+        value: OortObject,
+        bindings: dict[str, OortObject],
+    ) -> bool:
+        if isinstance(pattern, nodes.WildcardPattern):
+            return True
+        if isinstance(pattern, nodes.NamePattern):
+            if isinstance(value, OortADT) and value.type.adt_variants is not None:
+                arity = value.type.adt_variants.get(pattern.name)
+                if arity is not None:
+                    if arity != 0:
+                        raise OortTypeError(
+                            f"Constructor {pattern.name!r} expects {arity} argument(s).",
+                            pattern.position,
+                        )
+                    if value.variant != pattern.name:
+                        return False
+                    bindings[pattern.name] = value
+                    return True
+            bindings[pattern.name] = value
+            return True
+        if isinstance(pattern, nodes.ConstructorPattern):
+            if not isinstance(value, OortADT) or value.variant != pattern.name:
+                return False
+            if len(value.values) != len(pattern.args):
+                raise OortTypeError(
+                    f"Constructor {pattern.name!r} expects {len(value.values)} "
+                    f"argument(s), got {len(pattern.args)}.",
+                    pattern.position,
+                )
+            for subpattern, payload in zip(pattern.args, value.values):
+                if not self._match_pattern(subpattern, payload, bindings):
+                    return False
+            return True
+        return False
 
     def visit_function_def(self, node: nodes.FunctionDef) -> OortFunction:
         func = OortFunction(node, closure=self.env)

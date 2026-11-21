@@ -37,7 +37,7 @@ BUILTIN_BINARY_OPERATORS = frozenset(
         "!in",
     }
 )
-RESERVED_OPERATOR_SYMBOLS = frozenset({"and", "or", "not", "is", "!is", "await", "="})
+RESERVED_OPERATOR_SYMBOLS = frozenset({"and", "or", "not", "is", "!is", "await", "=", "=>"})
 
 
 def validate_operator_definition(symbol: str, operand_count: int) -> str | None:

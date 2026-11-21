@@ -111,6 +111,8 @@ atomExpr
     | atomExpr lambdaDef                                                # FunctionCallExpr
     | macroCallName LPA argumentList RPA lambdaDef?                     # MacroCallExpr
     | classDef                                                          # ClassDefExpr
+    | enumDecl                                                          # EnumDefExpr
+    | matchExpr                                                         # MatchExprAtom
     | functionDef                                                       # FuncDefExpr
     | lambdaDef                                                         # LambdaDefExpr
     | macroDef                                                          # MacroDefExpr
@@ -126,6 +128,8 @@ atomExpr
 dotAttribute
     : identifier
     | CLASS
+    | MATCH
+    | ENUM
     ;
 
 /*
@@ -155,6 +159,53 @@ classDef
 
 className
     : identifier (DOT identifier)*
+    ;
+
+/*
+    Enum / ADT declaration.
+*/
+enumDecl
+    : ENUM identifier typeParameterDef? LBC enumConstructorList? RBC
+    ;
+
+enumConstructorList
+    : term? enumConstructor ((COMMA term? | term) enumConstructor)* (COMMA term? | term)?
+    ;
+
+enumConstructor
+    : identifier (LPA enumFieldList? RPA)?
+    ;
+
+enumFieldList
+    : enumField (COMMA enumField)*
+    ;
+
+enumField
+    : identifier COLON expression
+    ;
+
+/*
+    Match expression and patterns.
+*/
+matchExpr
+    : MATCH expression LBC matchArmList? RBC
+    ;
+
+matchArmList
+    : term? matchArm ((COMMA term? | term) matchArm)* (COMMA term? | term)?
+    ;
+
+matchArm
+    : pattern FATARROW expression
+    ;
+
+pattern
+    : identifier LPA patternList? RPA    # ConstructorPattern
+    | identifier                         # NamePattern
+    ;
+
+patternList
+    : pattern (COMMA pattern)*
     ;
 
 typeParameterDef
@@ -417,6 +468,8 @@ fragment BitOrAssign: '|=';
 
 ASSIGN: '=';
 
+FATARROW: '=>';
+
 ELLIPSIS: '...';
 DOT: '.';
 COMMA: ',';
@@ -463,6 +516,8 @@ VAL: 'val';
 DO: 'do';
 DEF: 'def';
 CLASS: 'class';
+ENUM: 'enum';
+MATCH: 'match';
 THIS: 'this';
 SUPER: 'super';
 

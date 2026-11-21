@@ -235,6 +235,42 @@ class Pass1Analyzer(ScopeResolverMixin, FunctionResolverMixin, ASTVisitor[T]):
                 self.input_info,
             )
 
+    def visit_enum_def(self, node: nodes.EnumDef) -> T | None:
+        if not self.dialect.features.adt:
+            self._unsupported("Enums are only supported in oort-core yet.", node)
+            return None
+        if self.scopes:
+            self._unsupported(
+                "Enum declarations are only allowed at module top level in oort-core.",
+                node,
+            )
+        return None
+
+    def visit_match_expr(self, node: nodes.MatchExpr) -> T | None:
+        if not self.dialect.features.adt:
+            self._unsupported("match is only supported in oort-core yet.", node)
+            return None
+        node.scrutinee.accept(self)
+        for arm in node.arms:
+            self.begin_scope()
+            try:
+                self._declare_pattern_bindings(arm.pattern)
+                arm.body.accept(self)
+            finally:
+                self.end_scope()
+        return None
+
+    def _declare_pattern_bindings(self, pattern: nodes.Pattern) -> None:
+        if isinstance(pattern, nodes.WildcardPattern):
+            return
+        if isinstance(pattern, nodes.NamePattern):
+            self.declare(pattern.name, pattern.position)
+            self.define(pattern.name)
+            return
+        if isinstance(pattern, nodes.ConstructorPattern):
+            for arg in pattern.args:
+                self._declare_pattern_bindings(arg)
+
     def visit_for_expr(self, node: nodes.ForExpr) -> T | None:
         node.iterator.accept(self)
 

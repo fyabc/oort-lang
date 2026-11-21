@@ -2,6 +2,7 @@
 
 """Value objects of the tree-walking interpreter."""
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from .context import get_runtime
@@ -11,6 +12,7 @@ if TYPE_CHECKING:
     from .type_system import OortType
 
 __all__ = [
+    "OortADT",
     "OortBool",
     "OortDict",
     "OortFloat",
@@ -122,6 +124,29 @@ class OortModule(OortNativeMixin, OortObject):
 
     def has(self, name: str) -> bool:
         return name in self.env.values
+
+
+class OortADT(OortNativeMixin, OortObject):
+    """One value of an enum/ADT type: a variant tag plus payload values."""
+
+    def __init__(
+        self,
+        type_: "OortType",
+        variant: str,
+        values: Iterable["OortObject"] = (),
+    ):
+        super().__init__(type_)
+        self.variant = variant
+        self.values = tuple(values)
+
+    def __repr__(self):
+        return str(self)
+
+    def __str__(self):
+        if not self.values:
+            return self.variant
+        payload = ", ".join(repr(value) for value in self.values)
+        return f"{self.variant}({payload})"
 
 
 class OortSuperProxy(OortNativeMixin, OortObject):

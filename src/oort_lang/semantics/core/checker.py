@@ -24,6 +24,8 @@ from .types import (
     NEVER,
     UNIT,
     UNKNOWN,
+    AdtType,
+    ConstructorInfo,
     CoreModuleInfo,
     FunctionType,
     ModuleType,
@@ -49,6 +51,15 @@ class NameInfo:
     is_function: bool = False
 
 
+@dataclasses.dataclass(slots=True)
+class PatternResult:
+    bindings: list[tuple[str, Type, SourcePosition]]
+    covered: set[str] = dataclasses.field(default_factory=set)
+    covers_all: bool = False
+    irrefutable: bool = False
+    failed: bool = False
+
+
 class CoreTypeChecker(ASTVisitor[Type]):
     """Type-check the `oort-core` subset and record inferred types."""
 
@@ -68,6 +79,8 @@ class CoreTypeChecker(ASTVisitor[Type]):
         self.current_function_name: str | None = None
         self.module_level = True
         self.module_exports: tuple[tuple[str, Type], ...] = ()
+        self.enums: dict[str, AdtType] = {}
+        self.constructor_names: dict[str, AdtType] = {}
 
     # ------------------------------------------------------------------
     # Entry point and scopes
@@ -214,6 +227,88 @@ class CoreTypeChecker(ASTVisitor[Type]):
         self.expect(info.type, value_type, node.rhs)
         node.lhs.metadata["type"] = describe_type(info.type)
         return UNIT
+
+    def visit_enum_def(self, node: nodes.EnumDef) -> Type:
+        if not self.module_level:
+            return self._unsupported(
+                node, "Enum declarations are only allowed at module top level in oort-core."
+            )
+        if node.type_params:
+            return self._unsupported(node, "Generic enums are not supported in oort-core yet.")
+        if node.name in {"Int", "Bool", "Unit", "_"}:
+            self._error(
+                f"Enum name '{node.name}' is reserved in oort-core.",
+                node.name_position,
+            )
+            return UNIT
+        if node.name in self.enums:
+            self._error(f"Enum '{node.name}' is already declared.", node.name_position)
+            return UNIT
+        if not node.constructors:
+            self._error("An enum must declare at least one constructor.", node.position)
+            return UNIT
+
+        adt = AdtType(self._module_origin(), node.name)
+        self.enums[node.name] = adt
+
+        built: list[tuple[ConstructorInfo, nodes.EnumConstructor]] = []
+        for case in node.constructors:
+            if case.name == "_":
+                self._error(
+                    "Constructor name '_' is reserved for wildcard patterns.",
+                    case.position,
+                )
+                continue
+            if case.name in self.constructor_names:
+                self._error(
+                    f"Constructor '{case.name}' is already declared.",
+                    case.position,
+                )
+                continue
+            field_names: list[str] = []
+            payload: list[Type] = []
+            seen_fields: set[str] = set()
+            for field in case.fields:
+                if field.name in seen_fields:
+                    self._error(
+                        f"Duplicate field '{field.name}' in constructor '{case.name}'.",
+                        field.position,
+                    )
+                seen_fields.add(field.name)
+                field_names.append(field.name)
+                if field.type_expr is None:
+                    self._error(
+                        f"Field '{field.name}' requires a type annotation in oort-core.",
+                        field.position,
+                    )
+                    payload.append(UNKNOWN)
+                else:
+                    payload.append(self.resolve_annotation(field.type_expr, allow_unit=False))
+            info = ConstructorInfo(case.name, tuple(field_names), tuple(payload))
+            built.append((info, case))
+            self.constructor_names[case.name] = adt
+
+        adt.constructors = tuple(info for info, _ in built)
+        for info, case in built:
+            if info.payload:
+                constructor_type: Type = FunctionType(info.payload, adt)
+                is_function = True
+            else:
+                constructor_type = adt
+                is_function = False
+            self.declare(
+                info.name,
+                constructor_type,
+                mutable=False,
+                position=case.position,
+                is_function=is_function,
+            )
+        node.metadata["type"] = describe_type(adt)
+        return UNIT
+
+    def _module_origin(self) -> str:
+        path = self.input_info.module_path
+        return str(path) if path is not None else self.input_info.module_name
 
     def visit_function_def(self, node: nodes.FunctionDef) -> Type:
         if node.is_lambda:
@@ -410,9 +505,9 @@ class CoreTypeChecker(ASTVisitor[Type]):
         for arg_type, arg in zip(argument_types, node.args):
             if isinstance(arg_type, (UnknownType, NeverType)):
                 continue
-            if arg_type not in (INT, BOOL, UNIT):
+            if arg_type not in (INT, BOOL, UNIT) and not isinstance(arg_type, AdtType):
                 self._error(
-                    "The built-in 'print' only accepts Int, Bool or Unit "
+                    "The built-in 'print' only accepts Int, Bool, Unit or enum "
                     f"arguments in oort-core, got {describe_type(arg_type)}.",
                     arg.value.position,
                 )
@@ -467,6 +562,12 @@ class CoreTypeChecker(ASTVisitor[Type]):
     def _check_equality(self, node: nodes.BinaryExpr, left: Type, right: Type) -> Type:
         if isinstance(left, UnknownType) or isinstance(right, UnknownType):
             return self._record(node, BOOL)
+        if isinstance(left, AdtType) or isinstance(right, AdtType):
+            self._error(
+                "Enum equality is not supported in oort-core yet; use match.",
+                node.position,
+            )
+            return self._record(node, UNKNOWN)
         if left == right and (left in (INT, BOOL)):
             return self._record(node, BOOL)
         self._error(
@@ -514,14 +615,182 @@ class CoreTypeChecker(ASTVisitor[Type]):
             return self._record(node, UNKNOWN)
         return self._record(node, joined)
 
+    def visit_match_expr(self, node: nodes.MatchExpr) -> Type:
+        scrutinee_type = node.scrutinee.accept(self) or UNKNOWN
+        if isinstance(scrutinee_type, UnknownType):
+            scrutinee_ok = False
+        elif isinstance(scrutinee_type, AdtType):
+            scrutinee_ok = True
+        else:
+            self._error(
+                "The scrutinee of match must have an enum type in oort-core, "
+                f"got {describe_type(scrutinee_type)}.",
+                node.scrutinee.position,
+            )
+            scrutinee_type = UNKNOWN
+            scrutinee_ok = False
+
+        if not node.arms:
+            self._error("match requires at least one arm.", node.position)
+            return self._record(node, UNKNOWN)
+
+        arm_types: list[Type] = []
+        covered: set[str] = set()
+        covers_all = False
+        any_failed = False
+        for arm in node.arms:
+            self.scopes.append({})
+            try:
+                result = self._check_pattern(arm.pattern, scrutinee_type)
+                for name, type_, position in result.bindings:
+                    self.declare(name, type_, mutable=False, position=position)
+                body_type = arm.body.accept(self) or UNKNOWN
+            finally:
+                self.scopes.pop()
+            arm_types.append(body_type)
+            covered.update(result.covered)
+            covers_all = covers_all or result.covers_all
+            any_failed = any_failed or result.failed
+
+        joined = arm_types[0]
+        for arm_type in arm_types[1:]:
+            next_joined = join_types(joined, arm_type)
+            if next_joined is None:
+                self._error(
+                    "The arms of this match have incompatible types: "
+                    f"{describe_type(joined)} and {describe_type(arm_type)}.",
+                    node.position,
+                )
+                joined = UNKNOWN
+                break
+            joined = next_joined
+
+        if (
+            scrutinee_ok
+            and not any_failed
+            and isinstance(scrutinee_type, AdtType)
+            and not covers_all
+        ):
+            missing = [
+                constructor.name
+                for constructor in scrutinee_type.constructors
+                if constructor.name not in covered
+            ]
+            if missing:
+                self._error(
+                    f"Match is not exhaustive; missing: {', '.join(missing)}.",
+                    node.position,
+                )
+        return self._record(node, joined)
+
+    def _check_pattern(self, pattern: nodes.Pattern, expected: Type) -> PatternResult:
+        if isinstance(pattern, nodes.WildcardPattern):
+            return PatternResult([], covers_all=True, irrefutable=True)
+        if isinstance(pattern, nodes.NamePattern):
+            return self._check_name_pattern(pattern, expected)
+        if isinstance(pattern, nodes.ConstructorPattern):
+            return self._check_constructor_pattern(pattern, expected)
+        self._error("Unknown pattern kind.", pattern.position)
+        return PatternResult([], failed=True)
+
+    def _check_name_pattern(self, pattern: nodes.NamePattern, expected: Type) -> PatternResult:
+        binding = (pattern.name, expected, pattern.position)
+        if isinstance(expected, AdtType):
+            constructor = expected.constructor(pattern.name)
+            if constructor is not None:
+                if constructor.payload:
+                    self._error(
+                        f"Constructor '{constructor.name}' expects "
+                        f"{len(constructor.payload)} argument(s).",
+                        pattern.position,
+                    )
+                    return PatternResult([binding], failed=True)
+                return PatternResult(
+                    [binding],
+                    covered={constructor.name},
+                    irrefutable=len(expected.constructors) == 1,
+                )
+            owner = self.constructor_names.get(pattern.name)
+            if owner is not None:
+                self._error(
+                    f"'{pattern.name}' is not a constructor of enum '{expected.name}'.",
+                    pattern.position,
+                )
+                return PatternResult([binding], failed=True)
+        if isinstance(expected, UnknownType):
+            return PatternResult([binding], covers_all=True, irrefutable=True)
+        return PatternResult([binding], covers_all=True, irrefutable=True)
+
+    def _check_constructor_pattern(
+        self, pattern: nodes.ConstructorPattern, expected: Type
+    ) -> PatternResult:
+        if isinstance(expected, UnknownType):
+            bindings: list[tuple[str, Type, SourcePosition]] = []
+            for arg in pattern.args:
+                result = self._check_pattern(arg, UNKNOWN)
+                bindings.extend(result.bindings)
+            return PatternResult(bindings, failed=True)
+
+        if not isinstance(expected, AdtType):
+            self._error(
+                f"Constructor patterns require an enum type, got {describe_type(expected)}.",
+                pattern.position,
+            )
+            bindings = []
+            for arg in pattern.args:
+                result = self._check_pattern(arg, UNKNOWN)
+                bindings.extend(result.bindings)
+            return PatternResult(bindings, failed=True)
+
+        constructor = expected.constructor(pattern.name)
+        if constructor is None:
+            self._error(
+                f"Enum '{expected.name}' has no constructor '{pattern.name}'.",
+                pattern.position,
+            )
+            bindings = []
+            for arg in pattern.args:
+                result = self._check_pattern(arg, UNKNOWN)
+                bindings.extend(result.bindings)
+            return PatternResult(bindings, failed=True)
+
+        if len(pattern.args) != len(constructor.payload):
+            self._error(
+                f"Constructor '{constructor.name}' expects "
+                f"{len(constructor.payload)} argument(s), got {len(pattern.args)}.",
+                pattern.position,
+            )
+
+        bindings = []
+        irrefutable = True
+        failed = len(pattern.args) != len(constructor.payload)
+        for arg, payload_type in zip(pattern.args, constructor.payload):
+            result = self._check_pattern(arg, payload_type)
+            bindings.extend(result.bindings)
+            irrefutable = irrefutable and result.irrefutable
+            failed = failed or result.failed
+
+        return PatternResult(
+            bindings,
+            covered={constructor.name} if irrefutable else set(),
+            irrefutable=len(expected.constructors) == 1 and irrefutable,
+            failed=failed,
+        )
+
     # ------------------------------------------------------------------
     # Annotations, diagnostics and unsupported constructs
     # ------------------------------------------------------------------
 
     def resolve_annotation(self, node: nodes.ASTNode, *, allow_unit: bool) -> Type:
+        if isinstance(node, nodes.Subscript):
+            self._error(
+                "Generic type applications are not supported in oort-core yet.",
+                node.position,
+            )
+            return UNKNOWN
         if not isinstance(node, nodes.Name):
             self._error(
-                "Only Int, Bool and Unit type names are supported in oort-core.",
+                "Only Int, Bool, Unit and enum type names are supported in oort-core.",
                 node.position,
             )
             return UNKNOWN
@@ -537,8 +806,12 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 node.position,
             )
             return UNKNOWN
+        enum_type = self.enums.get(node.id)
+        if enum_type is not None:
+            return enum_type
+        known = ", ".join(["Int", "Bool", "Unit", *self.enums])
         self._error(
-            f"Unknown type '{node.id}' in oort-core. Known types: Int, Bool, Unit.",
+            f"Unknown type '{node.id}' in oort-core. Known types: {known}.",
             node.position,
         )
         return UNKNOWN
