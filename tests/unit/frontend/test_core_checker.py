@@ -251,13 +251,23 @@ class TestCoreRejections:
             "The return types of function 'f' are incompatible: Int and String.",
         )
 
-    def test_method_return_annotation_still_required(self, caplog):
-        # Return inference covers top-level functions and lambdas only; class
-        # methods keep requiring an annotation in this slice.
+    def test_recursive_method_requires_return_annotation(self, caplog):
+        # Method returns are inferred in dependency order, but a method on a
+        # recursive call cycle cannot be inferred and needs an annotation.
         check_error(
             caplog,
-            "class C { def m() { 1 } }\n",
-            "Function 'C.m' requires a return type annotation",
+            "class C { def m(n: Int) { if n <= 0 { 0 } else { this.m(n - 1) } } }\n",
+            "Recursive method 'C.m' requires a return type annotation",
+        )
+
+    def test_mutually_recursive_methods_require_return_annotation(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n"
+            "  def a(n: Int) { if n <= 0 { 0 } else { this.b(n - 1) } }\n"
+            "  def b(n: Int) { if n <= 0 { 1 } else { this.a(n - 1) } }\n"
+            "}\n",
+            "Recursive method 'C.a' requires a return type annotation",
         )
 
     def test_unit_in_variable_annotation(self, caplog):
@@ -1235,6 +1245,76 @@ class TestCoreClasses:
             )
         )
         assert result.stdout == "5\n"
+
+    def test_infer_method_return_from_tail_expression(self, run_source):
+        result = run_source(
+            core(
+                "class Point {\n"
+                "    val x: Int\n"
+                "    val y: Int\n"
+                "    def __init__(x: Int, y: Int) { this.x = x\n this.y = y }\n"
+                "    def sum() { this.x + this.y }\n"
+                "}\n"
+                "print(Point(2, 3).sum())\n"
+            )
+        )
+        assert result.stdout == "5\n"
+
+    def test_infer_method_return_backward_call(self, run_source):
+        result = run_source(
+            core(
+                "class C {\n"
+                "    val x: Int = 1\n"
+                "    def get() { this.x }\n"
+                "    def bump() { this.get() + 1 }\n"
+                "}\n"
+                "val c = C()\nprint(c.get(), c.bump())\n"
+            )
+        )
+        assert result.stdout == "1 2\n"
+
+    def test_infer_method_return_forward_call(self, run_source):
+        # a() calls b() defined later; dependency-order inference resolves it.
+        result = run_source(
+            core("class C {\n    def a() { this.b() + 1 }\n    def b() { 10 }\n}\nprint(C().a())\n")
+        )
+        assert result.stdout == "11\n"
+
+    def test_infer_method_unit_return(self, run_source):
+        result = run_source(
+            core(
+                "class C {\n"
+                "    var n: Int = 0\n"
+                "    def bump() { this.n = this.n + 1 }\n"
+                "    def get() { this.n }\n"
+                "}\n"
+                "val c = C()\nc.bump()\nc.bump()\nprint(c.get())\n"
+            )
+        )
+        assert result.stdout == "2\n"
+
+    def test_annotated_method_calls_inferred_method(self, run_source):
+        result = run_source(
+            core(
+                "class C {\n"
+                "    def base() { 5 }\n"
+                "    def twice() -> Int { this.base() * 2 }\n"
+                "}\n"
+                "print(C().twice())\n"
+            )
+        )
+        assert result.stdout == "10\n"
+
+    def test_annotated_recursive_method_still_works(self, run_source):
+        result = run_source(
+            core(
+                "class C {\n"
+                "    def fact(n: Int) -> Int { if n <= 1 { 1 } else { n * this.fact(n - 1) } }\n"
+                "}\n"
+                "print(C().fact(5))\n"
+            )
+        )
+        assert result.stdout == "120\n"
 
     def test_slot_initializers_run_before_constructor(self, run_source):
         result = run_source(

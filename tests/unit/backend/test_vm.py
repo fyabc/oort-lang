@@ -173,8 +173,8 @@ class Point {
     val x: Int = base + 1
     var y: Int
     def __init__(y: Int) { this.y = y }
-    def sum() -> Int { this.x + this.y }
-    def bump() -> Int {
+    def sum() { this.x + this.y }
+    def bump() {
         this.y = this.y + 1
         this.sum()
     }

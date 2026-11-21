@@ -544,7 +544,9 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 if method_name == "__init__":
                     signature = self._check_init_signature(stmt, display_name)
                 else:
-                    signature = self._build_signature(stmt, display_name)
+                    signature = self._build_signature(
+                        stmt, display_name, infer_return=stmt.ret_type is None
+                    )
                 stmt.metadata["type"] = describe_type(signature)
                 method_names.add(method_name)
                 methods.append((method_name, signature, stmt))
@@ -578,14 +580,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
             if declaration.init_value is not None and not isinstance(info.slot_type, UnknownType):
                 self._check_expr(declaration.init_value, info.slot_type)
 
-        for method_name, signature, function in methods:
-            self._check_method_body(
-                function,
-                signature,
-                f"{name}.{method_name}",
-                class_type,
-                is_initializer=method_name == "__init__",
-            )
+        self._infer_and_check_methods(methods, class_type, name, method_names)
 
         slot_facts = [
             SlotFact(info.name, info.mutable, info.has_initializer, target.position)
@@ -621,21 +616,119 @@ class CoreTypeChecker(ASTVisitor[Type]):
         class_type: ClassType,
         *,
         is_initializer: bool,
-    ) -> None:
+        infer_return: bool = False,
+    ) -> FunctionType:
         previous_class = self.current_class
         previous_initializer = self._in_initializer
         self.current_class = class_type
         self._in_initializer = is_initializer
         try:
-            self._check_function_body(
+            return self._check_function_body(
                 node,
                 signature,
                 display_name,
                 this_type=class_type,
+                infer_return=infer_return,
             )
         finally:
             self.current_class = previous_class
             self._in_initializer = previous_initializer
+
+    def _method_dependencies(self, body: nodes.ASTNode, method_names: set[str]) -> set[str]:
+        """Same-class methods referenced in a method body (conservative scan).
+
+        Collects attribute names that match a method of the class, covering
+        ``this.m()`` calls, calls on other instances and method-as-value uses.
+        Matching by name regardless of receiver may add a spurious edge, which
+        only constrains the inference order further and stays sound.
+        """
+        deps: set[str] = set()
+
+        def walk(node: nodes.ASTNode | None) -> None:
+            if node is None:
+                return
+            if isinstance(node, nodes.Attribute) and node.attribute in method_names:
+                deps.add(node.attribute)
+            for child in node.children():
+                walk(child)
+
+        walk(body)
+        return deps
+
+    def _infer_and_check_methods(
+        self,
+        methods: list[tuple[str, FunctionType, nodes.FunctionDef]],
+        class_type: ClassType,
+        class_name: str,
+        method_names: set[str],
+    ) -> None:
+        """Infer unannotated method returns in dependency order, then check bodies.
+
+        Methods are inferred callees-first (topological order) so a method never
+        sees the placeholder return of a method it calls. Methods on a recursive
+        call cycle cannot be inferred and require an explicit annotation.
+        """
+        by_name = {method_name: (sig, fn) for method_name, sig, fn in methods}
+        unannotated = [
+            method_name
+            for method_name, _, fn in methods
+            if fn.ret_type is None and method_name != "__init__"
+        ]
+        deps = {
+            method_name: self._method_dependencies(by_name[method_name][1].body, method_names)
+            for method_name in unannotated
+        }
+        pending = set(unannotated)
+        order: list[str] = []
+        while pending:
+            ready = next((m for m in pending if not (deps[m] & pending)), None)
+            if ready is None:
+                break
+            pending.remove(ready)
+            order.append(ready)
+        blocked = pending  # recursive cycles, including self-recursion
+
+        for method_name in order:
+            signature, function = by_name[method_name]
+            inferred = self._check_method_body(
+                function,
+                signature,
+                f"{class_name}.{method_name}",
+                class_type,
+                is_initializer=False,
+                infer_return=True,
+            )
+            class_type.methods = tuple(
+                (n, inferred if n == method_name else s) for n, s in class_type.methods
+            )
+            function.metadata["type"] = describe_type(inferred)
+
+        for method_name in blocked:
+            signature, function = by_name[method_name]
+            self._error(
+                f"Recursive method '{class_name}.{method_name}' requires a return type "
+                f"annotation in oort-core; add '-> T'.",
+                function.name_position,
+            )
+            self._check_method_body(
+                function,
+                signature,
+                f"{class_name}.{method_name}",
+                class_type,
+                is_initializer=False,
+            )
+
+        # Annotated methods and __init__ are checked last so their call sites
+        # see the already-inferred return types.
+        for method_name, signature, function in methods:
+            if function.ret_type is not None or method_name == "__init__":
+                self._check_method_body(
+                    function,
+                    signature,
+                    f"{class_name}.{method_name}",
+                    class_type,
+                    is_initializer=method_name == "__init__",
+                )
 
     def visit_enum_def(self, node: nodes.EnumDef) -> Type:
         if not self.module_level:

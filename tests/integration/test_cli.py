@@ -230,6 +230,20 @@ val inc = do(x: Int) { x + 1 }
     assert "type='(Int) -> Int'" in out
 
 
+def test_core_astm_shows_inferred_method_return_types(monkeypatch, capsys):
+    source = """\
+#lang oort-core
+class C {
+    val x: Int = 1
+    def get() { this.x }
+    def bump() { this.get() + 1 }
+}
+"""
+    assert _run_cli(monkeypatch, ["-t", "astm", "-c", source]) == 0
+    out = capsys.readouterr().out
+    assert "type='() -> Int'" in out
+
+
 def test_core_module_import_from_file(monkeypatch, capsys, tmp_path):
     (tmp_path / "lib.ort").write_text(
         "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",

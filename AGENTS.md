@@ -12,10 +12,14 @@ uv run --frozen mypy src/
 uv run --frozen --with "import-linter>=2" lint-imports
 uv run --frozen pre-commit run --all-files
 uv run --frozen --with "mkdocs-material>=9.6" mkdocs build --strict
+npx --yes markdownlint-cli2@0.18.1 "README.md" "CONTRIBUTING.md" "docs/**/*.md" "benchmarks/README.md" "tests/README.md"
 ```
 
 性能分析用 `scripts/profile_run.py`（cProfile + 计时）；采样 profile 与统计
 规则见 `benchmarks/README.md`。
+
+**改 Markdown 后务必跑 markdownlint**（CI 的 Quality and security 任务会跑）：
+常见坑是 MD038——代码 span 内不得有首尾空格（写 `` `x =` `` 而非 `` `x = ` ``）。
 
 ## 不变量
 

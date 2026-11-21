@@ -153,3 +153,27 @@ def test_object_cannot_import_core_module(tmp_path, caplog):
     with pytest.raises(CompilerError):
         _run(main)
     assert "Cannot import a 'oort-core' module from an 'oort-object' module" in caplog.text
+
+
+def test_class_with_inferred_methods_exported(tmp_path, run_file):
+    # Method return types are inferred in the defining module and must carry
+    # across the module boundary with the class.
+    _write(
+        tmp_path,
+        "geom.ort",
+        "#lang oort-core\n"
+        "class Point {\n"
+        "    val x: Int\n"
+        "    val y: Int\n"
+        "    def __init__(x: Int, y: Int) { this.x = x\n this.y = y }\n"
+        "    def sum() { this.x + this.y }\n"
+        "    def double_sum() { this.sum() * 2 }\n"
+        "}\n",
+    )
+    main = _write(
+        tmp_path,
+        "main.ort",
+        '#lang oort-core\nfrom "./geom" import Point\n'
+        "val p = Point(2, 3)\nprint(p.sum(), p.double_sum())\n",
+    )
+    assert run_file(main).stdout == "5 10\n"

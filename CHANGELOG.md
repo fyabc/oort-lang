@@ -8,12 +8,13 @@
 
 ### 新增
 
-- **oort-core 函数返回类型推断**（OP 0005 第一切片）：顶层 `def` 与 `do`
-  lambda 可省略返回标注，从各 `return` 类型与尾表达式类型合并推断；lambda
-  还可由期望函数类型下推返回类型（`val f: (Int) -> Int = do(x: Int) { x }`）。
-  **自递归函数仍需显式返回标注**（对齐 Kotlin/Scala）；类方法返回仍必填。
-  推断类型正确跨模块导出。新增 [design 14](docs/design/14-core-typechecking.md)
-  记录已实现的双向检查/局部推断算法与跨语言对比。
+- **oort-core 函数返回类型推断**（OP 0005）：顶层 `def`、`do` lambda 与**类方法**
+  可省略返回标注，从各 `return` 类型与尾表达式类型合并推断；lambda 还可由期望
+  函数类型下推返回类型（`val f: (Int) -> Int = do(x: Int) { x }`）。类方法按调用
+  依赖**拓扑序**推断（被调者先推，回填 `class_type.methods`）。**递归函数/方法
+  仍需显式返回标注**（对齐 Kotlin/Scala）。推断类型正确跨模块导出。新增
+  [design 14](docs/design/14-core-typechecking.md) 记录已实现的双向检查/局部推断
+  算法与跨语言对比。
 
 ### 变更
 

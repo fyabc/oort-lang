@@ -78,11 +78,10 @@ Dunfield & Krishnaswami 的 *bidirectional typing* 综述都支持「局部双�
 - 函数签名在检查函数体**之前**安装，因此自递归调用可解析；顶层按源码顺序
   可见，**不支持前向引用/互递归**（spec 11）。
 
-## 5. 函数返回类型推断（第一切片，2026-11-22）
+## 5. 函数返回类型推断（2026-11-22）
 
-**范围**：顶层 `def` 与 `do` lambda 可省略返回标注；**类方法仍强制标注**
-（方法两遍检查 + 方法间互递归使推断显著更复杂，延后）；`__init__` 固定 Unit。
-参数仍强制标注。
+**范围**：顶层 `def`、`do` lambda 与**类方法**可省略返回标注；`__init__` 固定
+Unit。参数仍强制标注。顶层 def/lambda 为第一切片，类方法为第二切片（依赖序推断）。
 
 **算法**（`_build_signature` / `_check_function_body` / `visit_return_expr`）：
 
@@ -110,6 +109,27 @@ Dunfield & Krishnaswami 的 *bidirectional typing* 综述都支持「局部双�
 `Recursive function 'f' requires a return type annotation in oort-core; add '-> T'.`
 前向/互递归本就被拒，无需处理。
 
+### 5.1 类方法：依赖序（拓扑）推断
+
+方法与顶层 def 的关键差异：**方法前向/互调用合法**（类两遍检查先把全部签名装入
+`class_type.methods`，再查体），没有顶层「源码顺序可见」那层保护。若朴素按源码
+顺序推断，方法 A 调用尚未推断的方法 B 会拿到 Unknown 占位，经算术/join 吸收导致
+**A 的推断静默坍缩**（无诊断）。为此方法采用**依赖序推断**
+（`_infer_and_check_methods` / `_method_dependencies`）：
+
+1. 第一遍对缺标注方法以 `infer_return=True` 建 Unknown 占位签名。
+2. **依赖扫描**：遍历每个缺标注方法体，收集引用到的同类方法名（`this.m()`、
+   其他实例上的调用、方法作值；按属性名保守匹配）。
+3. **拓扑排序**（Kahn）：被调方法先推断；每推断一个就回填 `class_type.methods`
+   （可变元组重赋值，`this` 共享同一 ClassType 对象，立即全局可见）与
+   `stmt.metadata["type"]`。拓扑序保证推断时不碰 Unknown 占位。
+4. **递归环**（含自环=自递归）无法拓扑排序 → 这些方法报
+   `Recursive method 'C.m' requires a return type annotation in oort-core; add '-> T'.`
+   再以占位签名查体（保留其他错误检查）。
+5. 已标注方法与 `__init__` 最后查体，调用点类型不陈旧。
+
+`__init__`（forced Unit）、构造器类型、确定赋值分析、槽初始化器均不受影响。
+
 ## 6. 跨语言对比：返回推断与递归标注
 
 | 语言 | 函数返回推断 | 递归函数是否需显式返回类型 |
@@ -119,7 +139,7 @@ Dunfield & Krishnaswami 的 *bidirectional typing* 综述都支持「局部双�
 | Kotlin | 是（单表达式/从体） | **是**（递归/互递归需显式） |
 | Scala | 是（从体） | **是**（`recursive method needs result type`） |
 | TypeScript | 是 | 否（可推断，有限制） |
-| **Oort（本切片）** | **是（def + lambda）** | **是（自递归需 `-> T`）** |
+| **Oort** | **是（def + lambda + 类方法）** | **是（递归函数/方法需 `-> T`）** |
 
 Oort 的递归规则对齐 Kotlin/Scala。共同根因：推断靠分析函数体，而递归调用的
 类型又依赖函数自身返回类型，形成循环依赖——编译器以「要求显式标注」解开。
@@ -135,9 +155,9 @@ Oort 的递归规则对齐 Kotlin/Scala。共同根因：推断靠分析函数�
 
 ## 7. 边界与后续
 
-- **类方法返回推断**：延后。方法两遍检查（先装全部签名再查体）+ 方法间互递归，
-  使「调用尚未推断的另一方法」同样落到 Unknown；需要拓扑/定点或更细的标注
-  规则，另立切片。
 - **泛型 / ADT / Result·Option / 完整模式匹配 / FFI 边界**：OP 0005 后续切片，
   建立在本文的双向检查 + 局部推断基线上。
+- **方法依赖扫描的保守性**：按属性名匹配同类方法（不看 receiver 类型），可能给
+  「调用其他类同名方法」多加一条依赖约束——只会更保守（偶尔多要求标注），不会
+  不健全。精确化需 receiver 类型信息，留作后续。
 - **全程序 HM**：design 03 Phase-2 可选扩展，当前不做。

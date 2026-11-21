@@ -75,7 +75,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 函数 | 顶层 `def`、参数标注必填、返回可推断（自递归仍需标注）、位置参数、所有路径返回；函数类型、lambda 与函数值 |
 | 表达式 | 字面量、名字、块、`if`/`else`、调用、Int/Float 算术与 `/`、数值/String 比较、Bool 逻辑、集合字面量/下标/`len`、`while`/`for`、`match`、lambda、`print` |
 | ADT | 单态 `enum`、构造器、嵌套构造器模式、`_`/绑定、顶层构造器穷尽性 |
-| 类 | 顶层 `class`、固定 `val`/`var` 槽、标注方法、`__init__`、`this`、确定赋值与只读槽 |
+| 类 | 顶层 `class`、固定 `val`/`var` 槽、方法（参数标注、返回可推断、递归方法需标注）、`__init__`、`this`、确定赋值与只读槽 |
 | 模块 | core→core `import` / `from`、导出类型与再导出；object↔core 与 native 导入被拒绝 |
 | 调试 | `-t ast` 跳过检查；`-t astm` 显示推断类型 |
 

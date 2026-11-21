@@ -64,7 +64,7 @@ source
 - 声明：`val`/`var` 单目标；标注优先，否则局部推断；`Unit` 不能作为变量类型。
 - 赋值：只允许 `=` 到 `var`；参数与函数不可变。
 - 函数：顶层、参数标注必填、位置参数、精确元数、所有路径返回；**返回类型可
-  省略**（顶层 def 与 lambda 从体推断，自递归仍需标注；类方法返回仍必填）；
+  省略**（顶层 def、lambda 与类方法从体推断，递归函数/方法仍需标注）；
   lambda 必须显式参数列表；函数值可推断、赋值、传参、返回与调用。算法见
   [design 14](../design/14-core-typechecking.md)。
 - 函数类型：注解中的 `Int -> Bool` / `(Int, Bool) -> Int` / `() -> Unit` 解析为
@@ -94,7 +94,9 @@ source
   `_ReturnInfer` 帧收集 `return` 类型，查体后与尾表达式类型 `join_types` 合并，
   重建 frozen `FunctionType` 并回填 `NameInfo.type`/`metadata`；`visit_call`
   经 `_mark_recursive_call` 检测自递归（需显式标注）。lambda 的期望返回类型经
-  `_build_signature` 的 `default_return` 挂钩下推。类方法返回推断未实现。
+  `_build_signature` 的 `default_return` 挂钩下推。**类方法**经
+  `_infer_and_check_methods`/`_method_dependencies` 按调用依赖拓扑序推断、回填
+  `class_type.methods`，递归环上的方法需显式标注。
   算法与跨语言对比见 [design 14](../design/14-core-typechecking.md)。
 
 ## ADT 与 `match`
