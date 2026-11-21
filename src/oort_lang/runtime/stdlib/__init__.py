@@ -20,6 +20,9 @@ if TYPE_CHECKING:
     NativeModuleFactory = Callable[[], OortModule]
 
 
+NATIVE_MODULE_NAMES = frozenset({"io", "math", "os", "string"})
+
+
 def native_module_factories(
     interpreter: ASTInterpreter,
 ) -> dict[str, NativeModuleFactory]:

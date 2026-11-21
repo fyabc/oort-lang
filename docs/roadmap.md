@@ -70,8 +70,9 @@ P1 已完成。后续打磨（P2）：
 
 已完成薄探针（[OP 0017](proposals/0017-oort-core-thin-probe.md)）：
 `#lang oort-core`、Int/Bool/Unit 与函数、独立类型检查器、同一程序在
-动态/静态方言下的路由隔离、跨方言导入拒绝。规范见
-[spec 11](spec/11-core-probe.md)。
+动态/静态方言下的路由隔离。已完成同方言模块导入与导出接口：core→core 的
+`import` / `from`、模块命名空间、再导出与编译期循环检测；跨方言仍拒绝。
+规范见 [spec 11](spec/11-core-probe.md)。
 
 后续按 [OP 0005](proposals/0005-type-system.md) 实现双向类型检查的
 expected-type 传播、泛型（内部单态化 + 边界擦除）、ADT/`match`、

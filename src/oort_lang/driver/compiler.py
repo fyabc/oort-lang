@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
 import argparse
+import dataclasses
 import logging
 import os
 from pathlib import Path
@@ -11,9 +12,10 @@ from antlr4.ListTokenSource import ListTokenSource
 
 from ..ast import nodes
 from ..ast.printer import ASTPrinter
-from ..diagnostics import OortException, OortSyntaxError
+from ..diagnostics import OortException, OortSyntaxError, TypeCheckError
 from ..diagnostics.error_handler import CompilerErrorHandler
 from ..diagnostics.error_listener import OortErrorListener
+from ..diagnostics.runtime_errors import OortImportError
 from ..parser.ast_builder import ASTBuilder, ASTNode
 from ..parser.dialect import (
     DEFAULT_DIALECT,
@@ -27,15 +29,25 @@ from ..parser.grammar.OortLexer import OortLexer
 from ..parser.grammar.OortParser import OortParser
 from ..parser.token_processor import TokenizedInput, tokenize
 from ..runtime.interpreter import ASTInterpreter
-from ..runtime.modules import CompiledModule, ModuleLoader
-from ..runtime.stdlib import native_module_factories
+from ..runtime.modules import CompiledModule, ModuleLoader, resolve_module_path
+from ..runtime.stdlib import NATIVE_MODULE_NAMES, native_module_factories
 from ..semantics.analyzer import SemanticAnalyzer, create_semantic_analyzer
+from ..semantics.core.types import CoreModuleInfo, Type
 from ..source.input_info import FileInputInfo, InputInfo, StringInputInfo
 from ..source.source_position import SourcePosition
 
 
 class CompilerError(Exception):
     pass
+
+
+@dataclasses.dataclass(frozen=True)
+class CompiledUnit:
+    """A compiled module plus the static interface of an `oort-core` module."""
+
+    ast: nodes.ModuleNode
+    dialect: DialectConfig
+    exports: tuple[tuple[str, Type], ...] = ()
 
 
 class Compiler:
@@ -47,11 +59,17 @@ class Compiler:
 
         self.error_handler = CompilerErrorHandler()
         self.module_paths = tuple(Path(path) for path in (getattr(args, "module_path", None) or []))
+        self._entry_dir: Path | None = None
+        self._entry_path: Path | None = None
+        self._unit_cache: dict[Path, CompiledUnit] = {}
+        self._core_compile_stack: list[Path] = []
 
     def _run_input(self, input_info: InputInfo) -> Any:
         """Run a single input."""
 
         self.error_handler.register_input(input_info)
+        self._entry_dir = input_info.module_dir
+        self._entry_path = input_info.module_path
         dialect = self._resolve_dialect(input_info)
         assert dialect is not None
 
@@ -104,11 +122,19 @@ class Compiler:
             self.error_handler.report(exit_on_error=False, clear=True)
         return result.host_value
 
-    def compile_unit_details(
-        self, input_info: InputInfo
-    ) -> tuple[nodes.ModuleNode, DialectConfig] | None:
-        """Compile one module and return its AST plus resolved dialect."""
+    def compile_unit_details(self, input_info: InputInfo) -> CompiledUnit | None:
+        """Compile one module and return its AST, dialect and static exports."""
         self.error_handler.register_input(input_info)
+        if self._entry_dir is None:
+            self._entry_dir = input_info.module_dir
+        if self._entry_path is None:
+            self._entry_path = input_info.module_path
+        path = input_info.module_path
+        if path is not None:
+            cached = self._unit_cache.get(path)
+            if cached is not None:
+                return cached
+
         start = self.error_handler.error_count
 
         dialect = self._resolve_dialect(input_info, exit_on_error=False)
@@ -138,20 +164,26 @@ class Compiler:
         if ast is None or self.error_handler.error_count > start:
             return None
         assert isinstance(ast, nodes.ModuleNode)
-        return ast, dialect
+
+        exports: tuple[tuple[str, Type], ...] = tuple(getattr(analyzer, "exports", ()))
+        unit = CompiledUnit(ast, dialect, exports)
+        if path is not None:
+            self._unit_cache[path] = unit
+        return unit
 
     def compile_unit(self, input_info: InputInfo) -> nodes.ModuleNode | None:
         """Compile one module without printing or clearing diagnostics."""
         result = self.compile_unit_details(input_info)
-        return None if result is None else result[0]
+        return None if result is None else result.ast
 
     def make_module_loader(self, interpreter: ASTInterpreter, entry_dir: Path) -> ModuleLoader:
+        self._entry_dir = entry_dir.resolve()
+
         def compile_module(path: Path) -> CompiledModule | None:
             result = self.compile_unit_details(FileInputInfo(path))
             if result is None:
                 return None
-            ast, dialect = result
-            return CompiledModule(ast, dialect.name)
+            return CompiledModule(result.ast, result.dialect.name)
 
         return ModuleLoader(
             compile_module=compile_module,
@@ -281,7 +313,67 @@ class Compiler:
         input_info: InputInfo,
         dialect: DialectConfig = DEFAULT_DIALECT,
     ) -> SemanticAnalyzer:
-        return create_semantic_analyzer(self.error_handler, input_info, dialect)
+        resolver = self._resolve_core_module if dialect.features.type_checking else None
+        return create_semantic_analyzer(
+            self.error_handler,
+            input_info,
+            dialect,
+            module_resolver=resolver,
+        )
+
+    def _resolve_core_module(
+        self,
+        spec: str,
+        importer_dir: Path,
+        position: SourcePosition,
+    ) -> CoreModuleInfo | None:
+        """Resolve and compile one `oort-core` import for static checking."""
+        if spec in NATIVE_MODULE_NAMES:
+            return CoreModuleInfo(name=spec, dialect_name="native", exports=())
+
+        entry_dir = self._entry_dir or importer_dir
+        try:
+            path = resolve_module_path(
+                spec,
+                importer_dir=importer_dir,
+                entry_dir=entry_dir,
+                search_paths=self.module_paths,
+                position=position,
+            )
+        except OortImportError as error:
+            self._add_import_diagnostic(error.msg, position)
+            return None
+
+        if path in self._core_compile_stack:
+            chain_paths = [
+                item
+                for item in [self._entry_path, *self._core_compile_stack, path]
+                if item is not None
+            ]
+            chain = " -> ".join(item.name for item in chain_paths)
+            self._add_import_diagnostic(f"Circular import detected: {chain}.", position)
+            return None
+
+        self._core_compile_stack.append(path)
+        try:
+            unit = self.compile_unit_details(FileInputInfo(path))
+        finally:
+            self._core_compile_stack.pop()
+        if unit is None:
+            return None
+        return CoreModuleInfo(
+            name=spec,
+            dialect_name=unit.dialect.name,
+            exports=unit.exports,
+        )
+
+    def _add_import_diagnostic(self, message: str, position: SourcePosition) -> None:
+        input_info = self.error_handler.input_info_for(position)
+        if input_info is not None:
+            self.error_handler.add(
+                TypeCheckError(message, position),
+                input_info,
+            )
 
     def semantic_analyze(
         self,

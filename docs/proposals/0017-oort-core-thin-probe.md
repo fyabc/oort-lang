@@ -79,16 +79,21 @@
 类、方法、扩展、`this`/`super`、lambda、嵌套/泛型/运算符定义、循环、
 `break`/`continue`、`yield`/`await`、宏、编译器属性、Float/String/Null/
 集合字面量、属性/下标、多目标声明、增强赋值、`/`、`**`、位运算、`in`、
-`is`、默认值、关键字实参、变长参数、`&block`、import。
+`is`、默认值、关键字实参、变长参数、`&block`；跨方言与 native 模块导入。
 
 拒绝时使用带位置的 `UnsupportedSyntax` 或 `TypeCheckError`，不静默降级。
 
 ## 方言隔离
 
 - 每个模块独立解析 `#lang`。
-- `oort-core` 暂不支持 import；出现 import 直接报错。
-- `ModuleLoader` 在编译后比较目标模块与导入方方言；不同则拒绝并提示需要
-  显式 FFI 边界。因此 object↔core 双向导入都被拒绝。
+- core 模块可以导入其他 core 模块：`import "m"` 绑定模块命名空间，
+  `from "m" import f` 绑定导出名。模块导出顶层函数、变量与再导出的导入名；
+  导入名不可变，模块命名空间属性不可写。
+- 静态检查器通过编译器注入的 resolver 递归编译目标模块，取得导出类型，
+  并缓存 `CompiledUnit`；编译期循环导入显式报错。
+- `ModuleLoader` 在编译后比较目标模块与导入方方言；object↔core 双向导入
+  仍被拒绝，跨方言调用等待 OP 0005 的 FFI trampoline/blame。
+- native 模块（`math` 等）不能从 core 导入。
 - REPL 固定为 `oort-object`；输入 `#lang` 指令时报错，不静默按 object 执行。
 - `-t ast` 跳过语义分析；`-t astm` 与 `eval` 运行检查器。
 
@@ -98,7 +103,9 @@
 - `semantics/analyzer.py`：`create_semantic_analyzer()` 按方言返回
   `Pass1Analyzer` 或 `CoreAnalyzer`（Pass1 + `CoreTypeChecker`）。
 - `semantics/core/{types,checker}.py`：独立类型模型与检查器；只依赖
-  `ast`/`diagnostics`/`parser`/`source`。
+  `ast`/`diagnostics`/`parser`/`source`。`ModuleType` 表示模块命名空间。
+- `driver/compiler.py`：`CompiledUnit` 缓存 AST、方言与导出类型；
+  `_resolve_core_module` 递归编译 core 导入并检测循环。
 - `runtime/modules.py`：`CompiledModule` 携带方言名；导入时做方言比较。
 - `diagnostics/type_errors.py`：`TypeCheckError`。
 - 推断类型写入 `node.metadata["type"]`，供 `-t astm` 展示。
@@ -109,7 +116,7 @@
 - Float/String/集合/null、`/`。
 - 循环、类/槽、ADT/`match`、泛型/HKT。
 - 函数值与高阶函数、函数类型标注。
-- 模块接口、跨模块类型检查、跨方言 FFI trampoline/blame。
+- 跨方言 FFI trampoline/blame；更完整的模块接口版本管理与增量编译。
 - REPL 方言切换与持久方言状态。
 - 静态对象模型、确定赋值、穷尽性检查。
 - HIR 与字节码后端。

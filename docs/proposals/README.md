@@ -78,7 +78,8 @@
 | 2026-11-20 | 扩展：`def C.f` / `def C.operator` 按词法作用域生效，成员/字段/类内运算符优先；作用域分层后按 MRO 具体度；导入直接激活、调用点歧义；扩展内允许 `super`（只查类成员） | [OP 0014](0014-extension-methods.md)（Implemented） |
 | 2026-11-20 | 真实程序支持：`io.read_file/write_file`（UTF-8 整文件，失败为运行时错误）；`os.args`（仅用户参数）、`os.script`、`os.exit`；`string.ord/chr` | [OP 0015](0015-minimal-io-and-process.md)（Implemented） |
 | 2026-11-20 | 相等性：值 `==` 递归容器；Bool/Int 全层严格；Dict/Set 使用独立键相等/哈希（Ruby `eql?` 模型）；移除相等/成员/集合代数的 HOST 投影 | [OP 0016](0016-equality-protocol.md)（Implemented） |
-| 2026-11-20 | `oort-core` 薄探针：Int/Bool/Unit/函数、标注必填、独立检查器；`/`/`**` 因可能产生 Float 而拒绝；core 暂不支持 import，跨方言导入显式拒绝 | [OP 0017](0017-oort-core-thin-probe.md)（Implemented） |
+| 2026-11-20 | `oort-core` 初版薄探针：Int/Bool/Unit/函数、标注必填、独立检查器；`/`/`**` 因可能产生 Float 而拒绝；跨方言导入显式拒绝 | [OP 0017](0017-oort-core-thin-probe.md)（Implemented） |
+| 2026-11-20 | core 同方言模块导入：`import` / `from`、模块命名空间只读、导出顶层名字与再导出、编译期循环检测；仍拒绝 object↔core 与 native 导入 | [OP 0017](0017-oort-core-thin-probe.md)（Implemented） |
 
 ## 设计原则（所有提案必须满足）
 

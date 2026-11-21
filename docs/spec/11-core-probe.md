@@ -17,7 +17,8 @@ print(add(1, 2))
 ```
 
 - 必须显式写 `#lang oort-core`；省略首行仍是 `oort-object`。
-- `oort-core` 模块暂不支持 `import`。
+- core 模块可以导入其他 core 模块（`import` / `from` 均可）；跨方言与
+  native 模块导入会被拒绝。
 - REPL 固定使用 `oort-object`；在 REPL 输入 `#lang` 会报错。
 
 ## 类型
@@ -61,6 +62,32 @@ def show(n: Int) -> Unit {
 - 裸 `return` 只允许用于 `-> Unit` 函数。
 - 顶层函数与变量按源码顺序可见；允许自递归，不支持前向引用或互递归。
 
+## 模块导入
+
+```oort
+# lib.ort
+#lang oort-core
+val base: Int = 10
+def add(a: Int, b: Int) -> Int { a + b }
+
+# main.ort
+#lang oort-core
+from "./lib" import add, base
+import "./lib" as l
+
+print(add(base, 2))
+print(l.add(1, 2))
+```
+
+- 只允许 core→core；目标模块必须是同一方言。
+- `import "m"` 绑定模块命名空间；`m.f(...)` 与 `m.x` 可用，但
+  `m.x = ...` 不可写。
+- `from "m" import f, g as h` 直接绑定导出的名字；导入名不可变。
+- 模块导出所有顶层名字（函数、`val`/`var`、再导出的导入名）。
+- import 与运行时一致，会被提升到模块正文之前；因此函数体可以引用
+  稍后出现的 import。
+- 循环导入在编译期报错；缺失导出、跨方言导入与 native 模块导入也会报错。
+
 ## 表达式
 
 | 形式 | 规则 |
@@ -95,7 +122,8 @@ def show(n: Int) -> Unit {
 | 默认值/关键字/变长 | `def f(x: Int = 1)`、`f(x = 1)`、`*args` | 对应诊断 |
 | `/`、`**` | `1 / 2`、`2 ** -1` | 会产生 Float，显式拒绝 |
 | 位运算/`in`/`is` | `1 & 2`、`x in xs` | 运算符不支持 |
-| import | `import "m"` | `Imports are not supported...` |
+| 跨方言 import | core 导入 object 模块 | `Cannot import a 'oort-object' module...` |
+| native import | `import "math"` | `Native modules are not supported...` |
 
 类型错误使用 `TypeCheckError`，未实现构造使用 `UnsupportedSyntax`。
 
@@ -110,8 +138,8 @@ print(x)          # 1
 ```
 
 把首行改为 `#lang oort-core` 后，同一个程序会报
-`Expected Bool, got Int.`。object 模块与 core 模块不能互相导入；
-跨方言调用需要未来的显式 FFI 边界。
+`Expected Bool, got Int.`。core 模块之间可以互相导入；object 与 core
+不能互相导入，跨方言调用需要未来的显式 FFI 边界。
 
 ## 执行与调试
 
@@ -122,5 +150,5 @@ print(x)          # 1
 ## 尚未实现
 
 Float/String/集合/null、`/`、循环、类与槽、ADT/`match`、泛型、函数值、
-模块接口、跨模块类型检查、跨方言 FFI、REPL 方言切换、静态对象模型、
-确定赋值、穷尽性检查、HIR/字节码后端。
+跨方言 FFI、REPL 方言切换、静态对象模型、确定赋值、穷尽性检查、
+HIR/字节码后端。

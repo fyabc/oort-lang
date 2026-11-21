@@ -79,6 +79,20 @@ def test_core_astm_shows_types(monkeypatch, capsys):
     assert "type='Int'" in capsys.readouterr().out
 
 
+def test_core_module_import_from_file(monkeypatch, capsys, tmp_path):
+    (tmp_path / "lib.ort").write_text(
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        '#lang oort-core\nfrom "./lib" import add\nprint(add(2, 3))\n',
+        encoding="utf-8",
+    )
+    assert _run_cli(monkeypatch, [str(main)]) == 0
+    assert capsys.readouterr().out == "5\n"
+
+
 def test_relative_import_from_file(monkeypatch, capsys, tmp_path):
     (tmp_path / "lib.ort").write_text("var value = 21\n", encoding="utf-8")
     main = tmp_path / "main.ort"

@@ -293,11 +293,11 @@ class TestCoreRejections:
             "Multi-target declarations are not supported in oort-core yet.",
         )
 
-    def test_import_is_rejected(self, caplog):
+    def test_native_import_is_rejected(self, caplog):
         check_error(
             caplog,
             'import "math"\n',
-            "Imports are not supported in oort-core yet.",
+            "Native modules are not supported in oort-core imports yet.",
         )
 
     @pytest.mark.parametrize(

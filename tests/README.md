@@ -93,6 +93,7 @@ REPL 按层次测试，不依赖手动输入：
 | 默认值/关键字/变长/块参数 | `unit/runtime/test_parameter_binding.py` |
 | 解释器运行时隔离 | `unit/runtime/test_runtime_isolation.py` |
 | `oort-core` 执行 | `unit/runtime/test_core_execution.py` |
+| `oort-core` 模块导入 | `unit/runtime/test_core_modules.py` |
 | 宿主投影/原生模式 | `unit/runtime/test_host_boundary.py` |
 | 迭代器协议/流式 for | `unit/runtime/test_iterators.py` |
 | 集合助手 | `unit/runtime/test_collection_builtins.py` |

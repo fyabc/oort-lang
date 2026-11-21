@@ -51,8 +51,8 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 - REPL（多行输入；Ctrl-C 取消输入或中断执行；Unix Ctrl-D、Windows Ctrl-Z+Enter、
   `exit` / `quit` 或管道 EOF 正常退出）
 - `oort-core` 薄探针：`#lang oort-core`、Int/Bool/Unit、标注必填的函数、
-  `if`/`return`、独立静态检查器；`oort-object` 仍忽略标注。见
-  [规范](docs/spec/11-core-probe.md)
+  `if`/`return`、独立静态检查器；同方言模块导入与导出类型接口；`oort-object`
+  仍忽略标注。见 [规范](docs/spec/11-core-probe.md)
 
 ### 待实现（见 proposals）
 

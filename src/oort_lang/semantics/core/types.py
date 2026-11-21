@@ -27,6 +27,29 @@ class FunctionType(Type):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class ModuleType(Type):
+    """A read-only module namespace with typed exports."""
+
+    name: str
+    exports: tuple[tuple[str, Type], ...]
+
+    def get(self, name: str) -> Type | None:
+        for export_name, export_type in self.exports:
+            if export_name == name:
+                return export_type
+        return None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class CoreModuleInfo:
+    """Resolver result for one imported `oort-core` module."""
+
+    name: str
+    dialect_name: str
+    exports: tuple[tuple[str, Type], ...]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class UnknownType(Type):
     """Error-recovery type; compatible with everything."""
 
@@ -49,6 +72,8 @@ def describe_type(type_: Type) -> str:
     if isinstance(type_, FunctionType):
         params = ", ".join(describe_type(param) for param in type_.params)
         return f"({params}) -> {describe_type(type_.ret)}"
+    if isinstance(type_, ModuleType):
+        return f"<module {type_.name}>"
     if isinstance(type_, UnknownType):
         return "Unknown"
     if isinstance(type_, NeverType):
@@ -67,6 +92,8 @@ def is_assignable(expected: Type, actual: Type) -> bool:
     if isinstance(expected, PrimitiveType) and isinstance(actual, PrimitiveType):
         return expected == actual
     if isinstance(expected, FunctionType) and isinstance(actual, FunctionType):
+        return expected == actual
+    if isinstance(expected, ModuleType) and isinstance(actual, ModuleType):
         return expected == actual
     return False
 

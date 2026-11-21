@@ -8,7 +8,8 @@ when pass 1 succeeded, so it can assume bindings exist and focus on types.
 """
 
 import dataclasses
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from pathlib import Path, PurePosixPath
 
 from ...ast import nodes
 from ...ast.ast_visitor import ASTVisitor
@@ -16,13 +17,16 @@ from ...diagnostics import TypeCheckError, UnsupportedSyntax
 from ...diagnostics.error_handler import CompilerErrorHandler
 from ...parser.dialect import DialectConfig
 from ...source.input_info import InputInfo
+from ...source.source_position import SourcePosition
 from .types import (
     BOOL,
     INT,
     NEVER,
     UNIT,
     UNKNOWN,
+    CoreModuleInfo,
     FunctionType,
+    ModuleType,
     NeverType,
     Type,
     UnknownType,
@@ -30,6 +34,8 @@ from .types import (
     is_assignable,
     join_types,
 )
+
+ModuleResolver = Callable[[str, Path, SourcePosition], CoreModuleInfo | None]
 
 _ARITHMETIC = frozenset({"+", "-", "*", "//", "%"})
 _ORDERING = frozenset({"<", "<=", ">", ">="})
@@ -51,14 +57,17 @@ class CoreTypeChecker(ASTVisitor[Type]):
         error_handler: CompilerErrorHandler,
         input_info: InputInfo,
         dialect: DialectConfig,
+        module_resolver: ModuleResolver | None = None,
     ):
         self.error_handler = error_handler
         self.input_info = input_info
         self.dialect = dialect
+        self.module_resolver = module_resolver
         self.scopes: list[dict[str, NameInfo]] = [{}]
         self.current_function: FunctionType | None = None
         self.current_function_name: str | None = None
         self.module_level = True
+        self.module_exports: tuple[tuple[str, Type], ...] = ()
 
     # ------------------------------------------------------------------
     # Entry point and scopes
@@ -68,7 +77,21 @@ class CoreTypeChecker(ASTVisitor[Type]):
         return node.accept(self)
 
     def visit_module(self, node: nodes.ModuleNode) -> Type:
-        self._check_statements(node.body.statements)
+        statements = list(node.body.statements)
+        # Match runtime hoisting: bind imports before checking any body.
+        imports = [
+            stmt
+            for stmt in statements
+            if isinstance(stmt, (nodes.ImportStmt, nodes.ImportFromStmt))
+        ]
+        for stmt in imports:
+            stmt.accept(self)
+        self._check_statements(
+            stmt
+            for stmt in statements
+            if not isinstance(stmt, (nodes.ImportStmt, nodes.ImportFromStmt))
+        )
+        self.module_exports = tuple((name, info.type) for name, info in self.scopes[0].items())
         return UNIT
 
     def visit_block_expr(self, node: nodes.BlockExpr) -> Type:
@@ -146,7 +169,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
         elif isinstance(init_type, UnknownType):
             # The initializer already reported an error; do not add a cascade.
             type_ = UNKNOWN
-        elif isinstance(init_type, (NeverType, FunctionType)) or init_type == UNIT:
+        elif isinstance(init_type, (NeverType, FunctionType, ModuleType)) or init_type == UNIT:
             self._error(
                 f"Cannot infer a usable type for '{target.name}' "
                 f"(initializer has type {describe_type(init_type)}).",
@@ -330,7 +353,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
     def visit_call(self, node: nodes.Call) -> Type:
         if node.infix:
             return self._unsupported(node, "Infix calls are not supported in oort-core yet.")
-        if not isinstance(node.func, nodes.Name):
+        if not isinstance(node.func, (nodes.Name, nodes.Attribute)):
             return self._unsupported(
                 node, "Only calls to named functions are supported in oort-core."
             )
@@ -347,21 +370,35 @@ class CoreTypeChecker(ASTVisitor[Type]):
             arg_type = arg.value.accept(self)
             argument_types.append(UNKNOWN if arg_type is None else arg_type)
 
-        name = node.func.id
-        info = self.lookup(name)
-        if info is None:
-            if name == "print":
-                return self._check_print_call(node, argument_types)
-            self._error(f"Unknown function '{name}'.", node.func.position)
-            return self._record(node, UNKNOWN)
-        if not isinstance(info.type, FunctionType):
-            self._error(f"'{name}' is not callable.", node.func.position)
-            return self._record(node, UNKNOWN)
+        if isinstance(node.func, nodes.Name):
+            name = node.func.id
+            info = self.lookup(name)
+            if info is None:
+                if name == "print":
+                    return self._check_print_call(node, argument_types)
+                self._error(f"Unknown function '{name}'.", node.func.position)
+                return self._record(node, UNKNOWN)
+            if not isinstance(info.type, FunctionType):
+                self._error(f"'{name}' is not callable.", node.func.position)
+                return self._record(node, UNKNOWN)
+            signature = info.type
+            display_name = name
+        else:
+            callee_type = node.func.accept(self)
+            if isinstance(callee_type, UnknownType):
+                return self._record(node, UNKNOWN)
+            if not isinstance(callee_type, FunctionType):
+                self._error(
+                    f"'{node.func.attribute}' is not callable.",
+                    node.func.position,
+                )
+                return self._record(node, UNKNOWN)
+            signature = callee_type
+            display_name = node.func.attribute
 
-        signature = info.type
         if len(argument_types) != len(signature.params):
             self._error(
-                f"Function '{name}' expects {len(signature.params)} arguments, "
+                f"Function '{display_name}' expects {len(signature.params)} arguments, "
                 f"got {len(argument_types)}.",
                 node.position,
             )
@@ -556,13 +593,106 @@ class CoreTypeChecker(ASTVisitor[Type]):
         return self._unsupported(node, "Loops are not supported in oort-core yet.")
 
     def visit_import_stmt(self, node: nodes.ImportStmt) -> Type:
-        return self._unsupported(node, "Imports are not supported in oort-core yet.")
+        if not self.module_level:
+            return self._unsupported(node, "Imports are only allowed at module top level.")
+        module_type = self._resolve_import(node, node.module_path)
+        name = node.alias or self._derive_binding_name(node.module_path)
+        if name is None:
+            self._error(
+                f"Cannot derive a binding name from module path {node.module_path!r}; "
+                "use 'as <name>' to choose one.",
+                node.position,
+            )
+            return UNIT
+        if module_type is None:
+            # Keep the binding to avoid cascades; the import error already fails.
+            self.declare(name, UNKNOWN, mutable=False, position=node.position)
+            return UNIT
+        self.declare(name, module_type, mutable=False, position=node.position)
+        node.metadata["type"] = describe_type(module_type)
+        return UNIT
 
     def visit_import_from_stmt(self, node: nodes.ImportFromStmt) -> Type:
-        return self._unsupported(node, "Imports are not supported in oort-core yet.")
+        if not self.module_level:
+            return self._unsupported(node, "Imports are only allowed at module top level.")
+        module_type = self._resolve_import(node, node.module_path)
+        if module_type is None:
+            for source_name, alias in node.names.items():
+                self.declare(
+                    alias or source_name,
+                    UNKNOWN,
+                    mutable=False,
+                    position=node.position,
+                )
+            return UNIT
+        for source_name, alias in node.names.items():
+            export_type = module_type.get(source_name)
+            if export_type is None:
+                self._error(
+                    f"Module {node.module_path!r} does not export {source_name!r}.",
+                    node.position,
+                )
+                export_type = UNKNOWN
+            self.declare(
+                alias or source_name,
+                export_type,
+                mutable=False,
+                position=node.position,
+            )
+        return UNIT
+
+    def _resolve_import(
+        self, node: nodes.ImportStmt | nodes.ImportFromStmt, spec: str
+    ) -> ModuleType | None:
+        if self.module_resolver is None:
+            self._error(
+                "Module imports require a compiler context in oort-core.",
+                node.position,
+            )
+            return None
+        info = self.module_resolver(spec, self.input_info.module_dir, node.position)
+        if info is None:
+            return None
+        if info.dialect_name == "native":
+            self._error(
+                "Native modules are not supported in oort-core imports yet.",
+                node.position,
+            )
+            return None
+        if info.dialect_name != self.dialect.name:
+            self._error(
+                f"Cannot import a {info.dialect_name!r} module from an "
+                f"{self.dialect.name!r} module; cross-dialect imports require "
+                f"an explicit FFI boundary.",
+                node.position,
+            )
+            return None
+        return ModuleType(info.name, info.exports)
+
+    @staticmethod
+    def _derive_binding_name(spec: str) -> str | None:
+        name = PurePosixPath(spec.replace("\\", "/")).name
+        if name.lower().endswith(".ort"):
+            name = name[: -len(".ort")]
+        return name if name.isidentifier() else None
 
     def visit_attribute(self, node: nodes.Attribute) -> Type:
-        return self._unsupported(node, "Attribute access is not supported in oort-core yet.")
+        value_type = node.value.accept(self)
+        if isinstance(value_type, UnknownType):
+            return self._record(node, UNKNOWN)
+        if isinstance(value_type, ModuleType):
+            export_type = value_type.get(node.attribute)
+            if export_type is None:
+                self._error(
+                    f"Module {value_type.name!r} does not export {node.attribute!r}.",
+                    node.position,
+                )
+                return self._record(node, UNKNOWN)
+            return self._record(node, export_type)
+        return self._unsupported(
+            node,
+            "Attribute access is only supported on imported modules in oort-core yet.",
+        )
 
     def visit_subscript(self, node: nodes.Subscript) -> Type:
         return self._unsupported(node, "Subscripts are not supported in oort-core yet.")

@@ -1,8 +1,9 @@
 # 模块与导入
 
-> 本页描述 `oort-object` 当前实现的模块系统，对应
+> 本页描述当前实现的模块系统，对应
 > [OP 0006](../proposals/0006-modules-and-imports.md)。本版只支持由 Oort
-> 编写的 `.ort` 模块；宿主语言模块与跨语言 FFI 不在范围内。
+> 编写的 `.ort` 模块；宿主语言模块与跨语言 FFI 不在范围内。`oort-core`
+> 的同方言导入/接口见 [11-core-probe.md](11-core-probe.md)。
 
 ## 模块身份
 
@@ -88,11 +89,14 @@ oort --module-path ./libs main.ort
 
 - 每个模块独立解析首行 `#lang`。被导入模块可以是显式的
   `#lang oort-object`，也可以省略（缺省即 `oort-object`）。
-- `oort-core` 薄探针暂不支持 `import`；core 模块只能作为入口模块运行。
-- 加载器在编译后比较导入方与目标模块的方言；object↔core 双向导入都会被
-  拒绝，并提示需要显式 FFI 边界。跨方言调用见
+- `oort-core` 模块可以导入其他 `oort-core` 模块；导出接口由静态检查器
+  读取，支持 `import "m"` / `from "m" import ...` 与再导出。详见
+  [11-core-probe.md](11-core-probe.md)。
+- object↔core 双向导入仍被拒绝；加载器在编译后比较导入方与目标模块的
+  方言，不同则提示需要显式 FFI 边界。跨方言调用见
   [OP 0005](../proposals/0005-type-system.md) 的后续工作。
-- 原生模块（`io`/`math`/`os`/`string`）仍只对 `oort-object` 可用。
+- 原生模块（`io`/`math`/`os`/`string`）仍只对 `oort-object` 可用；
+  core 导入 native 模块会报错。
 
 ## 导入错误
 

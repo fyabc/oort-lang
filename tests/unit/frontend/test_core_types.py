@@ -9,6 +9,7 @@ from oort_lang.semantics.core.types import (
     UNIT,
     UNKNOWN,
     FunctionType,
+    ModuleType,
     UnknownType,
     describe_type,
     is_assignable,
@@ -58,3 +59,11 @@ def test_join_types():
 def test_unknown_is_not_never():
     assert isinstance(UNKNOWN, UnknownType)
     assert UNKNOWN != NEVER
+
+
+def test_module_type_exports():
+    module = ModuleType("./lib", (("value", INT), ("add", FunctionType((INT, INT), INT))))
+    assert module.get("value") is INT
+    assert module.get("missing") is None
+    assert describe_type(module) == "<module ./lib>"
+    assert is_assignable(module, module)

@@ -1,0 +1,10 @@
+#lang oort-core
+
+# 同方言模块导入：from 直接取名字，import 绑定模块命名空间。
+
+from "./mathlib" import base, square
+import "./mathlib" as lib
+
+print(base)
+print(square(4))
+print(lib.add(2, 3))

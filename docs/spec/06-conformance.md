@@ -65,7 +65,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 声明 | 单目标 `val`/`var`，标注或局部推断；`var` 可赋值 |
 | 函数 | 顶层 `def`、标注必填、位置参数、自递归、所有路径返回 |
 | 表达式 | 字面量、名字、块、`if`/`else`、调用、Int 算术/比较、Bool 逻辑、`print` |
-| 模块 | core 暂不支持 import；object↔core 跨方言导入被拒绝 |
+| 模块 | core→core `import` / `from`、导出类型与再导出；object↔core 与 native 导入被拒绝 |
 | 调试 | `-t ast` 跳过检查；`-t astm` 显示推断类型 |
 
 不在子集中的构造会以带位置的 `UnsupportedSyntax` 或 `TypeCheckError` 拒绝；
@@ -132,4 +132,5 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
   与 `examples/06_iterators/` 覆盖。
 - `oort-core` 薄探针由 `tests/unit/frontend/test_core_checker.py`、
   `test_core_types.py`、`test_analyzer_dispatch.py`、
-  `tests/unit/runtime/test_core_execution.py` 与 `examples/08_core/` 覆盖。
+  `tests/unit/runtime/test_core_execution.py`、`test_core_modules.py` 与
+  `examples/08_core/` 覆盖。

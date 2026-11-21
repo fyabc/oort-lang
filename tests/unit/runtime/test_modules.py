@@ -208,13 +208,13 @@ def test_cross_dialect_imports_are_rejected(tmp_path, caplog):
     assert "Cannot import a 'oort-core' module from an 'oort-object' module" in caplog.text
 
 
-def test_core_entry_rejects_imports(tmp_path, caplog):
+def test_core_entry_rejects_object_imports(tmp_path, caplog):
     _write(tmp_path, "lib.ort", "var value = 3\n")
     main = _write(tmp_path, "main.ort", '#lang oort-core\nimport "./lib"\n')
 
     with pytest.raises(SystemExit):
         _run(main)
-    assert "Imports are not supported in oort-core yet." in caplog.text
+    assert "Cannot import a 'oort-object' module from an 'oort-core' module" in caplog.text
 
 
 def test_imported_core_module_is_type_checked(tmp_path, caplog):

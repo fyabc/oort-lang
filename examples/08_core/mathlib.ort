@@ -1,0 +1,7 @@
+#lang oort-core
+
+val base: Int = 7
+
+def add(a: Int, b: Int) -> Int { a + b }
+
+def square(n: Int) -> Int { n * n }

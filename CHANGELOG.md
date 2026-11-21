@@ -14,11 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   under `oort-object`, where annotations remain unchecked (OP 0017).
 - Checked core modules execute on the existing interpreter; `-t astm` shows
   inferred static types and `Unit` maps to runtime `null`.
+- Same-dialect `oort-core` module imports: `import "m"` / `from "m" import f`
+  expose typed module exports, support re-exports, and detect missing exports
+  and circular imports during compilation. Cross-dialect and native imports
+  remain rejected.
 
 ### Changed
 
-- Dialect boundaries are explicit: `oort-core` rejects imports, and the module
-  loader rejects `oort-object` ↔ `oort-core` imports until FFI trampolines land.
+- Dialect boundaries are explicit: `oort-core` may import other core modules,
+  while the loader still rejects `oort-object` ↔ `oort-core` imports until FFI
+  trampolines land.
 - The REPL stays `oort-object`-only and now rejects `#lang` directives with a
   clear message instead of silently treating the submission as dynamic code.
 

@@ -62,15 +62,28 @@ source
 - 运算：Int 算术/比较、Bool 逻辑、同类型相等；`/` 与 `**` 显式拒绝。
 - `print`：特殊内建，返回 Unit；用户绑定优先。
 
-## 模块边界
+## 模块导入
 
-`runtime/modules.py` 的 `CompiledModule` 携带编译期解析出的方言名。
-`ModuleLoader` 在编译目标模块后、执行前比较导入方与目标方言：
+core 检查器通过 `ModuleResolver` 回调取得导入模块的导出类型：
 
-- 相同：正常执行；
-- 不同：抛 `OortImportError`，提示需要显式 FFI 边界。
+```text
+Checker.visit_import -> Compiler._resolve_core_module
+  -> resolve_module_path
+  -> compile_unit_details(target)   # 递归、缓存、循环检测
+  -> CoreModuleInfo(dialect, exports)
+```
 
-`oort-core` 自身在检查器中拒绝所有 import，因此 core 模块目前是入口模块。
+- `CompiledUnit` 缓存 AST、方言与 `CoreAnalyzer.exports`；
+  `ModuleLoader` 后续执行时复用同一份 AST。
+- 顶层 import 在 `visit_module` 中先于正文绑定，匹配运行时的 import 提升。
+- `ModuleType` 保存模块命名空间导出；`visit_attribute` 只允许在模块上取属性，
+  `visit_call` 同时接受 `Name` 与模块属性作为被调者。
+- `from` 直接绑定导出名；导入名与模块别名均为不可变绑定。
+- 导出包括顶层函数、变量与再导出的导入名，因此支持 re-export。
+- 编译期检测循环导入；跨方言与 native 导入在检查器中拒绝。
+
+`runtime/modules.py` 的 `CompiledModule` 仍携带方言名，`ModuleLoader` 在执行前
+做最终方言比较：core→core 允许，object↔core 抛 `OortImportError`。
 
 ## 诊断
 
@@ -84,6 +97,8 @@ source
 - `tests/unit/frontend/test_core_checker.py`：正向/拒绝/错误恢复矩阵。
 - `tests/unit/frontend/test_analyzer_dispatch.py`：分析器选择。
 - `tests/unit/runtime/test_core_execution.py`：检查后执行与 Unit/null 映射。
+- `tests/unit/runtime/test_core_modules.py`：同方言导入、再导出、类型检查、
+  缺失导出、跨方言/native 拒绝与循环检测。
 - `tests/unit/runtime/test_modules.py`：跨方言导入拒绝。
 - `tests/integration/test_cli.py`、`test_repl.py`、`test_examples.py`：
   端到端、REPL 限制与示例。

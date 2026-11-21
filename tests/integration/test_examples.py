@@ -39,6 +39,7 @@ EXPECTED_OUTPUTS = {
     "06_iterators/06_00_user_iterators.ort": ("3\n2\n1\n(a, true) (b, true) (null, false)\n1\n"),
     "08_core/08_00_core_basics.ort": "6\ntrue\ntrue\n",
     "08_core/08_01_core_functions.ort": "1\n120\ntrue\n",
+    "08_core/08_02_core_modules.ort": "7\n16\n5\n",
 }
 
 # The JSON showcase is covered by `test_json_example.py`, which compiles it
