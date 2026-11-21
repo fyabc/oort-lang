@@ -56,17 +56,17 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 - **类型标注**（`val x: Int`、`-> Int`、形参类型）会被解析和保存到 AST，
   但动态解释器不检查、不强制。完整类型系统见
   [proposal 0005](../proposals/0005-type-system.md)。
-- 在 `oort-core` 薄探针中，`Int`/`Bool`/`Unit`、单态 enum 与函数类型标注
+- 在 `oort-core` 薄探针中，`Int`/`Float`/`Bool`/`String`/`Unit`、单态 enum 与函数类型标注
   会被独立检查器检查；见 [11-core-probe.md](11-core-probe.md)。
 
 ## `oort-core` 薄探针
 
 | 类别 | 已实现 |
 |------|--------|
-| 类型 | `Int`、`Bool`、`Unit`（仅函数返回）、单态 `enum`；内部函数/`Unknown`/`Never` |
+| 类型 | `Int`、`Float`、`Bool`、`String`、`Unit`（仅函数返回）、单态 `enum`；内部函数/`Unknown`/`Never` |
 | 声明 | 单目标 `val`/`var`，标注或局部推断；`var` 可赋值；模块顶层 `enum` |
 | 函数 | 顶层 `def`、标注必填、位置参数、自递归、所有路径返回；函数类型、lambda 与函数值 |
-| 表达式 | 字面量、名字、块、`if`/`else`、调用、Int 算术/比较、Bool 逻辑、`match`、lambda、`print` |
+| 表达式 | 字面量、名字、块、`if`/`else`、调用、Int/Float 算术与 `/`、数值/String 比较、Bool 逻辑、`match`、lambda、`print` |
 | ADT | 单态 `enum`、构造器、嵌套构造器模式、`_`/绑定、顶层构造器穷尽性 |
 | 模块 | core→core `import` / `from`、导出类型与再导出；object↔core 与 native 导入被拒绝 |
 | 调试 | `-t ast` 跳过检查；`-t astm` 显示推断类型 |

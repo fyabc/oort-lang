@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   types into `if` branches, block tails and `match` arms, improving diagnostics
   at the exact branch or argument.
 - The VSCode grammar (0.1.2) highlights `enum`, `match`, `=>` and `Unit`.
+- `oort-core` scalar expressions: `Float` and `String` types and literals,
+  mixed Int/Float arithmetic, `/` (always `Float`), numeric and String
+  comparison/equality, and annotated parameters/returns for both. Numeric
+  annotations remain strict (`val x: Float = 1` is rejected); `**` stays
+  unsupported because its result type depends on the exponent.
 
 ### Changed
 

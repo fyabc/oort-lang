@@ -54,6 +54,7 @@
 | [ADT 与 match](https://github.com/fyabc/oort-lang.py/blob/main/examples/08_core/08_03_adt_match.ort) | `enum`、构造器、模式匹配、穷尽性 |
 | [函数值](https://github.com/fyabc/oort-lang.py/blob/main/examples/08_core/08_04_function_values.ort) | 函数类型、lambda、高阶函数、闭包 |
 | [手动柯里化](https://github.com/fyabc/oort-lang.py/blob/main/examples/08_core/08_05_currying.ort) | 右结合函数类型、`add(1)(2)` |
+| [标量类型](https://github.com/fyabc/oort-lang.py/blob/main/examples/08_core/08_06_scalars.ort) | `Float` / `String`、数值混合、`/` 与 `//` |
 
 ```bash
 oort examples/08_core/08_01_core_functions.ort

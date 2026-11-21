@@ -9,7 +9,7 @@
 在完整 `oort-core` v1 之前，先用一个**薄探针**验证方言路由与语义隔离：
 
 - `#lang oort-core`；
-- 最小静态子集：`Int`、`Bool`、`Unit`、函数、单态 ADT 与 `match`；
+- 最小静态子集：`Int`、`Float`、`Bool`、`String`、`Unit`、函数、单态 ADT 与 `match`；
 - 独立类型检查器，复用 AST、诊断、模块加载、CLI 与测试框架；
 - 同一份源码在 `oort-object` 下动态运行、在 `oort-core` 下静态检查。
 
@@ -37,8 +37,8 @@
    bidirectional typing 综述都支持这一取舍。
 4. **Unit 建模 `print`**：Kotlin/Rust 的先例表明返回 Unit 比返回 `null` 更清晰。
    Oort 运行时把静态 `Unit` 映射到 `null`。
-5. **整数除法**只用 `//`：`/` 在 Oort 中返回 Float，`**` 在负指数时也可能
-   返回 Float，探针都显式拒绝。
+5. **整数除法**用 `//` 保持 Int；`/` 固定返回 Float，探针直接支持 Float
+   后放开。`**` 在负指数时也可能返回 Float，仍显式拒绝。
 
 来源：
 
@@ -53,8 +53,9 @@
 
 ### 类型
 
-- `Int`、`Bool`、单态 `enum` 类型；
+- `Int`、`Float`、`Bool`、`String`、单态 `enum` 类型；
 - `Unit`：仅允许作为函数返回类型；
+- 数值标注不做隐式转换：`val x: Float = 1` 报错，必须写 `1.0`；
 - 函数类型：`Int -> Bool`、`(Int, Bool) -> Int`、`() -> Unit`；
 - 内部 `FunctionType`、`ModuleType`、`AdtType`、`Unknown`（错误恢复）、
   `Never`（所有路径 `return`）。
@@ -67,7 +68,7 @@
 - 显式参数列表的 `do(...)` lambda：参数/返回必须标注；函数值可推断、赋值、
   传参、返回与调用。函数类型箭头右结合；不做自动柯里化，链式调用
   `f(1)(2)` 由手动返回 lambda 支持。
-- 顶层 `enum`：单态、非空；构造器与字段；字段类型为 Int/Bool/本地 enum。
+- 顶层 `enum`：单态、非空；构造器与字段；字段类型为 Int/Float/Bool/String/本地 enum。
 - 函数体、块、`if`/`else`、`match`、表达式语句、`return`。
 - `if` 条件必须是 Bool；无 `else` 时类型为 Unit；分支类型需一致
   （`Never` 可与任一类型合并）。
@@ -75,11 +76,13 @@
 
 ### 表达式
 
-- Int/Bool 字面量、名字、块、`if`/`else`、调用（仅位置实参、精确元数）。
+- Int/Float/Bool/String 字面量、名字、块、`if`/`else`、调用（仅位置实参、精确元数）。
 - `do(x: Int) -> Int { ... }` 函数值；函数值可作为被调者/实参/返回值。
 - 一元 `+`、`-`、`not`。
-- 二元 `+ - * // %`、`< <= > >=`、`== !=`、`and`、`or`。
-- `print`：未被用户遮蔽时，接受任意个 Int/Bool/Unit/enum 参数，返回 Unit；
+- 二元 `+ - * // %`（Int/Float 混合，任一为 Float 则结果 Float）、
+  `/`（固定 Float）、`< <= > >=`（数值或 String）、`== !=`（数值、Bool 或
+  String）、`and`、`or`。
+- `print`：未被用户遮蔽时，接受任意个 Int/Float/Bool/String/Unit/enum 参数，返回 Unit；
   函数值不可打印/比较。
 
 ### ADT 与 `match`
@@ -96,8 +99,8 @@
 ### 显式拒绝
 
 类、方法、扩展、`this`/`super`、匿名/泛型/默认值 lambda、嵌套/泛型/运算符定义、循环、
-`break`/`continue`、`yield`/`await`、宏、编译器属性、Float/String/Null/
-集合字面量、属性/下标、多目标声明、增强赋值、`/`、`**`、位运算、`in`、
+`break`/`continue`、`yield`/`await`、宏、编译器属性、Null/集合字面量、
+属性/下标、多目标声明、增强赋值、`**`、位运算、`in`、
 `is`、默认值、关键字实参、变长参数、`&block`；跨方言与 native 模块导入；
 泛型 ADT、字面量/元组/守卫/或模式、嵌套穷尽性。
 
@@ -135,7 +138,7 @@
 ## 未决/后续
 
 - 函数返回类型推断（签名仍必须显式标注）；更强的 expected-type 传播。
-- Float/String/集合/null、`/`。
+- 集合/null。
 - 循环、类/槽、泛型 ADT/HKT、`Option[T]`/`Result[T,E]`。
 - 字面量/元组/列表/守卫/或模式、嵌套穷尽性、ADT 相等与迭代。
 - 跨方言 FFI trampoline/blame；更完整的模块接口版本管理与增量编译。

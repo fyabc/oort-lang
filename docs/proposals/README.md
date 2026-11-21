@@ -38,7 +38,7 @@
 | [0014](0014-extension-methods.md) | 扩展方法与扩展运算符（`def C.f`） | Implemented |
 | [0015](0015-minimal-io-and-process.md) | 最小 I/O、命令行参数与退出码 | Implemented |
 | [0016](0016-equality-protocol.md) | 统一相等性协议（值相等 / 键相等） | Implemented |
-| [0017](0017-oort-core-thin-probe.md) | `oort-core` 薄探针（Int/Bool/Unit/函数） | Implemented |
+| [0017](0017-oort-core-thin-probe.md) | `oort-core` 薄探针（Int/Float/Bool/String/Unit/函数） | Implemented |
 
 ## 流程
 

@@ -1,8 +1,9 @@
 # `oort-core` 薄探针
 
 本页描述 `#lang oort-core` 当前**已实现**的最小静态子集。它不是完整的
-`oort-core` v1：已实现单态 ADT（`enum`）与 `match`，但泛型 ADT、
-`Option[T]`/`Result[T,E]`、静态对象模型与跨方言 FFI 尚未实现。
+`oort-core` v1：已实现 Int/Float/Bool/String、函数、单态 ADT（`enum`）与
+`match`，但集合与循环、泛型 ADT、`Option[T]`/`Result[T,E]`、静态对象模型与
+跨方言 FFI 尚未实现。
 设计取舍见 [OP 0017](../proposals/0017-oort-core-thin-probe.md)。
 
 ## 启用
@@ -27,12 +28,16 @@ print(add(1, 2))
 | 类型 | 位置 |
 |------|------|
 | `Int` | 参数、变量、返回值、表达式 |
+| `Float` | 参数、变量、返回值、表达式 |
 | `Bool` | 参数、变量、返回值、条件、逻辑运算 |
+| `String` | 参数、变量、返回值、表达式 |
 | `Unit` | **仅函数返回类型**；声明的内部类型，不是变量类型 |
 | `enum` 类型 | 参数、变量、返回值、字段类型；单态，名称在模块内唯一 |
 | 函数类型 | `Int -> Bool`、`(Int, Bool) -> Int`、`() -> Unit`；参数/变量/返回值/字段 |
 
-- `Int` 与 `Bool` 严格区分，没有隐式转换或 truthiness。
+- `Int`、`Float`、`Bool`、`String` 严格区分，没有隐式转换或 truthiness：
+  `val x: Float = 1` 报 `Expected Float, got Int.`，必须写 `1.0`。
+- 数值运算允许 Int/Float 混合；结果是否为 Float 见“表达式”。
 - 静态 `Unit` 在运行时对应 `null`；`print` 返回 Unit。
 - 内部还有 `Unknown`（错误恢复）与 `Never`（所有路径 `return`）。
 
@@ -106,20 +111,21 @@ print(l.add(1, 2))
 
 | 形式 | 规则 |
 |------|------|
-| `1`、`true` | `Int`、`Bool` |
+| `1`、`1.5`、`true`、`"x"` | `Int`、`Float`、`Bool`、`String` |
 | `x` | 查词法作用域；未知名报错 |
-| `+x`、`-x` | `Int -> Int` |
+| `+x`、`-x` | 数值 -> 同类型数值 |
 | `not x` | `Bool -> Bool` |
-| `a + b`、`-`、`*`、`//`、`%` | `Int, Int -> Int` |
-| `a < b`、`<=`、`>`、`>=` | `Int, Int -> Bool` |
-| `a == b`、`!=` | 两个 Int 或两个 Bool -> Bool |
+| `a + b`、`-`、`*`、`//`、`%` | 两个数值 -> `Int`，任一为 Float 则 `Float` |
+| `a / b` | 两个数值 -> `Float` |
+| `a < b`、`<=`、`>`、`>=` | 两个数值或两个 String -> Bool |
+| `a == b`、`!=` | 两个数值、两个 Bool 或两个 String -> Bool；`1 == 1.0` 允许 |
 | `a and b`、`a or b` | `Bool, Bool -> Bool` |
 | `f(...)` | 仅位置实参；精确元数；实参类型匹配；被调者可为函数值 |
 | `do(x: Int) -> Int { ... }` | 函数值；参数/返回必须标注 |
 | `if c { ... } else { ... }` | 条件 Bool；两分支类型一致 |
 | `match e { ... }` | `e` 必须是 enum；arm 为 `pattern => expr`；结果类型为各 arm 的合并 |
 | `{ ... }` | 块的值是最后一条语句的值；空块为 Unit |
-| `print(...)` | 任意个 Int/Bool/Unit/enum 实参 -> Unit；可被用户定义遮蔽 |
+| `print(...)` | 任意个 Int/Float/Bool/String/Unit/enum 实参 -> Unit；可被用户定义遮蔽 |
 
 `if` 没有 `else` 时类型为 Unit。`Never`（例如 `return`）可与任一分支类型合并。
 
@@ -142,7 +148,8 @@ def area(shape: Shape) -> Int {
 ```
 
 - `enum` 只能出现在模块顶层；必须至少有一个构造器；字段类型必须标注，
-  可为 `Int`、`Bool` 或当前/此前定义的本地 enum（支持自递归）。enum 类型名
+  可为 `Int`、`Float`、`Bool`、`String` 或当前/此前定义的本地 enum
+  （支持自递归）。enum 类型名
   与构造器按源码顺序可见，不支持前向/互递归枚举。
 - 构造器是普通可调用值：`Circle(2)`；零参构造器是值：`Empty`。
 - 字段名用于声明/文档；构造与模式都按**位置**绑定，暂不支持命名字段。
@@ -167,11 +174,11 @@ def area(shape: Shape) -> Int {
 | 类/方法/扩展 | `class A {}`、`def C.f` | `Classes are not supported...` / `Extension methods...` |
 | lambda/嵌套函数 | `do: 1`、函数体里的 `def` | `Lambdas...` / `Nested function definitions...` |
 | 循环 | `while`、`for`、`break`、`continue` | `Loops are not supported...` |
-| 集合/字符串/浮点/null | `[1]`、`"x"`、`1.5`、`null` | `Lists...`、`String...`、`Float...`、`null...` |
+| 集合/null | `[1]`、`(1, 2)`、`{: 1: 2 :}`、`{. 1 .}`、`null` | `Lists...`、`Tuples...`、`Dicts...`、`Sets...`、`null...` |
 | 属性/下标 | `a.b`、`a[0]` | `Attribute access...` / `Subscripts...` |
 | 多目标/增强赋值 | `val a, b = ...`、`x += 1` | 对应诊断 |
 | 默认值/关键字/变长 | `def f(x: Int = 1)`、`f(x = 1)`、`*args` | 对应诊断 |
-| `/`、`**` | `1 / 2`、`2 ** -1` | 会产生 Float，显式拒绝 |
+| `**` | `2 ** -1` | 结果类型依赖指数，显式拒绝 |
 | 位运算/`in`/`is` | `1 & 2`、`x in xs` | 运算符不支持 |
 | 跨方言 import | core 导入 object 模块 | `Cannot import a 'oort-object' module...` |
 | native import | `import "math"` | `Native modules are not supported...` |
@@ -184,7 +191,7 @@ def area(shape: Shape) -> Int {
 | 其他模式 | 字面量/元组/守卫/或模式 | 第一切片不支持（语法或诊断） |
 | 匿名 lambda | `do: $0 + 1` | `Lambdas without an explicit parameter list...` |
 | 泛型 lambda | `do[T](x: Int) -> Int ...` | `Generic functions are not implemented yet.` |
-| 函数值打印/相等 | `print(f)`、`f == g` | 打印仅接受值/ADT；相等仅 Int/Bool |
+| 函数值打印/相等 | `print(f)`、`f == g` | 打印仅接受标量/ADT；相等仅数值/Bool/String |
 
 类型错误使用 `TypeCheckError`，未实现构造使用 `UnsupportedSyntax`。
 
@@ -210,6 +217,6 @@ print(x)          # 1
 
 ## 尚未实现
 
-Float/String/集合/null、`/`、循环、类与槽、泛型 ADT、`Option[T]`/`Result[T,E]`、
+集合与 null、循环、类与槽、泛型 ADT、`Option[T]`/`Result[T,E]`、
 函数返回类型推断、匿名 $n lambda、跨方言 FFI、REPL 方言切换、静态对象模型、
 确定赋值、字面量/元组/守卫/或模式、嵌套穷尽性、ADT 相等、HIR/字节码后端。
