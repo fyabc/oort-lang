@@ -59,3 +59,12 @@ import "./greeting" as g
 from "./greeting" import greet as hello
 # <--- keyword.control.import.oort
 #                              ^^ keyword.control.import.oort
+
+enum Shape {}
+# <--- storage.type.oort
+
+match shape {}
+# <---- keyword.control.oort
+
+val arrow = 1 => 2
+#             ^^ keyword.operator.oort

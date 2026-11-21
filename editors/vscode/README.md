@@ -38,7 +38,7 @@ code .
 cd editors/vscode
 npm install
 npm run package
-code --install-extension oort-lang-0.1.1.vsix
+code --install-extension oort-lang-0.1.2.vsix
 ```
 
 如果 `code` 不在 PATH 中，可以在 VSCode 里执行

@@ -136,7 +136,7 @@
       "patterns": [
         {
           "name": "keyword.control.oort",
-          "match": "\\b(?:if|elif|else|for|while|break|continue|return|yield|await)\\b"
+          "match": "\\b(?:if|elif|else|for|while|break|continue|return|yield|await|match)\\b"
         },
         {
           "name": "keyword.operator.word.oort",
@@ -144,7 +144,7 @@
         },
         {
           "name": "storage.type.oort",
-          "match": "\\b(?:var|val|def|class|macro)\\b"
+          "match": "\\b(?:var|val|def|class|enum|macro)\\b"
         },
         {
           "name": "variable.language.oort",
@@ -166,7 +166,7 @@
     },
     "builtin-types": {
       "name": "support.type.builtin.oort",
-      "match": "\\b(?:Object|Type|Function|Method|SuperProxy|Null|Int|Bool|Float|String|List|Tuple|Dict|Set|Slice)\\b"
+      "match": "\\b(?:Object|Type|Function|Method|SuperProxy|Null|Unit|Int|Bool|Float|String|List|Tuple|Dict|Set|Slice)\\b"
     },
     "container-punctuation": {
       "patterns": [
@@ -203,12 +203,16 @@
     "operators": {
       "patterns": [
         {
+          "name": "keyword.operator.oort",
+          "match": "=>"
+        },
+        {
           "name": "keyword.operator.assignment.oort",
           "match": "(?:\\*\\*=|//=|<<=|>>=|[+\\-*/%&|^]=|=)"
         },
         {
           "name": "keyword.operator.oort",
-          "match": "\\*\\*|//|<<|>>|<=|>=|==|!=|!in|!is|->|::|[!%&*+\\-<=>?^|~]+"
+          "match": "=>|\\*\\*|//|<<|>>|<=|>=|==|!=|!in|!is|->|::|[!%&*+\\-<=>?^|~]+"
         }
       ]
     },
