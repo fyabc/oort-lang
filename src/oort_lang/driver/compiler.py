@@ -27,7 +27,7 @@ from ..parser.dialect import (
 )
 from ..parser.grammar.OortLexer import OortLexer
 from ..parser.grammar.OortParser import OortParser
-from ..parser.token_processor import TokenizedInput, tokenize
+from ..parser.token_processor import _CLOSER_TEXT, _OPEN_TO_CLOSE, TokenizedInput, tokenize
 from ..runtime.interpreter import ASTInterpreter
 from ..runtime.modules import CompiledModule, ModuleLoader, resolve_module_path
 from ..runtime.stdlib import NATIVE_MODULE_NAMES, native_module_factories
@@ -401,6 +401,7 @@ class Compiler:
         tree = parser.startRule()
         self._report_delimiter_diagnostic(tokenized, input_info, start_entries)
         self._report_brace_literal_hint(tokenized, input_info, start_entries)
+        hinted = self._report_habit_hints(tokenized, input_info, start_entries)
 
         if report_errors:
             num_errors = self.error_handler.report(exit_on_error=exit_on_error, summary=summary)
@@ -412,6 +413,10 @@ class Compiler:
         # Build AST.
         builder = ASTBuilder(self.error_handler, input_info, dialect=dialect)
         ast = builder.parse(tree)
+        # Pratt-stage errors (e.g. a missing operand) only surface now, so
+        # failure-gated habit hints get a second chance.
+        if not hinted:
+            self._report_habit_hints(tokenized, input_info, start_entries)
         logging.debug("AST built successfully")
 
         if report_errors:
@@ -440,7 +445,15 @@ class Compiler:
         error: OortSyntaxError | None = None
         if tokenized.unmatched_closers:
             token = tokenized.unmatched_closers[0]
-            error = OortSyntaxError(f"Unmatched '{token.text}'", SourcePosition.from_token(token))
+            message = f"Unmatched '{token.text}'"
+            if tokenized.unclosed_openers:
+                # A mismatched pair: name the closer the opener expects
+                # (Python 3.12 pairs closing/opening objects the same way).
+                opener = tokenized.unclosed_openers[0]
+                expected = _CLOSER_TEXT[_OPEN_TO_CLOSE[opener.type]]
+                if expected is not None:
+                    message += f": expected {expected!r} to close '{opener.text}'"
+            error = OortSyntaxError(message, SourcePosition.from_token(token))
         elif tokenized.unclosed_openers:
             token = tokenized.unclosed_openers[0]
             error = OortSyntaxError(
@@ -504,6 +517,99 @@ class Compiler:
             elif depth == 0 and token_type == OortLexer.COMMA:
                 return "Did you mean a Set literal '{. item, ... .}'? '{' opens a code block."
         return None
+
+    def _report_habit_hints(
+        self,
+        tokenized: TokenizedInput | None,
+        input_info: InputInfo,
+        start_entries: int,
+    ) -> bool:
+        """Warn about common Python habits that mean something else in Oort.
+
+        Empty braces and a line-leading `//` are legal but almost certainly
+        not what a Python user meant, so they warn even without a parse
+        error; the remaining hints only accompany parse failures. Returns
+        whether a hint was emitted.
+        """
+        if tokenized is None:
+            return False
+        failed = self.error_handler.pending_count > start_entries
+        tokens = tokenized.tokens
+        prev_line = 0
+        for index, token in enumerate(tokens):
+            token_type = token.type
+            text = token.text or ""
+            if token_type == OortLexer.LBC and index + 1 < len(tokens):
+                if (
+                    tokens[index + 1].type == OortLexer.RBC
+                    # Only expression positions are suspicious: `val d = {}`,
+                    # `f({})`, `return {}`. Empty class/function/if bodies
+                    # are ordinary code and stay silent.
+                    and index > 0
+                    and tokens[index - 1].type
+                    in (OortLexer.ASSIGN, OortLexer.LPA, OortLexer.COMMA, OortLexer.RETURN)
+                ):
+                    self._add_habit_hint(
+                        "Did you mean an empty Dict '{:}' or Set '{.}'? "
+                        "'{}' is an empty code block.",
+                        token,
+                        input_info,
+                    )
+                    return True
+            elif token_type == OortLexer.FLOOR_DIV and token.line != prev_line:
+                self._add_habit_hint(
+                    "Did you mean a comment? Comments start with '#'; '//' is integer division.",
+                    token,
+                    input_info,
+                )
+                return True
+            elif failed and token_type == OortLexer.USER_OP and text in ("++", "--"):
+                # Postfix framing: a binary `operator "++"` may be user
+                # defined, but Oort has no postfix operators at all.
+                self._add_habit_hint(
+                    f"Oort has no postfix {text!r}; use {'+=' if text == '++' else '-='} 1.",
+                    token,
+                    input_info,
+                )
+                return True
+            elif failed and token_type == OortLexer.IDENTIFIER and text == "lambda":
+                self._add_habit_hint(
+                    "'lambda' is not a keyword; Oort lambdas use 'do', e.g. do(x): x.",
+                    token,
+                    input_info,
+                )
+                return True
+            elif failed and token_type in (OortLexer.IF, OortLexer.WHILE):
+                hint = self._condition_assignment_hint(tokens[index + 1 :], token)
+                if hint is not None:
+                    self._add_habit_hint(hint, token, input_info)
+                    return True
+            if token_type != Token.EOF:
+                prev_line = token.line
+        return False
+
+    def _condition_assignment_hint(self, tokens: list[Token], opener: Token) -> str | None:
+        """Detect `if x = 1` — assignment inside a condition (meant '==')."""
+        depth = 0
+        for token in tokens:
+            token_type = token.type
+            if token_type == Token.EOF or (
+                depth == 0 and token_type in (OortLexer.LBC, OortLexer.COLON)
+            ):
+                return None  # condition ended without an assignment
+            if token_type in (OortLexer.LPA, OortLexer.LBK):
+                depth += 1
+            elif token_type in (OortLexer.RPA, OortLexer.RBK):
+                depth -= 1
+            elif depth == 0 and token_type == OortLexer.ASSIGN:
+                return "Assignment is a statement; did you mean '==' in the condition?"
+        return None
+
+    def _add_habit_hint(self, message: str, token: Token, input_info: InputInfo) -> None:
+        self.error_handler.add(
+            OortSyntaxWarning(message, SourcePosition.from_token(token)),
+            input_info,
+        )
 
     def make_semantic_analyzer(
         self,

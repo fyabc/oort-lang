@@ -21,6 +21,13 @@
   - Python 习惯的 `{1, 2}` / `{1: 2}` 在解析失败时附带
     `Did you mean a Set/Dict literal …?` 警告（定向 did-you-mean），
     指向 Oort 的 `{. … .}` / `{: … :}` 定界符。
+  - Python 习惯建议：`None`/`True`/`False`/`self` 的名称错误与
+    `&&`/`||`/`!` 的运算符错误附带 `(did you mean …?)`（解释器与 VM
+    共享）；`val d = {}`（空代码块陷阱）、行首 `//`（注释习惯）、
+    `i++`（无后缀运算符）、`lambda`、条件内 `=` 附带 SyntaxWarning
+    提示。
+  - 新增 `--plain` 选项：诊断输出不走 rich 控制台、每条记录一行，
+    避免折行拆断消息，便于管道处理。
 
 ### 工程化
 

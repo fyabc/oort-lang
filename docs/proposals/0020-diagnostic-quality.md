@@ -9,9 +9,11 @@
 ## 摘要
 
 把「能用但含混」的诊断消息改进为「说出类别、指对位置」的消息。本轮覆盖
-三个高频类别：**词法错误**（未终止字符串、非法字符）、**定界符错误**
-（未闭合/多余的括号）与**花括号字面量习惯提示**（Python 式 `{1, 2}` 的
-定向 did-you-mean）。方法论与措辞对照 Python 3.10+ 的错误消息改进。
+四个高频类别：**词法错误**（未终止字符串、非法字符）、**定界符错误**
+（未闭合/多余的括号）、**花括号字面量习惯提示**（Python 式 `{1, 2}` 的
+定向 did-you-mean）与**Python 习惯建议**（None/True/self、`&&`/`||`/`!`、
+`{}` 空块、行首 `//`、`i++`、`lambda`、条件内 `=`）。方法论与措辞对照
+Python 3.10+ 的错误消息改进。
 
 ## 动机
 
@@ -125,16 +127,41 @@ val _ = {1, 2}
 `{ if a: 1 }`）、分隔符嵌套在 `()`/`[]` 内（`{ g(1, 2) }` 正常解析且
 不提示）、每次输入至多一条提示。
 
+### Python 习惯建议
+
+对运行期与解析期的另几类 Python 习惯，追加「did you mean」建议：
+
+| 输入 | 诊断 |
+|---|---|
+| `print(None)` / `True` / `self` | `Name 'None' is not defined (did you mean 'null'?)`（名称表：None/True/False/self → null/true/false/this；解释器与 VM 共享） |
+| `1 && 2` / `!true` | `does not support operator '&&' (did you mean 'and'?)`（运算符表：&&/\|\|/! → and/or/not；VM 运算符分发委托解释器，天然共享） |
+| `val d = {}` | `Did you mean an empty Dict '{:}' or Set '{.}'?`——`{}` 是空代码块，程序**合法**且值为 null，属静默语义陷阱，故以 SyntaxWarning 提示且退出码仍为 0；仅表达式位置（前一 token 为 `=`/`(`/`,`/`return`）触发，空类体/空函数体不误报 |
+| 行首 `//` | `Did you mean a comment? …`——`//` 是整除运算符，`// comment` 会解析成奇怪的表达式后在运行期报无关的 NameError |
+| `i++` | `Oort has no postfix '++'; use += 1.`——措辞限定**后缀**：二元 `operator "++"` 可被用户定义，但 Oort 没有任何后缀运算符；提示仅在解析失败时触发，合法的中缀 `a ++ b` 不受影响 |
+| `lambda(x): x` | `'lambda' is not a keyword; Oort lambdas use 'do'` |
+| `if x = 1 { }` | `Assignment is a statement; did you mean '==' in the condition?` |
+
+Pratt 阶段的错误（如缺操作数）在 AST 构建期才进入错误处理器，因此
+失败门控的提示在解析后与构建后各跑一次（发出即短路）；`elif` 经查是
+既有关键字（if/elif/else 链），无需提示。
+
+### 输出通道
+
+rich 控制台按宽度折行会把消息短语拆开（也使 grep/管道处理困难）。
+新增 `--plain` 选项：诊断输出不走 rich，每条记录一行，用于管道与
+脚本场景。
+
 ### 边界与限制
 
 本轮**不做**（记录为后续工作）：
 
 - ANTLR `extraneous input … expecting {大集合}` 的精简（如 `val x 1`、
   `x = `；需要 curated 规则或迁移到带恢复策略的解析层）；
-- 名字/关键字的 did-you-mean（编辑距离候选；花括号字面量提示是它的
-  定向子集，已完成）；
+- 拼写错误的编辑距离 did-you-mean（固定 Python 拼写对照表已完成，
+  `esle` 这类任意拼写候选仍属后续）；
 - 多错误恢复（当前首个解析错误后由 ANTLR 默认恢复策略继续，质量不一）；
-- REPL 控制台对长消息的折行美化（rich 按宽度折行会把短语拆开）。
+- REPL 控制台对长消息的折行美化（rich 按宽度折行会把短语拆开；
+  `--plain` 是当前的出口）。
 
 ## 正交性检查
 
@@ -155,8 +182,8 @@ val _ = {1, 2}
 - `driver/compiler.py`：`build_ast(tokenized=...)` 与
   `_report_delimiter_diagnostic`；REPL flush 传入 tokenized。
 - 测试：CLI 参数化语料（词法 5 例 + 定界符 8 例 + 花括号提示 3 例与
-  防误报守卫，断言消息与位置）、token 后处理定界符追踪 8 例、
-  REPL EOF 子进程用例更新。
+  防误报守卫 + 习惯建议 10 例与防误报，断言消息与位置）、token 后处理
+  定界符追踪 8 例、`--plain` 子进程用例、REPL EOF 子进程用例更新。
 
 ## 后续工作
 

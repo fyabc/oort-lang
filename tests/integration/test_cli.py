@@ -352,3 +352,89 @@ def test_core_enum_match_astm(monkeypatch, capsys):
     assert "EnumDef" in out
     assert "MatchExpr" in out
     assert "type='Int'" in out
+
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        ("print(None)", "Name 'None' is not defined (did you mean 'null'?)"),
+        ("print(True)", "Name 'True' is not defined (did you mean 'true'?)"),
+        ("val x = self", "Name 'self' is not defined (did you mean 'this'?)"),
+        ("print(1 && 2)", "does not support operator '&&' (did you mean 'and'?)"),
+        ("print(!true)", "does not support operator '!' (did you mean 'not'?)"),
+    ],
+)
+def test_habit_name_and_operator_suggestions(monkeypatch, caplog, source, message):
+    # Python spellings of built-ins and boolean operators get a suffix
+    # suggesting the Oort spelling.
+    assert _run_cli(monkeypatch, ["-c", source]) != 0
+    assert message in caplog.text
+
+
+def test_habit_name_suggestion_also_on_vm(monkeypatch, caplog):
+    assert _run_cli(monkeypatch, ["-t", "vm", "-c", "print(None)"]) != 0
+    assert "did you mean 'null'?" in caplog.text
+
+
+def test_empty_brace_hint_on_valid_program(monkeypatch, caplog):
+    # `val d = {}` parses (an empty block evaluates to null) but is almost
+    # certainly a mistyped empty Dict/Set: warn while still exiting zero.
+    assert _run_cli(monkeypatch, ["-c", "val d = {}"]) == 0
+    assert "Did you mean an empty Dict '{:}' or Set '{.}'?" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("source", "hint"),
+    [
+        ("// comment\nprint(1)", "Did you mean a comment? Comments start with '#';"),
+        ("var i = 0\ni++", "Oort has no postfix '++'; use += 1."),
+        ("val f = lambda(x): x", "'lambda' is not a keyword"),
+        ("if x = 1 { }", "did you mean '==' in the condition?"),
+    ],
+)
+def test_habit_hints(monkeypatch, caplog, source, hint):
+    assert _run_cli(monkeypatch, ["-c", source]) != 0
+    assert "OortSyntaxWarning" in caplog.text
+    assert hint in caplog.text
+
+
+def test_habit_hints_not_fired_for_valid_code(monkeypatch, caplog):
+    source = """\
+class D {}
+def D.operator "++"(other) { 2 }
+def f() {}
+val xs = {. 1 .}
+val d = {: "a": 1 :}
+print(f(), xs, d)
+"""
+    assert _run_cli(monkeypatch, ["-c", source]) == 0
+    assert "OortSyntaxWarning" not in caplog.text
+
+
+def test_plain_output_keeps_messages_on_one_line():
+    proc = subprocess.run(
+        [sys.executable, "-m", "oort_lang", "--plain", "-c", "if true { print(1)"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode != 0
+    # Plain output is one line per record; the message must stay contiguous.
+    assert "'{' was never closed" in proc.stdout + proc.stderr
+    assert "Traceback" not in proc.stderr
+
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        ("{.5}", "Unmatched '}': expected '.}' to close '{.'"),
+        ("{: 'a': 1}", "Unmatched '}': expected ':}' to close '{:'"),
+        ("(]", "Unmatched ']': expected ')' to close '('"),
+    ],
+)
+def test_mismatched_delimiter_pairs(monkeypatch, caplog, source, message):
+    # When a closer does not match the pending opener, name the closer the
+    # opener expects (Python 3.12 pairs closing/opening objects the same way).
+    assert _run_cli(monkeypatch, ["-c", source]) != 0
+    assert message in caplog.text

@@ -12,7 +12,7 @@ def main():
     parser = get_main_parser()
     args = parse_main_args(parser)
 
-    setup_logging(level=args.logging_level)
+    setup_logging(level=args.logging_level, rich_logging=not args.plain)
 
     compiler = Compiler(args)
 

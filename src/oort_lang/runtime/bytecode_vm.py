@@ -68,6 +68,7 @@ from .objects import (
     OortSuperProxy,
     OortTuple,
 )
+from .suggestions import name_suggestion
 from .type_system import OortType, SlotDefinition
 
 _BINARY_SYMBOLS = {opcode: symbol for symbol, opcode in BINARY_OPCODES.items()}
@@ -508,7 +509,10 @@ class BytecodeVM:
                 else:
                     entry = env.get(name)
                     if entry is None:
-                        raise OortNameError(f"Name {name!r} is not defined", position)
+                        raise OortNameError(
+                            f"Name {name!r} is not defined{name_suggestion(name)}",
+                            position,
+                        )
                     registers[a] = entry.value
                     global_cache[name] = entry.value
                 pc += 1

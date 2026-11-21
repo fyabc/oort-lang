@@ -59,6 +59,7 @@ from .objects import (
     OortSuperProxy,
     OortTuple,
 )
+from .suggestions import name_suggestion, operator_suggestion
 from .type_system import OortType, Runtime, SlotDefinition
 
 if TYPE_CHECKING:
@@ -260,7 +261,8 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         method = self._find_operator(lhs, symbol, 2, error_position)
         if method is None:
             raise OortTypeError(
-                f"Type {lhs.type.name!r} does not support operator {symbol!r}",
+                f"Type {lhs.type.name!r} does not support operator {symbol!r}"
+                f"{operator_suggestion(symbol)}",
                 error_position,
             )
         return self._invoke_operator(method, [rhs], symbol, error_position)
@@ -445,7 +447,10 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         if isinstance(lhs, nodes.Name):
             entry = self.lookup_variable(lhs.id, lhs)
             if entry is None:
-                raise OortNameError(f"Name {lhs.id!r} is not defined", lhs.position)
+                raise OortNameError(
+                    f"Name {lhs.id!r} is not defined{name_suggestion(lhs.id)}",
+                    lhs.position,
+                )
             return entry.value
         if isinstance(lhs, nodes.Attribute):
             return lhs.accept(self)
@@ -497,7 +502,10 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             else:
                 assign_result = self.env.assign_at(lhs.id, rhs, binding.depth)
             if assign_result == AssignResult.NOT_FOUND:
-                raise OortNameError(f"Name {lhs.id!r} is not defined", lhs.position)
+                raise OortNameError(
+                    f"Name {lhs.id!r} is not defined{name_suggestion(lhs.id)}",
+                    lhs.position,
+                )
             elif assign_result == AssignResult.IMMUTABLE:
                 raise OortSyntaxError(f"Cannot assign to immutable {lhs.id!r}", lhs.position)
         elif isinstance(lhs, nodes.Subscript):
@@ -802,7 +810,9 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                     return OortBool.get_bool_value(not _is_truthy(result))
             if method is None:
                 raise OortTypeError(
-                    f"Type {rhs.type.name!r} does not support operator {op_text!r}", position
+                    f"Type {rhs.type.name!r} does not support operator {op_text!r}"
+                    f"{operator_suggestion(op_text)}",
+                    position,
                 )
             result = self._invoke_operator(method, [lhs], op_text, position)
             return OortBool.get_bool_value(_is_truthy(result))
@@ -816,7 +826,9 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                 return OortBool.get_bool_value(not _is_truthy(result))
         if method is None:
             raise OortTypeError(
-                f"Type {lhs.type.name!r} does not support operator {op_text!r}", position
+                f"Type {lhs.type.name!r} does not support operator {op_text!r}"
+                f"{operator_suggestion(op_text)}",
+                position,
             )
         return self._invoke_operator(method, [rhs], op_text, position)
 
@@ -844,7 +856,9 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         method = self._find_operator(operand, op_text, 1, position, env=env)
         if method is None:
             raise OortTypeError(
-                f"Type {operand.type.name!r} does not support operator {op_text!r}", position
+                f"Type {operand.type.name!r} does not support operator {op_text!r}"
+                f"{operator_suggestion(op_text)}",
+                position,
             )
         return self._invoke_operator(method, [], op_text, position)
 
@@ -1275,7 +1289,9 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         if node.ctx == nodes.LValueContext.LOAD:
             entry = self.lookup_variable(node.id, node)
             if entry is None:
-                raise OortNameError(f"Name {node.id!r} is not defined", node.position)
+                raise OortNameError(
+                    f"Name {node.id!r} is not defined{name_suggestion(node.id)}", node.position
+                )
             return entry.value
         else:
             # Store & delete will be processed in assignment node.

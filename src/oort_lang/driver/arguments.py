@@ -34,6 +34,14 @@ def get_main_parser() -> argparse.ArgumentParser:
         default="WARNING",
         help="Logging level, default to %(default)r",
     )
+    parser.add_argument(
+        "--plain",
+        action="store_true",
+        help=(
+            "Plain diagnostic output: no rich console, one line per record.\n"
+            "Useful when piping output or when wrapping hides the message."
+        ),
+    )
 
     _help_strs = ["Output target format, default to %(default)r"]
     for mode, help_str in COMPILER_MODE_HELPS.items():

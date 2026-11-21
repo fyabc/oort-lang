@@ -40,6 +40,15 @@ _OPEN_TO_CLOSE = {
 }
 _CLOSERS = frozenset(_OPEN_TO_CLOSE.values())
 
+# Display text of each closing token, for mismatch diagnostics.
+_CLOSER_TEXT = {
+    OortLexer.RPA: ")",
+    OortLexer.RBK: "]",
+    OortLexer.RDICT_LITERAL: ":}",
+    OortLexer.RSET_LITERAL: ".}",
+    OortLexer.RBC: "}",
+}
+
 
 @dataclasses.dataclass(frozen=True)
 class TokenizedInput:
