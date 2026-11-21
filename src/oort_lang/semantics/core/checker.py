@@ -182,7 +182,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
         elif isinstance(init_type, UnknownType):
             # The initializer already reported an error; do not add a cascade.
             type_ = UNKNOWN
-        elif isinstance(init_type, (NeverType, FunctionType, ModuleType)) or init_type == UNIT:
+        elif isinstance(init_type, (NeverType, ModuleType)) or init_type == UNIT:
             self._error(
                 f"Cannot infer a usable type for '{target.name}' "
                 f"(initializer has type {describe_type(init_type)}).",
@@ -312,7 +312,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
 
     def visit_function_def(self, node: nodes.FunctionDef) -> Type:
         if node.is_lambda:
-            return self._unsupported(node, "Lambdas are not supported in oort-core yet.")
+            return self._check_lambda(node)
         if node.is_extension:
             return self._unsupported(node, "Extension methods are not supported in oort-core yet.")
         if node.is_class_method or len(node.names) != 1:
@@ -330,6 +330,32 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 node, "Nested function definitions are not supported in oort-core yet."
             )
 
+        signature = self._build_signature(node, node.name)
+        self.declare(
+            node.name,
+            signature,
+            mutable=False,
+            position=node.name_position,
+            is_function=True,
+        )
+        node.metadata["type"] = describe_type(signature)
+        self._check_function_body(node, signature, node.name)
+        return UNIT
+
+    def _check_lambda(self, node: nodes.FunctionDef) -> Type:
+        if not node.has_explicit_param_list:
+            return self._unsupported(
+                node,
+                "Lambdas without an explicit parameter list are not supported in oort-core yet.",
+            )
+        if node.type_params:
+            return self._unsupported(node, "Generic lambdas are not supported in oort-core yet.")
+        signature = self._build_signature(node, "<lambda>")
+        node.metadata["type"] = describe_type(signature)
+        self._check_function_body(node, signature, "<lambda>")
+        return signature
+
+    def _build_signature(self, node: nodes.FunctionDef, display_name: str) -> FunctionType:
         param_types: list[Type] = []
         for param in node.params:
             if param.kind != nodes.ParameterKind.DEFAULT or param.default_value is not None:
@@ -347,38 +373,31 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 )
                 param_types.append(UNKNOWN)
                 continue
-            param_type = self.resolve_annotation(param.type_expr, allow_unit=False)
-            param_types.append(param_type)
+            param_types.append(self.resolve_annotation(param.type_expr, allow_unit=False))
 
         return_type: Type
         if node.ret_type is None:
             self._error(
-                f"Function '{node.name}' requires a return type annotation in oort-core.",
+                f"Function '{display_name}' requires a return type annotation in oort-core.",
                 node.name_position,
             )
             return_type = UNKNOWN
         else:
             return_type = self.resolve_annotation(node.ret_type, allow_unit=True)
+        return FunctionType(tuple(param_types), return_type)
 
-        signature = FunctionType(tuple(param_types), return_type)
-        self.declare(
-            node.name,
-            signature,
-            mutable=False,
-            position=node.name_position,
-            is_function=True,
-        )
-        node.metadata["type"] = describe_type(signature)
-
+    def _check_function_body(
+        self, node: nodes.FunctionDef, signature: FunctionType, display_name: str
+    ) -> None:
         previous_function = self.current_function
         previous_name = self.current_function_name
         previous_module_level = self.module_level
         self.current_function = signature
-        self.current_function_name = node.name
+        self.current_function_name = display_name
         self.module_level = False
         self.scopes.append({})
         try:
-            for param, param_type in zip(node.params, param_types):
+            for param, param_type in zip(node.params, signature.params):
                 self.declare(
                     param.name,
                     param_type,
@@ -392,14 +411,13 @@ class CoreTypeChecker(ASTVisitor[Type]):
             self.current_function_name = previous_name
             self.module_level = previous_module_level
 
-        if not isinstance(body_type, NeverType) and not is_assignable(return_type, body_type):
+        if not isinstance(body_type, NeverType) and not is_assignable(signature.ret, body_type):
             self._error(
-                f"Function '{node.name}' is declared to return "
-                f"{describe_type(return_type)}, but its body has type "
+                f"Function '{display_name}' is declared to return "
+                f"{describe_type(signature.ret)}, but its body has type "
                 f"{describe_type(body_type)}.",
                 node.position,
             )
-        return UNIT
 
     def visit_return_expr(self, node: nodes.ReturnExpr) -> Type:
         if self.current_function is None:
@@ -448,10 +466,6 @@ class CoreTypeChecker(ASTVisitor[Type]):
     def visit_call(self, node: nodes.Call) -> Type:
         if node.infix:
             return self._unsupported(node, "Infix calls are not supported in oort-core yet.")
-        if not isinstance(node.func, (nodes.Name, nodes.Attribute)):
-            return self._unsupported(
-                node, "Only calls to named functions are supported in oort-core."
-            )
 
         argument_types: list[Type] = []
         for arg in node.args:
@@ -483,13 +497,16 @@ class CoreTypeChecker(ASTVisitor[Type]):
             if isinstance(callee_type, UnknownType):
                 return self._record(node, UNKNOWN)
             if not isinstance(callee_type, FunctionType):
-                self._error(
-                    f"'{node.func.attribute}' is not callable.",
-                    node.func.position,
-                )
+                if isinstance(node.func, nodes.Attribute):
+                    message = f"'{node.func.attribute}' is not callable."
+                else:
+                    message = "Expression is not callable."
+                self._error(message, node.func.position)
                 return self._record(node, UNKNOWN)
             signature = callee_type
-            display_name = node.func.attribute
+            display_name = (
+                node.func.attribute if isinstance(node.func, nodes.Attribute) else "<expression>"
+            )
 
         if len(argument_types) != len(signature.params):
             self._error(
@@ -782,9 +799,19 @@ class CoreTypeChecker(ASTVisitor[Type]):
     # ------------------------------------------------------------------
 
     def resolve_annotation(self, node: nodes.ASTNode, *, allow_unit: bool) -> Type:
+        if isinstance(node, nodes.BinaryExpr) and node.op.text == "->":
+            params = self._resolve_function_params(node.lhs)
+            ret = self.resolve_annotation(node.rhs, allow_unit=True)
+            return FunctionType(tuple(params), ret)
         if isinstance(node, nodes.Subscript):
             self._error(
                 "Generic type applications are not supported in oort-core yet.",
+                node.position,
+            )
+            return UNKNOWN
+        if isinstance(node, nodes.TupleLiteral):
+            self._error(
+                "Tuple types are not supported in oort-core yet.",
                 node.position,
             )
             return UNKNOWN
@@ -815,6 +842,19 @@ class CoreTypeChecker(ASTVisitor[Type]):
             node.position,
         )
         return UNKNOWN
+
+    def _resolve_function_params(self, node: nodes.ASTNode) -> list[Type]:
+        if isinstance(node, nodes.Name):
+            return [self.resolve_annotation(node, allow_unit=False)]
+        if isinstance(node, nodes.TupleLiteral):
+            return [self.resolve_annotation(element, allow_unit=False) for element in node.elements]
+        if isinstance(node, nodes.BinaryExpr) and node.op.text == "->":
+            return [self.resolve_annotation(node, allow_unit=False)]
+        self._error(
+            "Function parameter types must be a type name or a parenthesized list.",
+            node.position,
+        )
+        return []
 
     def expect(
         self,

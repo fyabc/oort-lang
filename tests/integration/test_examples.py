@@ -41,6 +41,8 @@ EXPECTED_OUTPUTS = {
     "08_core/08_01_core_functions.ort": "1\n120\ntrue\n",
     "08_core/08_02_core_modules.ort": "7\n16\n5\n",
     "08_core/08_03_adt_match.ort": "12\n12\n0\nCircle(1)\n",
+    "08_core/08_04_function_values.ort": "6\n15\n",
+    "08_core/08_05_currying.ort": "5\n15\n",
 }
 
 # The JSON showcase is covered by `test_json_example.py`, which compiles it

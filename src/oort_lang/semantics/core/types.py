@@ -134,7 +134,14 @@ def is_assignable(expected: Type, actual: Type) -> bool:
     if isinstance(expected, PrimitiveType) and isinstance(actual, PrimitiveType):
         return expected == actual
     if isinstance(expected, FunctionType) and isinstance(actual, FunctionType):
-        return expected == actual
+        return (
+            len(expected.params) == len(actual.params)
+            and all(
+                is_assignable(expected_param, actual_param)
+                for expected_param, actual_param in zip(expected.params, actual.params)
+            )
+            and is_assignable(expected.ret, actual.ret)
+        )
     if isinstance(expected, ModuleType) and isinstance(actual, ModuleType):
         return expected == actual
     if isinstance(expected, AdtType) and isinstance(actual, AdtType):

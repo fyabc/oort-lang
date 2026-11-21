@@ -312,7 +312,10 @@ class TestCoreRejections:
             ("print(1.5)\n", "Float is not supported"),
             ('print("x")\n', "String is not supported"),
             ("print(null)\n", "null is not supported"),
-            ("val f = do: 1\n", "Lambdas are not supported"),
+            (
+                "val f = do: 1\n",
+                "Lambdas without an explicit parameter list are not supported",
+            ),
             ("var x = [1]\nprint(x[0])\n", "Lists are not supported"),
         ],
     )
@@ -516,4 +519,145 @@ class TestCoreAdtRejections:
             caplog,
             "enum E { A(x: Int) }\nprint(match A(1) { A => 1 })\n",
             "Constructor 'A' expects 1 argument(s).",
+        )
+
+
+class TestCoreFunctionValues:
+    def test_annotated_lambda_and_call(self, run_source):
+        result = run_source(
+            core("val inc: (Int) -> Int = do(x: Int) -> Int { x + 1 }\nprint(inc(2))\n")
+        )
+        assert result.stdout == "3\n"
+
+    def test_inferred_lambda(self, run_source):
+        result = run_source(core("val twice = do(x: Int) -> Int { x * 2 }\nprint(twice(4))\n"))
+        assert result.stdout == "8\n"
+
+    def test_higher_order_function_and_lambda_argument(self, run_source):
+        result = run_source(
+            core(
+                "def apply(f: (Int) -> Int, x: Int) -> Int { f(x) }\n"
+                "print(apply(do(x: Int) -> Int { x * 3 }, 4))\n"
+            )
+        )
+        assert result.stdout == "12\n"
+
+    def test_zero_argument_and_unit_function_values(self, run_source):
+        result = run_source(
+            core(
+                "val zero: () -> Int = do() -> Int { 42 }\n"
+                "val show: (Int) -> Unit = do(x: Int) -> Unit { print(x) }\n"
+                "print(zero())\nshow(7)\n"
+            )
+        )
+        assert result.stdout == "42\n7\n"
+
+    def test_nested_function_type(self, run_source):
+        result = run_source(
+            core(
+                "val apply: ((Int) -> Int) -> Int = "
+                "do(g: (Int) -> Int) -> Int { g(1) }\n"
+                "print(apply(do(x: Int) -> Int { x + 1 }))\n"
+            )
+        )
+        assert result.stdout == "2\n"
+
+    def test_closure_over_outer_local(self, run_source):
+        result = run_source(
+            core(
+                "def make(n: Int) -> (Int) -> Int {\n"
+                "    do(x: Int) -> Int { x + n }\n"
+                "}\n"
+                "val add10 = make(10)\nprint(add10(5))\n"
+            )
+        )
+        assert result.stdout == "15\n"
+
+
+class TestCoreFunctionValueRejections:
+    def test_anonymous_lambda_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "val f = do: 1\n",
+            "Lambdas without an explicit parameter list are not supported",
+        )
+
+    def test_lambda_parameter_annotation_required(self, caplog):
+        check_error(
+            caplog,
+            "val f: (Int) -> Int = do(x) -> Int { x }\n",
+            "Parameter 'x' requires a type annotation",
+        )
+
+    def test_lambda_return_annotation_required(self, caplog):
+        check_error(
+            caplog,
+            "val f: (Int) -> Int = do(x: Int) { x }\n",
+            "requires a return type annotation",
+        )
+
+    def test_function_type_mismatch(self, caplog):
+        check_error(
+            caplog,
+            "val f: (Int) -> Bool = do(x: Int) -> Int { x }\n",
+            "Expected (Int) -> Bool, got (Int) -> Int.",
+        )
+
+    def test_unit_parameter_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "val f: (Unit) -> Int = do(x: Unit) -> Int { 1 }\n",
+            "Unit is only allowed as a function return type",
+        )
+
+    def test_generic_lambda_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "val f = do[T](x: Int) -> Int { x }\n",
+            "Generic functions are not implemented yet.",
+        )
+
+    def test_default_parameter_in_lambda_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "val f: (Int) -> Int = do(x: Int = 1) -> Int { x }\n",
+            "Defaults, keyword-only/positional-only markers",
+        )
+
+    def test_function_value_is_not_printable(self, caplog):
+        check_error(
+            caplog,
+            "val f = do(x: Int) -> Int { x }\nprint(f)\n",
+            "only accepts Int, Bool, Unit or enum",
+        )
+
+
+class TestCoreCurriedFunctions:
+    def test_right_associative_function_types_and_chained_calls(self, run_source):
+        result = run_source(
+            core(
+                "val add: Int -> Int -> Int = "
+                "do(x: Int) -> Int -> Int { do(y: Int) -> Int { x + y } }\n"
+                "print(add(1)(2))\n"
+                "val same: Int -> (Int -> Int) = add\n"
+                "print(same(3)(4))\n"
+            )
+        )
+        assert result.stdout == "3\n7\n"
+
+    def test_parenthesized_function_parameter_type(self, run_source):
+        result = run_source(
+            core(
+                "val apply: (Int -> Int) -> Int = "
+                "do(f: Int -> Int) -> Int { f(1) }\n"
+                "print(apply(do(x: Int) -> Int { x + 1 }))\n"
+            )
+        )
+        assert result.stdout == "2\n"
+
+    def test_non_callable_expression(self, caplog):
+        check_error(
+            caplog,
+            "print((1)(2))\n",
+            "Expression is not callable.",
         )

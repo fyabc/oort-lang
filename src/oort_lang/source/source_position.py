@@ -63,6 +63,10 @@ class SourcePosition(AbstractSourcePosition):
 
     @classmethod
     def from_token(cls, token: Token):
+        # ANTLR parser accessors such as `ctx.DO()` return a TerminalNode,
+        # while other callers pass the token itself. Normalize both forms.
+        if not isinstance(token, Token):
+            token = token.symbol
         return cls(token, token)
 
     @classmethod

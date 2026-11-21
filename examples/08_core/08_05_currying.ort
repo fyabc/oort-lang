@@ -1,0 +1,15 @@
+#lang oort-core
+
+# 函数类型箭头右结合：Int -> Int -> Int 等同于 Int -> (Int -> Int)。
+# Oort 不做自动柯里化；这里用返回 lambda 手动柯里化。
+
+val add: Int -> Int -> Int = do(a: Int) -> Int -> Int {
+    do(b: Int) -> Int { a + b }
+}
+
+def make_adder(n: Int) -> Int -> Int {
+    do(x: Int) -> Int { x + n }
+}
+
+print(add(2)(3))
+print(make_adder(10)(5))

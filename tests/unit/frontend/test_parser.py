@@ -115,3 +115,34 @@ def test_fat_arrow_is_not_a_normal_operator(caplog):
     with pytest.raises(SystemExit):
         compiler.run_string("1 => 2\n")
     assert "mismatched input '=>'" in caplog.text
+
+
+def test_function_type_arrow_is_right_associative():
+    from oort_lang.ast import nodes
+    from tests.helpers import build_ast
+
+    ast = build_ast(
+        "#lang oort-core\n"
+        "val f: Int -> Int -> Int = "
+        "do(x: Int) -> Int -> Int { do(y: Int) -> Int { x + y } }\n"
+    )
+    declaration = ast.body.statements[0]
+    type_expr = declaration.decl_targets[0].type_expr
+    assert isinstance(type_expr, nodes.BinaryExpr)
+    assert isinstance(type_expr.lhs, nodes.Name)
+    assert isinstance(type_expr.rhs, nodes.BinaryExpr)
+    assert isinstance(type_expr.rhs.lhs, nodes.Name)
+    assert isinstance(type_expr.rhs.rhs, nodes.Name)
+
+
+def test_parenthesized_function_type_changes_association():
+    from oort_lang.ast import nodes
+    from tests.helpers import build_ast
+
+    ast = build_ast(
+        "#lang oort-core\nval f: (Int -> Int) -> Int = do(g: Int -> Int) -> Int { g(1) }\n"
+    )
+    type_expr = ast.body.statements[0].decl_targets[0].type_expr
+    assert isinstance(type_expr, nodes.BinaryExpr)
+    assert isinstance(type_expr.lhs, nodes.BinaryExpr)
+    assert isinstance(type_expr.rhs, nodes.Name)

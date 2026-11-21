@@ -1,0 +1,17 @@
+#lang oort-core
+
+# 函数类型、lambda、函数值与高阶函数。
+
+def apply(f: (Int) -> Int, x: Int) -> Int {
+    f(x)
+}
+
+def make_adder(n: Int) -> (Int) -> Int {
+    do(x: Int) -> Int { x + n }
+}
+
+val double: (Int) -> Int = do(x: Int) -> Int { x * 2 }
+val add10 = make_adder(10)
+
+print(apply(double, 3))
+print(add10(5))

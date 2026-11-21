@@ -148,5 +148,7 @@ class OperatorTable:
             ("|", Arity.INFIX): OperatorDef("|", Arity.INFIX, 320, Associativity.LEFT),
             ("and", Arity.INFIX): OperatorDef("and", Arity.INFIX, 90, Associativity.LEFT),
             ("or", Arity.INFIX): OperatorDef("or", Arity.INFIX, 80, Associativity.LEFT),
+            # Function-type arrow: `Int -> Int -> Int` groups to the right.
+            ("->", Arity.INFIX): OperatorDef("->", Arity.INFIX, 50, Associativity.RIGHT),
         }
         return table
