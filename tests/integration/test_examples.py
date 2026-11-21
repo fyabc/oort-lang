@@ -45,7 +45,7 @@ EXPECTED_OUTPUTS = {
     "08_core/08_05_currying.ort": "5\n15\n",
     "08_core/08_06_scalars.ort": "2.5\n2 2.0\n1.5\nHello, Oort\ntrue true\n",
     "08_core/08_07_collections_loops.ort": (
-        "3 3\n7 true 2\n2 2 2\n6\na 1\nb 2\no\no\nr\nt\n1\n3\n"
+        "3 3 0\n7 true 2\n2 2 2\n6\na 1\nb 2\no\no\nr\nt\n1\n3\n"
     ),
 }
 
