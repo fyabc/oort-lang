@@ -1,0 +1,28 @@
+# 自定义下标协议（operator "[]" / "[]="）与缺失属性 fallback（on_missing）。
+
+class Bag {
+    def __init__ {
+        this.items = {: "a": 1 :}
+    }
+
+    def operator "[]"(key) {
+        this.items[key]
+    }
+
+    def operator "[]="(key, value) {
+        this.items[key] = value
+    }
+
+    def on_missing(name) {
+        "missing:" + name
+    }
+}
+
+val bag = Bag()
+bag["b"] = 2
+print(bag["a"], bag["b"])
+
+bag["a"] += 10
+print(bag["a"])
+
+print(bag.nope)

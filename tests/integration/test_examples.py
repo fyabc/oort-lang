@@ -31,6 +31,7 @@ EXPECTED_OUTPUTS = {
     "03_oop/03_02_extensions.ort": (
         "3\n6 6\nmember\nbase child\nnamed person\nabab\nouter inner\n"
     ),
+    "03_oop/03_03_protocols.ort": "1 2\n11\nmissing:nope\n",
     "04_modules/04_00_imports.ort": "Hello, Oort!\nHello, modules!\n2\n",
     "05_stdlib/05_00_collections.ort": (
         "[6, 2, 4]\n[3, 2]\n[(3, 10), (1, 20)]\n[(0, 3), (1, 1), (2, 2)]\n[1, 2, 3]\n[3, 2, 1]\n"

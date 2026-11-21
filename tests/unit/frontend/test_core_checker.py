@@ -1385,6 +1385,18 @@ class TestCoreClasses:
             "Expected Int, got Bool.",
         )
 
+    def test_attribute_fallback_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            """\
+class C {
+    val x: Int = 1
+    def on_missing(name: String) -> Int { 0 }
+}
+""",
+            "Attribute fallback hooks are only supported in oort-object.",
+        )
+
     def test_class_equality_is_rejected(self, caplog):
         check_error(
             caplog,

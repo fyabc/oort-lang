@@ -93,6 +93,8 @@ class ASTInterpreter(ASTVisitor[OortObject]):
     ):
         self.error_handler = error_handler
         self._current_method = None
+        # Guards against `on_missing` re-entering itself for the same receiver.
+        self._missing_hook_receivers: set[int] = set()
         # Process-level context for the `os` native module. The compiler sets
         # these for file/-c runs; REPL and embedded interpreters keep defaults.
         self.script_args: tuple[str, ...] = ()
@@ -500,6 +502,16 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         elif isinstance(lhs, nodes.Subscript):
             value = lhs.value.accept(self)
             index = lhs.index.accept(self)
+            if isinstance(value, OortInstance) and not isinstance(value, OortType):
+                method = self._find_operator(value, "[]=", 3, lhs.position)
+                if method is None:
+                    raise OortTypeError(
+                        f"Type {value.type.name!r} does not support subscript "
+                        'assignment (define `operator "[]="`).',
+                        lhs.position,
+                    )
+                self._invoke_operator(method, [index, rhs], "[]=", lhs.position)
+                return
             try:
                 value[index] = rhs
             except Exception as e:
@@ -577,6 +589,21 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         if lookup.match is not None:
             return _bind_extension_method(value, lookup.match.func, lookup.match.target)
 
+        if isinstance(value, OortInstance) and not isinstance(value, OortType):
+            receiver_id = id(value)
+            if receiver_id not in self._missing_hook_receivers:
+                hook = value.get("on_missing")
+                if isinstance(hook, OortCallableMixin):
+                    self._missing_hook_receivers.add(receiver_id)
+                    try:
+                        return self.call_value(
+                            hook,
+                            [OortString(node.attribute)],
+                            node.position,
+                        )
+                    finally:
+                        self._missing_hook_receivers.discard(receiver_id)
+
         raise OortAttributeError(
             f"{value.type.name!r} object has no attribute {node.attribute!r}", node.position
         )
@@ -597,11 +624,20 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         value = node.value.accept(self)
         index = node.index.accept(self)
 
-        # TODO: Replace with "__op_getitem__" call.
+        if isinstance(value, OortInstance) and not isinstance(value, OortType):
+            method = self._find_operator(value, "[]", 2, node.position)
+            if method is None:
+                raise OortTypeError(
+                    f"Type {value.type.name!r} does not support subscripting "
+                    '(define `operator "[]"`).',
+                    node.position,
+                )
+            return self._invoke_operator(method, [index], "[]", node.position)
+
         try:
             return value[index]
         except Exception as e:
-            raise OortRuntimeError(f"{e}", node.position)
+            raise OortRuntimeError(f"{e}", node.position) from e
 
     def visit_call(self, node: nodes.Call) -> OortObject:
         func = node.func.accept(self)

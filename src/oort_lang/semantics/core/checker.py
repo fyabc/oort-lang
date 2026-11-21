@@ -497,6 +497,12 @@ class CoreTypeChecker(ASTVisitor[Type]):
                         stmt.name_position,
                     )
                     continue
+                if method_name == "on_missing":
+                    self._unsupported(
+                        stmt,
+                        "Attribute fallback hooks are only supported in oort-object.",
+                    )
+                    continue
                 if method_name in method_names or method_name in slot_names:
                     self._error(
                         f"Duplicate member '{method_name}' in class '{name}'.",

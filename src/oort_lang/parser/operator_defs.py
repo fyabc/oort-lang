@@ -39,6 +39,11 @@ BUILTIN_BINARY_OPERATORS = frozenset(
 )
 RESERVED_OPERATOR_SYMBOLS = frozenset({"and", "or", "not", "is", "!is", "await", "=", "=>"})
 
+# Square brackets are not Pratt operators, but reuse the operator-method
+# machinery for subscript get/set. The value is the parameter count in
+# addition to the receiver: "[]" takes an index, "[]=" takes index + value.
+SPECIAL_OPERATOR_ARITY = {"[]": 1, "[]=": 2}
+
 
 def validate_operator_definition(symbol: str, operand_count: int) -> str | None:
     """Validate an operator method definition.
@@ -47,6 +52,12 @@ def validate_operator_definition(symbol: str, operand_count: int) -> str | None:
     """
     if not symbol:
         return "Operator symbol cannot be empty."
+
+    special_arity = SPECIAL_OPERATOR_ARITY.get(symbol)
+    if special_arity is not None:
+        if operand_count != special_arity + 1:
+            return f"Operator {symbol!r} takes exactly {special_arity} parameter(s)."
+        return None
 
     if symbol in RESERVED_OPERATOR_SYMBOLS:
         return f"Operator {symbol!r} cannot be overloaded."
