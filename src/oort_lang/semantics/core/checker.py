@@ -130,6 +130,85 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 result = statement_type
         return NEVER if saw_never else result
 
+    def _check_statements_expected(
+        self, statements: Iterable[nodes.ASTNode], expected: Type
+    ) -> Type:
+        statement_list = list(statements)
+        result: Type = UNIT
+        saw_never = False
+        last_index = len(statement_list) - 1
+        for index, stmt in enumerate(statement_list):
+            if index == last_index and not saw_never:
+                statement_type = self._check_expr(stmt, expected)
+            else:
+                statement_type = stmt.accept(self) or UNKNOWN
+            if isinstance(statement_type, NeverType):
+                saw_never = True
+            elif not saw_never:
+                result = statement_type
+        return NEVER if saw_never else result
+
+    def _check_expr(
+        self,
+        node: nodes.ASTNode,
+        expected: Type,
+        message: str | None = None,
+    ) -> Type:
+        if not isinstance(expected, UnknownType):
+            if isinstance(node, nodes.IfExpr):
+                return self._check_if_expected(node, expected)
+            if isinstance(node, nodes.BlockExpr):
+                return self._check_block_expected(node, expected)
+            if isinstance(node, nodes.MatchExpr):
+                return self._check_match(node, expected)
+
+        actual = node.accept(self)
+        if actual is None:
+            actual = UNKNOWN
+        if isinstance(actual, NeverType):
+            return NEVER
+        self.expect(expected, actual, node, message)
+        if isinstance(expected, UnknownType):
+            return actual
+        return expected
+
+    def _check_block_expected(self, node: nodes.BlockExpr, expected: Type) -> Type:
+        previous_module_level = self.module_level
+        self.module_level = False
+        self.scopes.append({})
+        try:
+            result = self._check_statements_expected(node.statements, expected)
+        finally:
+            self.scopes.pop()
+            self.module_level = previous_module_level
+
+        if isinstance(result, NeverType):
+            return NEVER
+        if isinstance(result, UnknownType):
+            return UNKNOWN
+        if not is_assignable(expected, result):
+            self.expect(expected, result, node)
+            return expected
+        return expected
+
+    def _check_if_expected(self, node: nodes.IfExpr, expected: Type) -> Type:
+        condition_type = node.condition.accept(self) or UNKNOWN
+        self.expect(BOOL, condition_type, node.condition, "if condition must be Bool")
+
+        then_type = self._check_block_expected(node.if_block, expected)
+        if node.else_block is None:
+            if expected != UNIT:
+                self._error(
+                    f"An if without else has type Unit, expected {describe_type(expected)}.",
+                    node.position,
+                )
+            return UNIT
+
+        else_type = self._check_block_expected(node.else_block, expected)
+        if isinstance(then_type, NeverType) and isinstance(else_type, NeverType):
+            return NEVER
+        return expected
+
     def lookup(self, name: str) -> NameInfo | None:
         for scope in reversed(self.scopes):
             info = scope.get(name)
@@ -171,26 +250,26 @@ class CoreTypeChecker(ASTVisitor[Type]):
         if target.type_expr is not None:
             annotation = self.resolve_annotation(target.type_expr, allow_unit=False)
 
-        init_type = node.init_value.accept(self)
-        if init_type is None:
-            init_type = UNKNOWN
-
         if annotation is not None:
             type_ = annotation
             if not isinstance(annotation, UnknownType):
-                self.expect(annotation, init_type, node.init_value)
-        elif isinstance(init_type, UnknownType):
-            # The initializer already reported an error; do not add a cascade.
-            type_ = UNKNOWN
-        elif isinstance(init_type, (NeverType, ModuleType)) or init_type == UNIT:
-            self._error(
-                f"Cannot infer a usable type for '{target.name}' "
-                f"(initializer has type {describe_type(init_type)}).",
-                node.position,
-            )
-            type_ = UNKNOWN
+                self._check_expr(node.init_value, annotation)
         else:
-            type_ = init_type
+            init_type = node.init_value.accept(self)
+            if init_type is None:
+                init_type = UNKNOWN
+            if isinstance(init_type, UnknownType):
+                # The initializer already reported an error; do not cascade.
+                type_ = UNKNOWN
+            elif isinstance(init_type, (NeverType, ModuleType)) or init_type == UNIT:
+                self._error(
+                    f"Cannot infer a usable type for '{target.name}' "
+                    f"(initializer has type {describe_type(init_type)}).",
+                    node.position,
+                )
+                type_ = UNKNOWN
+            else:
+                type_ = init_type
 
         self.declare(
             target.name,
@@ -209,22 +288,20 @@ class CoreTypeChecker(ASTVisitor[Type]):
         if not isinstance(node.lhs, nodes.Name):
             return self._unsupported(node, "Only plain name assignment is supported in oort-core.")
 
-        value_type = node.rhs.accept(self)
-        if value_type is None:
-            value_type = UNKNOWN
-
         info = self.lookup(node.lhs.id)
         if info is None:
             self._error(f"Unknown name '{node.lhs.id}'.", node.lhs.position)
+            node.rhs.accept(self)
             return UNIT
         if not info.mutable:
             self._error(
                 f"Cannot assign to immutable binding '{node.lhs.id}' (declared with `val`).",
                 node.position,
             )
+            node.rhs.accept(self)
             return UNIT
 
-        self.expect(info.type, value_type, node.rhs)
+        self._check_expr(node.rhs, info.type)
         node.lhs.metadata["type"] = describe_type(info.type)
         return UNIT
 
@@ -404,14 +481,19 @@ class CoreTypeChecker(ASTVisitor[Type]):
                     mutable=False,
                     position=param.position,
                 )
-            body_type = self._check_statements(node.body.statements)
+            start_errors = self.error_handler.error_count
+            body_type = self._check_statements_expected(node.body.statements, signature.ret)
         finally:
             self.scopes.pop()
             self.current_function = previous_function
             self.current_function_name = previous_name
             self.module_level = previous_module_level
 
-        if not isinstance(body_type, NeverType) and not is_assignable(signature.ret, body_type):
+        if (
+            not isinstance(body_type, NeverType)
+            and not is_assignable(signature.ret, body_type)
+            and self.error_handler.error_count == start_errors
+        ):
             self._error(
                 f"Function '{display_name}' is declared to return "
                 f"{describe_type(signature.ret)}, but its body has type "
@@ -433,11 +515,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
                     f"for Unit functions.",
                     node.position,
                 )
+        elif isinstance(return_type, UnknownType):
+            node.value.accept(self)
         else:
-            value_type = node.value.accept(self)
-            if value_type is None:
-                value_type = UNKNOWN
-            self.expect(return_type, value_type, node.value)
+            self._check_expr(node.value, return_type)
         return NEVER
 
     # ------------------------------------------------------------------
@@ -467,34 +548,25 @@ class CoreTypeChecker(ASTVisitor[Type]):
         if node.infix:
             return self._unsupported(node, "Infix calls are not supported in oort-core yet.")
 
-        argument_types: list[Type] = []
-        for arg in node.args:
-            if arg.keyword is not None or arg.kind != nodes.ArgumentKind.DEFAULT:
-                self._unsupported(
-                    arg,
-                    "Keyword, variadic and block arguments are not supported in oort-core yet.",
-                )
-                argument_types.append(UNKNOWN)
-                continue
-            arg_type = arg.value.accept(self)
-            argument_types.append(UNKNOWN if arg_type is None else arg_type)
-
         if isinstance(node.func, nodes.Name):
             name = node.func.id
             info = self.lookup(name)
             if info is None:
                 if name == "print":
-                    return self._check_print_call(node, argument_types)
+                    return self._check_print_call(node)
                 self._error(f"Unknown function '{name}'.", node.func.position)
+                self._infer_arguments(node)
                 return self._record(node, UNKNOWN)
             if not isinstance(info.type, FunctionType):
                 self._error(f"'{name}' is not callable.", node.func.position)
+                self._infer_arguments(node)
                 return self._record(node, UNKNOWN)
             signature = info.type
             display_name = name
         else:
             callee_type = node.func.accept(self)
             if isinstance(callee_type, UnknownType):
+                self._infer_arguments(node)
                 return self._record(node, UNKNOWN)
             if not isinstance(callee_type, FunctionType):
                 if isinstance(node.func, nodes.Attribute):
@@ -502,24 +574,53 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 else:
                     message = "Expression is not callable."
                 self._error(message, node.func.position)
+                self._infer_arguments(node)
                 return self._record(node, UNKNOWN)
             signature = callee_type
             display_name = (
                 node.func.attribute if isinstance(node.func, nodes.Attribute) else "<expression>"
             )
 
-        if len(argument_types) != len(signature.params):
+        if len(node.args) != len(signature.params):
             self._error(
                 f"Function '{display_name}' expects {len(signature.params)} arguments, "
-                f"got {len(argument_types)}.",
+                f"got {len(node.args)}.",
                 node.position,
             )
-        for expected, actual, arg in zip(signature.params, argument_types, node.args):
-            self.expect(expected, actual, arg.value)
+        for index, arg in enumerate(node.args):
+            if arg.keyword is not None or arg.kind != nodes.ArgumentKind.DEFAULT:
+                self._unsupported(
+                    arg,
+                    "Keyword, variadic and block arguments are not supported in oort-core yet.",
+                )
+                continue
+            if index < len(signature.params):
+                self._check_expr(arg.value, signature.params[index])
+            else:
+                arg.value.accept(self)
         return self._record(node, signature.ret)
 
-    def _check_print_call(self, node: nodes.Call, argument_types: list[Type]) -> Type:
-        for arg_type, arg in zip(argument_types, node.args):
+    def _infer_arguments(self, node: nodes.Call) -> None:
+        for arg in node.args:
+            if arg.keyword is not None or arg.kind != nodes.ArgumentKind.DEFAULT:
+                self._unsupported(
+                    arg,
+                    "Keyword, variadic and block arguments are not supported in oort-core yet.",
+                )
+                continue
+            arg.value.accept(self)
+
+    def _check_print_call(self, node: nodes.Call) -> Type:
+        for arg in node.args:
+            if arg.keyword is not None or arg.kind != nodes.ArgumentKind.DEFAULT:
+                self._unsupported(
+                    arg,
+                    "Keyword, variadic and block arguments are not supported in oort-core yet.",
+                )
+                continue
+            arg_type = arg.value.accept(self)
+            if arg_type is None:
+                arg_type = UNKNOWN
             if isinstance(arg_type, (UnknownType, NeverType)):
                 continue
             if arg_type not in (INT, BOOL, UNIT) and not isinstance(arg_type, AdtType):
@@ -633,6 +734,9 @@ class CoreTypeChecker(ASTVisitor[Type]):
         return self._record(node, joined)
 
     def visit_match_expr(self, node: nodes.MatchExpr) -> Type:
+        return self._check_match(node, None)
+
+    def _check_match(self, node: nodes.MatchExpr, expected: Type | None) -> Type:
         scrutinee_type = node.scrutinee.accept(self) or UNKNOWN
         if isinstance(scrutinee_type, UnknownType):
             scrutinee_ok = False
@@ -661,7 +765,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 result = self._check_pattern(arm.pattern, scrutinee_type)
                 for name, type_, position in result.bindings:
                     self.declare(name, type_, mutable=False, position=position)
-                body_type = arm.body.accept(self) or UNKNOWN
+                if expected is None or isinstance(expected, UnknownType):
+                    body_type = arm.body.accept(self) or UNKNOWN
+                else:
+                    body_type = self._check_expr(arm.body, expected)
             finally:
                 self.scopes.pop()
             arm_types.append(body_type)

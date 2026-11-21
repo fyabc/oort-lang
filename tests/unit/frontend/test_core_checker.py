@@ -164,14 +164,14 @@ class TestCoreRejections:
         check_error(
             caplog,
             "def f() -> Int { true }\n",
-            "is declared to return Int, but its body has type Bool",
+            "Expected Int, got Bool.",
         )
 
     def test_function_missing_return_on_some_path(self, caplog):
         check_error(
             caplog,
             "def f(n: Int) -> Int { if n < 0 { return 0 } }\n",
-            "is declared to return Int, but its body has type Unit",
+            "An if without else has type Unit, expected Int.",
         )
 
     def test_bare_return_in_non_unit_function(self, caplog):
@@ -661,3 +661,72 @@ class TestCoreCurriedFunctions:
             "print((1)(2))\n",
             "Expression is not callable.",
         )
+
+
+class TestCoreExpectedTypes:
+    def test_annotation_propagates_into_if_and_block(self, run_source):
+        result = run_source(
+            core("val a: Int = if true { 1 } else { 2 }\nval b: Int = { 3 }\nprint(a)\nprint(b)\n")
+        )
+        assert result.stdout == "1\n3\n"
+
+    def test_function_body_expected_type_reaches_branches(self, run_source):
+        result = run_source(
+            core(
+                "def pick(flag: Bool) -> Int { if flag { 1 } else { 2 } }\n"
+                "print(pick(true))\nprint(pick(false))\n"
+            )
+        )
+        assert result.stdout == "1\n2\n"
+
+    def test_assignment_and_return_propagate_expected_types(self, run_source):
+        result = run_source(
+            core(
+                "var x = 0\nx = if true { 4 } else { 5 }\n"
+                "def f(flag: Bool) -> Int { return if flag { 6 } else { 7 } }\n"
+                "print(x)\nprint(f(false))\n"
+            )
+        )
+        assert result.stdout == "4\n7\n"
+
+    def test_match_arms_receive_expected_type(self, run_source):
+        result = run_source(
+            core("enum E { A, B }\nval x: Int = match A { A => 1, B => 2 }\nprint(x)\n")
+        )
+        assert result.stdout == "1\n"
+
+    def test_if_without_else_needs_unit(self, caplog):
+        check_error(
+            caplog,
+            "val x: Int = if true { 1 }\n",
+            "An if without else has type Unit, expected Int.",
+        )
+
+    def test_block_last_expression_expected_type(self, caplog):
+        check_error(
+            caplog,
+            "val x: Int = { 1\ntrue }\n",
+            "Expected Int, got Bool.",
+        )
+
+    def test_match_arm_expected_type_error(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A, B }\nval x: Int = match A { A => 1, B => true }\n",
+            "Expected Int, got Bool.",
+        )
+
+    def test_return_expected_type_reaches_branches(self, caplog):
+        check_error(
+            caplog,
+            "def f(flag: Bool) -> Int { return if flag { 1 } else { true } }\n",
+            "Expected Int, got Bool.",
+        )
+
+
+def test_call_argument_receives_expected_type(caplog):
+    check_error(
+        caplog,
+        "def f(x: Int) -> Int { x }\nval y = f(if true { 1 } else { true })\n",
+        "Expected Int, got Bool.",
+    )
