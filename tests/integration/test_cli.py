@@ -69,6 +69,15 @@ def test_bytecode_target_rejects_unsupported_syntax(monkeypatch, caplog):
     assert "HIR backend does not support ellipsis" in caplog.text
 
 
+def test_lexer_error_reports_oort_diagnostic(monkeypatch, caplog):
+    # "'1" cannot be tokenized. The failure must surface as an Oort
+    # diagnostic with a position and source line — not as a raw ANTLR
+    # console message — and the process must exit non-zero.
+    assert _run_cli(monkeypatch, ["-c", "'1"]) != 0
+    assert "OortSyntaxError: Invalid token" in caplog.text
+    assert "<string>:1:1:" in caplog.text
+
+
 def test_print_ast_with_metadata(monkeypatch, capsys):
     assert _run_cli(monkeypatch, ["-t", "astm", "-c", "print(1)"]) == 0
     out = capsys.readouterr().out

@@ -347,6 +347,8 @@ class Compiler:
         REPL uses to decide whether to keep reading.
         """
         lexer = OortLexer(input_info.get_input_stream())
+        lexer.removeErrorListeners()
+        lexer.addErrorListener(OortErrorListener(self.error_handler, input_info))
         tokenized = tokenize(lexer)
         token_stream = CommonTokenStream(ListTokenSource(tokenized.tokens))
 
