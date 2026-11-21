@@ -1247,10 +1247,14 @@ class BytecodeVM:
     def _wrap_constant(self, value: object) -> OortObject:
         if value is None:
             return self.interpreter.runtime.null
+        # Exact type check: `bool` is a subclass of `int` and takes the
+        # singleton path below. Int literals dominate constant loads, and the
+        # fresh wrap keeps the interpreter's identity semantics (`1 is 1` is
+        # false), just without the full `from_host` dispatch.
+        if type(value) is int:
+            return OortInt(value)
         if isinstance(value, bool):
             return self.interpreter.runtime.true if value else self.interpreter.runtime.false
-        # Literals are freshly wrapped on each evaluation, matching the
-        # tree-walking interpreter's identity semantics (`1 is 1` is false).
         return self.interpreter.runtime.host.from_host(value)
 
 

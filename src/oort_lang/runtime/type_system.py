@@ -249,6 +249,9 @@ class TypeSystem:
         # Make the registry visible to object constructors used below.
         runtime.types = self
         self.by_class: dict[type, OortType] = {}
+        # Memo for `for_class` (see there); safe because `by_class` is fixed
+        # once construction below finishes.
+        self._for_class_cache: dict[type, OortType] = {}
 
         # Bootstrap `Type` and `Object` without resolving their MROs, which
         # would recurse back into the type system.
@@ -310,9 +313,15 @@ class TypeSystem:
 
     def for_class(self, cls: type) -> "OortType":
         """Find the built-in type for a Python storage class."""
+        cached = self._for_class_cache.get(cls)
+        if cached is not None:
+            return cached
         for base in cls.__mro__:
             type_obj = self.by_class.get(base)
             if type_obj is not None:
+                # `by_class` is fixed after runtime construction, so the
+                # MRO walk only has to happen once per Python class.
+                self._for_class_cache[cls] = type_obj
                 return type_obj
         raise KeyError(f"No Oort type registered for {cls.__name__}")
 

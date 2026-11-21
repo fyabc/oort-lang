@@ -7,7 +7,26 @@ from typing import TYPE_CHECKING
 
 from .context import get_runtime
 
+# Late-bound references for `OortObject.get` (see `_resolve_get_refs`).
+# `dispatch` and `type_system` both import this module, so the imports
+# cannot run at module load time.
+_get_from_cls_ref: "Callable[[str, OortType, OortObject], OortObject | None] | None" = None
+_oort_type_ref: "type[OortType] | None" = None
+
+
+def _resolve_get_refs() -> None:
+    # Lazy module rebinding is the standard cure for import cycles here.
+    global _get_from_cls_ref, _oort_type_ref  # noqa: PLW0603
+    from .dispatch import _get_from_cls
+    from .type_system import OortType
+
+    _get_from_cls_ref = _get_from_cls
+    _oort_type_ref = OortType
+
+
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from .environment import Environment
     from .type_system import OortType
 
@@ -35,6 +54,10 @@ __all__ = [
 class OortObject:
     """Base class of all Oort objects in AST-interpreter."""
 
+    # Class default: most objects carry no open field bag. Subclasses with
+    # fields override it in __init__; `get` reads it without hasattr probes.
+    fields: "dict[str, OortObject] | None" = None
+
     def __init__(self, type_: "OortType"):
         self.type = type_
 
@@ -56,22 +79,33 @@ class OortObject:
         return get_runtime().types.for_class(cls)
 
     def get(self, name: str) -> "OortObject | None":
-        # Imported lazily: dispatch and functions depend on this value module.
-        from .dispatch import _get_from_cls
-        from .functions import OortNativeFunction, OortNativeMethod
-        from .type_system import OortType
+        # Resolved on first use; see the module-level refs above.
+        get_from_cls = _get_from_cls_ref
+        oort_type = _oort_type_ref
+        if get_from_cls is None or oort_type is None:
+            _resolve_get_refs()
+            get_from_cls = _get_from_cls_ref
+            oort_type = _oort_type_ref
+            assert get_from_cls is not None and oort_type is not None
 
         # Search from instance-level fields.
-        if hasattr(self, "fields"):
-            value = self.fields.get(name, None)
+        fields = self.fields
+        if fields is not None:
+            value = fields.get(name, None)
             if value is not None:
-                if self is OortType.get_type_object() and isinstance(value, OortNativeFunction):
-                    # Special case for `Type` object.
-                    return OortNativeMethod.from_native_func(this=self, func=value)
-                else:
-                    return value
+                # Only an `OortType` instance can be the `Type` type object;
+                # gating on the Python class keeps value receivers away from
+                # the runtime lookup. The case itself is cold (only `Type`
+                # native functions), so its imports stay inline.
+                if self.__class__ is oort_type and self is oort_type.get_type_object():
+                    from .functions import OortNativeFunction, OortNativeMethod
 
-        value = _get_from_cls(name=name, start_type=self.type, receiver=self)
+                    if isinstance(value, OortNativeFunction):
+                        # Special case for `Type` object.
+                        return OortNativeMethod.from_native_func(this=self, func=value)
+                return value
+
+        value = get_from_cls(name, self.type, self)
         if value is not None:
             return value
 

@@ -534,6 +534,17 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                 position,
             )
 
+        # Fast path: reassigning an existing field of a dynamic instance.
+        # The shadow check ran when the field was created, and dynamic
+        # instances have no slot layout to enforce.
+        if (
+            not isinstance(value, OortType)
+            and not value.type.static_layout
+            and name in value.fields
+        ):
+            value.fields[name] = new_value
+            return
+
         if isinstance(value, OortType):
             # Writing through a class object must not replace methods or
             # class methods inherited from the class/metaclass MRO.
