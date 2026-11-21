@@ -62,6 +62,21 @@ from "./greeting" import greet as hello
 
 enum Shape {}
 # <--- storage.type.oort
+#    ^^^^^ entity.name.type.oort
+
+enum IntOption {
+    Some(value: Int)
+    None
+}
+
+match Some(1) {
+# <---- keyword.control.oort
+    Some(v) => v,
+    None => 0,
+}
+
+def show() -> Unit { print(1) }
+#             ^^^^ support.type.builtin.oort
 
 match shape {}
 # <---- keyword.control.oort

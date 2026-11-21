@@ -3,51 +3,102 @@
   "name": "Oort",
   "scopeName": "source.oort",
   "patterns": [
-    { "include": "#lang-directive" },
-    { "include": "#operator-method" },
-    { "include": "#def-name" },
-    { "include": "#class-name" },
-    { "include": "#comments" },
-    { "include": "#strings" },
-    { "include": "#numbers" },
-    { "include": "#import-keywords" },
-    { "include": "#keywords" },
-    { "include": "#builtin-types" },
-    { "include": "#container-punctuation" },
-    { "include": "#ellipsis" },
-    { "include": "#operators" },
-    { "include": "#punctuation" }
+    {
+      "include": "#lang-directive"
+    },
+    {
+      "include": "#operator-method"
+    },
+    {
+      "include": "#def-name"
+    },
+    {
+      "include": "#class-name"
+    },
+    {
+      "include": "#enum-name"
+    },
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#import-keywords"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#builtin-types"
+    },
+    {
+      "include": "#container-punctuation"
+    },
+    {
+      "include": "#ellipsis"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    }
   ],
   "repository": {
     "lang-directive": {
       "match": "^(#lang)(?:[ \\t]+([A-Za-z][A-Za-z0-9_-]*))?[ \\t]*$",
       "captures": {
-        "1": { "name": "keyword.other.directive.oort" },
-        "2": { "name": "support.constant.dialect.oort" }
+        "1": {
+          "name": "keyword.other.directive.oort"
+        },
+        "2": {
+          "name": "support.constant.dialect.oort"
+        }
       }
     },
     "operator-method": {
       "comment": "Operator method name: def operator \"+\"(other)",
       "match": "(\\bdef[ \\t]+)(operator)([ \\t]+)(\"[^\"\\n]*\"|'[^'\\n]*')",
       "captures": {
-        "1": { "name": "storage.type.oort" },
-        "2": { "name": "keyword.other.operator.oort" },
-        "4": { "name": "entity.name.function.operator.oort" }
+        "1": {
+          "name": "storage.type.oort"
+        },
+        "2": {
+          "name": "keyword.other.operator.oort"
+        },
+        "4": {
+          "name": "entity.name.function.operator.oort"
+        }
       }
     },
     "def-name": {
       "match": "(\\bdef[ \\t]+)((?:(?:class|[\\p{L}_][\\p{L}\\p{N}_]*!?)\\.)*)([\\p{L}_][\\p{L}\\p{N}_]*!?)",
       "captures": {
-        "1": { "name": "storage.type.oort" },
-        "2": { "name": "entity.name.namespace.oort" },
-        "3": { "name": "entity.name.function.oort" }
+        "1": {
+          "name": "storage.type.oort"
+        },
+        "2": {
+          "name": "entity.name.namespace.oort"
+        },
+        "3": {
+          "name": "entity.name.function.oort"
+        }
       }
     },
     "class-name": {
       "match": "(\\bclass[ \\t]+)([\\p{L}_][\\p{L}\\p{N}_]*!?)",
       "captures": {
-        "1": { "name": "storage.type.oort" },
-        "2": { "name": "entity.name.type.oort" }
+        "1": {
+          "name": "storage.type.oort"
+        },
+        "2": {
+          "name": "entity.name.type.oort"
+        }
       }
     },
     "comments": {
@@ -56,7 +107,9 @@
           "name": "comment.line.number-sign.oort",
           "begin": "#",
           "beginCaptures": {
-            "0": { "name": "punctuation.definition.comment.oort" }
+            "0": {
+              "name": "punctuation.definition.comment.oort"
+            }
           },
           "end": "$"
         }
@@ -64,64 +117,100 @@
     },
     "strings": {
       "patterns": [
-        { "include": "#string-raw-triple" },
-        { "include": "#string-raw-single" },
-        { "include": "#string-triple" },
-        { "include": "#string-single" }
+        {
+          "include": "#string-raw-triple"
+        },
+        {
+          "include": "#string-raw-single"
+        },
+        {
+          "include": "#string-triple"
+        },
+        {
+          "include": "#string-single"
+        }
       ]
     },
     "string-raw-triple": {
       "name": "string.quoted.triple.raw.oort",
       "begin": "((?:[rR][fF]?|[fF][rR]))(\"\"\"|''')",
       "beginCaptures": {
-        "1": { "name": "storage.type.string.prefix.oort" },
-        "2": { "name": "punctuation.definition.string.begin.oort" }
+        "1": {
+          "name": "storage.type.string.prefix.oort"
+        },
+        "2": {
+          "name": "punctuation.definition.string.begin.oort"
+        }
       },
       "end": "\\2",
       "endCaptures": {
-        "0": { "name": "punctuation.definition.string.end.oort" }
+        "0": {
+          "name": "punctuation.definition.string.end.oort"
+        }
       }
     },
     "string-raw-single": {
       "name": "string.quoted.single.raw.oort",
       "begin": "((?:[rR][fF]?|[fF][rR]))(\"|')",
       "beginCaptures": {
-        "1": { "name": "storage.type.string.prefix.oort" },
-        "2": { "name": "punctuation.definition.string.begin.oort" }
+        "1": {
+          "name": "storage.type.string.prefix.oort"
+        },
+        "2": {
+          "name": "punctuation.definition.string.begin.oort"
+        }
       },
       "end": "\\2",
       "endCaptures": {
-        "0": { "name": "punctuation.definition.string.end.oort" }
+        "0": {
+          "name": "punctuation.definition.string.end.oort"
+        }
       }
     },
     "string-triple": {
       "name": "string.quoted.triple.oort",
       "begin": "([fF]?)(\"\"\"|''')",
       "beginCaptures": {
-        "1": { "name": "storage.type.string.prefix.oort" },
-        "2": { "name": "punctuation.definition.string.begin.oort" }
+        "1": {
+          "name": "storage.type.string.prefix.oort"
+        },
+        "2": {
+          "name": "punctuation.definition.string.begin.oort"
+        }
       },
       "end": "\\2",
       "endCaptures": {
-        "0": { "name": "punctuation.definition.string.end.oort" }
+        "0": {
+          "name": "punctuation.definition.string.end.oort"
+        }
       },
       "patterns": [
-        { "include": "#string-escape" }
+        {
+          "include": "#string-escape"
+        }
       ]
     },
     "string-single": {
       "name": "string.quoted.single.oort",
       "begin": "([fF]?)(\"|')",
       "beginCaptures": {
-        "1": { "name": "storage.type.string.prefix.oort" },
-        "2": { "name": "punctuation.definition.string.begin.oort" }
+        "1": {
+          "name": "storage.type.string.prefix.oort"
+        },
+        "2": {
+          "name": "punctuation.definition.string.begin.oort"
+        }
       },
       "end": "\\2",
       "endCaptures": {
-        "0": { "name": "punctuation.definition.string.end.oort" }
+        "0": {
+          "name": "punctuation.definition.string.end.oort"
+        }
       },
       "patterns": [
-        { "include": "#string-escape" }
+        {
+          "include": "#string-escape"
+        }
       ]
     },
     "string-escape": {
@@ -239,6 +328,17 @@
           "match": "@"
         }
       ]
+    },
+    "enum-name": {
+      "match": "(\\benum[ \\t]+)([\\p{L}_][\\p{L}\\p{N}_]*!?)",
+      "captures": {
+        "1": {
+          "name": "storage.type.oort"
+        },
+        "2": {
+          "name": "entity.name.type.oort"
+        }
+      }
     }
   }
 }
