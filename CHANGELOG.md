@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (`Int -> Int -> Int` = `Int -> (Int -> Int)`), and calls may chain through
   function values (`add(1)(2)`). Multi-argument functions are not automatically
   curried. Anonymous/generic/default-argument lambdas remain rejected.
+- Bidirectional expected-type propagation in `oort-core`: annotations,
+  assignments, returns, function bodies and call arguments now push expected
+  types into `if` branches, block tails and `match` arms, improving diagnostics
+  at the exact branch or argument.
 - The VSCode grammar (0.1.2) highlights `enum`, `match`, `=>` and `Unit`.
 
 ### Changed

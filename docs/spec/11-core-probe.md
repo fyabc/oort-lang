@@ -73,6 +73,8 @@ def show(n: Int) -> Unit {
   函数值链式调用 `add(1)(2)` 可用。
 - lambda 必须写显式参数列表与返回类型；匿名 `$0` lambda、泛型 lambda、
   默认值/变长参数 lambda 第一切片不支持。
+- 期望类型会传播到 `if` 分支、块最后表达式、`match` arm 与调用实参：
+  标注、赋值、返回和函数体的期望类型会下推，错误定位到具体分支/实参。
 
 ## 模块导入
 
@@ -209,6 +211,5 @@ print(x)          # 1
 ## 尚未实现
 
 Float/String/集合/null、`/`、循环、类与槽、泛型 ADT、`Option[T]`/`Result[T,E]`、
-完整 expected-type 传播（`if`/`match` 分支）、匿名 $n lambda、跨方言 FFI、
-REPL 方言切换、静态对象模型、确定赋值、字面量/元组/守卫/或模式、
-嵌套穷尽性、ADT 相等、HIR/字节码后端。
+函数返回类型推断、匿名 $n lambda、跨方言 FFI、REPL 方言切换、静态对象模型、
+确定赋值、字面量/元组/守卫/或模式、嵌套穷尽性、ADT 相等、HIR/字节码后端。

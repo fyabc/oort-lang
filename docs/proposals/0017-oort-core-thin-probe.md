@@ -134,7 +134,7 @@
 
 ## 未决/后续
 
-- 完整的 expected-type 分支传播、函数返回类型推断。
+- 函数返回类型推断（签名仍必须显式标注）；更强的 expected-type 传播。
 - Float/String/集合/null、`/`。
 - 循环、类/槽、泛型 ADT/HKT、`Option[T]`/`Result[T,E]`。
 - 字面量/元组/列表/守卫/或模式、嵌套穷尽性、ADT 相等与迭代。
