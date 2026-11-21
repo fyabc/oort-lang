@@ -199,8 +199,8 @@ class TestCoreRejections:
     def test_non_name_annotation(self, caplog):
         check_error(
             caplog,
-            "var x: List[Int] = 1\n",
-            "Generic type applications are not supported",
+            "var x: Foo[Int] = 1\n",
+            "Generic type applications are only supported for List, Set, Dict and Tuple.",
         )
 
     def test_if_condition_must_be_bool(self, caplog):
@@ -359,17 +359,13 @@ class TestCoreRejections:
         ("source", "message"),
         [
             ("class A {}\n", "Classes are not supported"),
-            ("while true { print(1) }\n", "Loops are not supported"),
-            ("print([1])\n", "Lists are not supported"),
-            ("print((1, 2))\n", "Tuples are not supported"),
-            ("print({: 1: 2 :})\n", "Dicts are not supported"),
-            ("print({. 1 .})\n", "Sets are not supported"),
             ("print(null)\n", "null is not supported"),
             (
                 "val f = do: 1\n",
                 "Lambdas without an explicit parameter list are not supported",
             ),
-            ("var x = [1]\nprint(x[0])\n", "Lists are not supported"),
+            ("print([1][0:1])\n", "Slices are not supported"),
+            ("print([1].length)\n", "Attribute access is only supported on imported modules"),
         ],
     )
     def test_unsupported_constructs(self, caplog, source: str, message: str):
@@ -399,8 +395,8 @@ class TestCoreRejections:
     def test_unsupported_initializer_does_not_cascade(self, caplog):
         compiler = get_compiler("NOT_EXIST -t eval")
         with pytest.raises(SystemExit):
-            compiler.run_string(core("var xs = [1]\nprint(xs)\n"))
-        assert "Lists are not supported" in caplog.text
+            compiler.run_string(core("var x = null\nprint(x)\n"))
+        assert "null is not supported" in caplog.text
         assert "Cannot infer a usable type" not in caplog.text
 
 
@@ -681,7 +677,7 @@ class TestCoreFunctionValueRejections:
         check_error(
             caplog,
             "val f = do(x: Int) -> Int { x }\nprint(f)\n",
-            "only accepts Int, Float, Bool, String, Unit or enum",
+            "only accepts Int, Float, Bool, String, Unit, enum or collection",
         )
 
 
@@ -782,4 +778,307 @@ def test_call_argument_receives_expected_type(caplog):
         caplog,
         "def f(x: Int) -> Int { x }\nval y = f(if true { 1 } else { true })\n",
         "Expected Int, got Bool.",
+    )
+
+
+class TestCoreCollections:
+    def test_list_inference_index_and_length(self, run_source):
+        result = run_source(core("val xs = [3, 1, 2]\nprint(xs[1], len(xs))\nprint(xs)\n"))
+        assert result.stdout == "1 3\n[3, 1, 2]\n"
+
+    def test_empty_collections_use_annotations(self, run_source):
+        result = run_source(
+            core(
+                "val xs: List[Int] = []\n"
+                "val s: Set[String] = {. .}\n"
+                "val d: Dict[String, Int] = {: :}\n"
+                "print(xs, len(s), len(d))\n"
+            )
+        )
+        assert result.stdout == "[] 0 0\n"
+
+    def test_empty_literal_expected_type_reaches_call_and_return(self, run_source):
+        result = run_source(
+            core(
+                "def count(xs: List[Int]) -> Int { len(xs) }\n"
+                "def none() -> List[Int] { [] }\n"
+                "print(count([]), none())\n"
+            )
+        )
+        assert result.stdout == "0 []\n"
+
+    def test_tuple_literal_and_literal_index(self, run_source):
+        result = run_source(
+            core(
+                "val pair: Tuple[Int, Bool] = (7, true)\n"
+                "print(pair[0], pair[1], len(pair))\n"
+                "print((1, 2)[-1])\n"
+            )
+        )
+        assert result.stdout == "7 true 2\n2\n"
+
+    def test_uniform_tuple_allows_dynamic_index(self, run_source):
+        result = run_source(core("val xs = (1, 2)\nvar i = 1\nprint(xs[i])\n"))
+        assert result.stdout == "2\n"
+
+    def test_dict_index_and_length(self, run_source):
+        result = run_source(
+            core(
+                'val scores: Dict[String, Int] = {: "a": 1, "b": 2 :}\n'
+                'print(scores["b"], len(scores))\n'
+                "print(scores)\n"
+            )
+        )
+        assert result.stdout == "2 2\n{: a: 1, b: 2 :}\n"
+
+    def test_nested_collection_types(self, run_source):
+        result = run_source(
+            core(
+                'val table: Dict[String, List[Int]] = {: "a": [1, 2] :}\n'
+                "val rows: List[Tuple[Int, Bool]] = [(1, true)]\n"
+                'print(table["a"][1], rows[0][1], len(table))\n'
+            )
+        )
+        assert result.stdout == "2 true 1\n"
+
+    def test_string_index_and_length(self, run_source):
+        result = run_source(core('print("abc"[1], len("abc"))\n'))
+        assert result.stdout == "b 3\n"
+
+    def test_empty_tuple_is_inferred(self, run_source):
+        result = run_source(core("val t = ()\nprint(t, len(t))\n"))
+        assert result.stdout == "() 0\n"
+
+    def test_collection_equality(self, run_source):
+        result = run_source(
+            core(
+                "print([1] == [1], [1] == [2])\n"
+                "print((1, true) == (1, true), [1] != [2])\n"
+                'print({: "a": 1 :} == {: "a": 1 :})\n'
+            )
+        )
+        assert result.stdout == "true false\ntrue true\ntrue\n"
+
+    def test_empty_list_without_annotation_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "val xs = []\n",
+            "Cannot infer the element type of an empty List",
+        )
+
+    def test_empty_dict_without_annotation_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "val d = {: :}\n",
+            "Cannot infer the key/value types of an empty Dict",
+        )
+
+    def test_heterogeneous_list_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "val xs = [1, true]\n",
+            "List elements have incompatible types: Int and Bool.",
+        )
+
+    def test_unit_element_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "val xs = [print(1)]\n",
+            "Unit cannot be stored in a List",
+        )
+
+    def test_set_elements_must_be_key_types(self, caplog):
+        check_error(
+            caplog,
+            "val s = {. [1] .}\n",
+            "Set elements must be Int, Float, Bool, String, an enum or a Tuple",
+        )
+
+    def test_dict_keys_must_be_key_types(self, caplog):
+        check_error(
+            caplog,
+            "val d = {: [1]: 2 :}\n",
+            "Dict keys must be Int, Float, Bool, String, an enum or a Tuple",
+        )
+
+    def test_container_annotations_validate_key_types(self, caplog):
+        check_error(
+            caplog,
+            "val s: Set[List[Int]] = {. .}\n",
+            "Set elements must be Int, Float, Bool, String, an enum or a Tuple",
+        )
+
+    def test_tuple_arity_mismatch(self, caplog):
+        check_error(
+            caplog,
+            "val pair: Tuple[Int, Bool] = (1,)\n",
+            "Tuple has 1 elements, expected 2.",
+        )
+
+    def test_tuple_literal_out_of_range(self, caplog):
+        check_error(
+            caplog,
+            "print((1, 2)[5])\n",
+            "Index 5 is out of range for Tuple[Int, Int].",
+        )
+
+    def test_heterogeneous_tuple_needs_literal_index(self, caplog):
+        check_error(
+            caplog,
+            'val pair = (1, "a")\nvar i = 1\nprint(pair[i])\n',
+            "Tuple subscripts with a non-literal index require all elements",
+        )
+
+    def test_list_index_must_be_int(self, caplog):
+        check_error(
+            caplog,
+            "val xs = [1]\nprint(xs[true])\n",
+            "Expected Int, got Bool.",
+        )
+
+    def test_dict_index_must_match_key_type(self, caplog):
+        check_error(
+            caplog,
+            'val d: Dict[String, Int] = {: "a": 1 :}\nprint(d[1])\n',
+            "Expected String, got Int.",
+        )
+
+    def test_set_is_not_subscriptable(self, caplog):
+        check_error(
+            caplog,
+            "val s = {. 1 .}\nprint(s[0])\n",
+            "Type Set[Int] is not subscriptable",
+        )
+
+    def test_cross_kind_collection_equality_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "print([1] == (1,))\n",
+            "requires both operands to have the same collection type",
+        )
+
+    def test_bare_container_type_requires_arguments(self, caplog):
+        check_error(
+            caplog,
+            "val xs: List = []\n",
+            "Type 'List' requires type arguments",
+        )
+
+    def test_container_type_arity(self, caplog):
+        check_error(
+            caplog,
+            "val xs: List[Int, Bool] = []\n",
+            "Type 'List' expects 1 type argument(s), got 2.",
+        )
+
+    def test_len_requires_a_collection_or_string(self, caplog):
+        check_error(
+            caplog,
+            "print(len(1))\n",
+            "The built-in 'len' only accepts String or collection arguments",
+        )
+
+
+class TestCoreLoops:
+    def test_for_over_collections_and_string(self, run_source):
+        result = run_source(
+            core(
+                "val xs = [1, 2, 3]\n"
+                "var total = 0\n"
+                "for x in xs { total = total + x }\n"
+                "print(total)\n"
+                'for key in {: "a": 1, "b": 2 :} { print(key) }\n'
+                'for ch in "ab" { print(ch) }\n'
+            )
+        )
+        assert result.stdout == "6\na\nb\na\nb\n"
+
+    def test_for_over_uniform_tuple_and_single_element_set(self, run_source):
+        result = run_source(core("for n in (5, 6) { print(n) }\nfor x in {. 4 .} { print(x) }\n"))
+        assert result.stdout == "5\n6\n4\n"
+
+    def test_while_continue_and_break(self, run_source):
+        result = run_source(
+            core(
+                "var i = 0\n"
+                "while i < 5 {\n"
+                "    i = i + 1\n"
+                "    if i == 2: continue\n"
+                "    if i == 4: break\n"
+                "    print(i)\n"
+                "}\n"
+            )
+        )
+        assert result.stdout == "1\n3\n"
+
+    def test_return_from_inside_for(self, run_source):
+        result = run_source(
+            core(
+                "def first_positive(xs: List[Int]) -> Int {\n"
+                "    for x in xs {\n"
+                "        if x > 0 { return x }\n"
+                "    }\n"
+                "    0\n"
+                "}\n"
+                "print(first_positive([-2, 3, 4]))\n"
+            )
+        )
+        assert result.stdout == "3\n"
+
+    def test_loop_variable_annotation_is_checked(self, run_source):
+        result = run_source(core("for x: Int in [1, 2] { print(x) }\n"))
+        assert result.stdout == "1\n2\n"
+
+    def test_loop_variable_shadows_outer_binding(self, run_source):
+        result = run_source(core("var x = 9\nfor x in [1] { print(x) }\nprint(x)\n"))
+        assert result.stdout == "1\n9\n"
+
+    def test_while_condition_must_be_bool(self, caplog):
+        check_error(
+            caplog,
+            "while 1 { print(1) }\n",
+            "while condition must be Bool",
+        )
+
+    def test_loop_variable_annotation_mismatch(self, caplog):
+        check_error(
+            caplog,
+            "for x: Bool in [1] { print(x) }\n",
+            "Expected Bool, got Int.",
+        )
+
+    def test_multiple_loop_variables_are_rejected(self, caplog):
+        check_error(
+            caplog,
+            "for a, b in [1] { print(a) }\n",
+            "Multiple loop variables are not supported",
+        )
+
+    def test_iterating_a_non_iterable_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "for x in 1 { print(x) }\n",
+            "Cannot iterate over values of type Int",
+        )
+
+    def test_iterating_a_heterogeneous_tuple_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "val pair = (1, true)\nfor x in pair { print(x) }\n",
+            "Cannot iterate a Tuple with heterogeneous element types",
+        )
+
+    def test_break_value_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "while true { break 1 }\n",
+            "break values are not supported",
+        )
+
+
+def test_collection_equality_rejects_enum_elements(caplog):
+    check_error(
+        caplog,
+        "enum E { A }\nval xs = [A]\nprint(xs == xs)\n",
+        "Equality is not supported for collections containing enums or functions",
     )

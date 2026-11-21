@@ -40,3 +40,22 @@ def test_core_division_produces_float(run_source):
 def test_core_string_concatenation_executes(run_source):
     result = run_source(core('"oo" + "rt"\n'))
     assert result.value == "oort"
+
+
+def test_core_collection_values_execute(run_source):
+    result = run_source(
+        core(
+            "val xs = [3, 1, 2]\n"
+            "val pair = (7, true)\n"
+            'val d: Dict[String, Int] = {: "a": 1 :}\n'
+            'print(xs[1], len(xs), pair[1], d["a"])\n'
+        )
+    )
+    assert result.stdout == "1 3 true 1\n"
+
+
+def test_core_loops_execute(run_source):
+    result = run_source(
+        core("var total = 0\nfor x in [1, 2, 3] { total = total + x }\nprint(total)\n")
+    )
+    assert result.stdout == "6\n"

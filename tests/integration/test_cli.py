@@ -79,6 +79,17 @@ def test_core_astm_shows_types(monkeypatch, capsys):
     assert "type='Int'" in capsys.readouterr().out
 
 
+def test_core_astm_shows_collection_types(monkeypatch, capsys):
+    source = """#lang oort-core
+val xs = [1, 2]
+val pair = (1, true)
+"""
+    assert _run_cli(monkeypatch, ["-t", "astm", "-c", source]) == 0
+    out = capsys.readouterr().out
+    assert "type='List[Int]'" in out
+    assert "type='Tuple[Int, Bool]'" in out
+
+
 def test_core_astm_shows_float_and_string_types(monkeypatch, capsys):
     source = """\
 #lang oort-core

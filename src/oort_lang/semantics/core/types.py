@@ -21,6 +21,27 @@ class PrimitiveType(Type):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class ListType(Type):
+    element: Type
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class SetType(Type):
+    element: Type
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class DictType(Type):
+    key: Type
+    value: Type
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class TupleType(Type):
+    elements: tuple[Type, ...]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class FunctionType(Type):
     params: tuple[Type, ...]
     ret: Type
@@ -111,6 +132,15 @@ NEVER = NeverType()
 def describe_type(type_: Type) -> str:
     if isinstance(type_, PrimitiveType):
         return type_.name
+    if isinstance(type_, ListType):
+        return f"List[{describe_type(type_.element)}]"
+    if isinstance(type_, SetType):
+        return f"Set[{describe_type(type_.element)}]"
+    if isinstance(type_, DictType):
+        return f"Dict[{describe_type(type_.key)}, {describe_type(type_.value)}]"
+    if isinstance(type_, TupleType):
+        elements = ", ".join(describe_type(element) for element in type_.elements)
+        return f"Tuple[{elements}]"
     if isinstance(type_, FunctionType):
         params = ", ".join(describe_type(param) for param in type_.params)
         return f"({params}) -> {describe_type(type_.ret)}"
@@ -135,6 +165,19 @@ def is_assignable(expected: Type, actual: Type) -> bool:
         return isinstance(actual, NeverType)
     if isinstance(expected, PrimitiveType) and isinstance(actual, PrimitiveType):
         return expected == actual
+    if isinstance(expected, ListType) and isinstance(actual, ListType):
+        return is_assignable(expected.element, actual.element)
+    if isinstance(expected, SetType) and isinstance(actual, SetType):
+        return is_assignable(expected.element, actual.element)
+    if isinstance(expected, DictType) and isinstance(actual, DictType):
+        return is_assignable(expected.key, actual.key) and is_assignable(
+            expected.value, actual.value
+        )
+    if isinstance(expected, TupleType) and isinstance(actual, TupleType):
+        return len(expected.elements) == len(actual.elements) and all(
+            is_assignable(expected_element, actual_element)
+            for expected_element, actual_element in zip(expected.elements, actual.elements)
+        )
     if isinstance(expected, FunctionType) and isinstance(actual, FunctionType):
         return (
             len(expected.params) == len(actual.params)

@@ -30,9 +30,13 @@ from .types import (
     AdtType,
     ConstructorInfo,
     CoreModuleInfo,
+    DictType,
     FunctionType,
+    ListType,
     ModuleType,
     NeverType,
+    SetType,
+    TupleType,
     Type,
     UnknownType,
     describe_type,
@@ -49,6 +53,38 @@ _EQUALITY = frozenset({"==", "!="})
 
 def _is_numeric(type_: Type) -> bool:
     return type_ in (INT, FLOAT)
+
+
+def _is_container(type_: Type) -> bool:
+    return isinstance(type_, (ListType, SetType, DictType, TupleType))
+
+
+def _is_same_container(left: Type, right: Type) -> bool:
+    return type(left) is type(right) and is_assignable(left, right) and is_assignable(right, left)
+
+
+def _supports_value_equality(type_: Type) -> bool:
+    if isinstance(type_, UnknownType):
+        return True
+    if type_ in (INT, FLOAT, BOOL, STRING):
+        return True
+    if isinstance(type_, (ListType, SetType)):
+        return _supports_value_equality(type_.element)
+    if isinstance(type_, DictType):
+        return _supports_value_equality(type_.key) and _supports_value_equality(type_.value)
+    if isinstance(type_, TupleType):
+        return all(_supports_value_equality(element) for element in type_.elements)
+    return False
+
+
+def _is_valid_key_type(type_: Type) -> bool:
+    if isinstance(type_, UnknownType):
+        return True
+    if type_ in (INT, FLOAT, BOOL, STRING) or isinstance(type_, AdtType):
+        return True
+    if isinstance(type_, TupleType):
+        return all(_is_valid_key_type(element) for element in type_.elements)
+    return False
 
 
 @dataclasses.dataclass(slots=True)
@@ -88,6 +124,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
         self.module_exports: tuple[tuple[str, Type], ...] = ()
         self.enums: dict[str, AdtType] = {}
         self.constructor_names: dict[str, AdtType] = {}
+        self._loop_depth = 0
 
     # ------------------------------------------------------------------
     # Entry point and scopes
@@ -168,6 +205,11 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 return self._check_block_expected(node, expected)
             if isinstance(node, nodes.MatchExpr):
                 return self._check_match(node, expected)
+
+        if isinstance(
+            node, (nodes.ListLiteral, nodes.TupleLiteral, nodes.DictLiteral, nodes.SetLiteral)
+        ):
+            return self._check_collection_literal(node, expected)
 
         actual = node.accept(self)
         if actual is None:
@@ -567,6 +609,8 @@ class CoreTypeChecker(ASTVisitor[Type]):
             if info is None:
                 if name == "print":
                     return self._check_print_call(node)
+                if name == "len":
+                    return self._check_len_call(node)
                 self._error(f"Unknown function '{name}'.", node.func.position)
                 self._infer_arguments(node)
                 return self._record(node, UNKNOWN)
@@ -636,15 +680,44 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 arg_type = UNKNOWN
             if isinstance(arg_type, (UnknownType, NeverType)):
                 continue
-            if arg_type not in (INT, FLOAT, BOOL, STRING, UNIT) and not isinstance(
-                arg_type, AdtType
-            ):
+            printable = isinstance(arg_type, (AdtType, ListType, SetType, DictType, TupleType))
+            if arg_type not in (INT, FLOAT, BOOL, STRING, UNIT) and not printable:
                 self._error(
                     "The built-in 'print' only accepts Int, Float, Bool, String, "
-                    f"Unit or enum arguments in oort-core, got {describe_type(arg_type)}.",
+                    "Unit, enum or collection arguments in oort-core, "
+                    f"got {describe_type(arg_type)}.",
                     arg.value.position,
                 )
         return self._record(node, UNIT)
+
+    def _check_len_call(self, node: nodes.Call) -> Type:
+        if len(node.args) != 1:
+            self._error(
+                f"The built-in 'len' expects 1 argument, got {len(node.args)}.",
+                node.position,
+            )
+            self._infer_arguments(node)
+            return self._record(node, INT)
+        argument = node.args[0]
+        if argument.keyword is not None or argument.kind != nodes.ArgumentKind.DEFAULT:
+            self._unsupported(
+                argument,
+                "Keyword, variadic and block arguments are not supported in oort-core yet.",
+            )
+            return self._record(node, INT)
+        argument_type = argument.value.accept(self) or UNKNOWN
+        if isinstance(argument_type, (UnknownType, NeverType)):
+            return self._record(node, INT)
+        if argument_type == STRING or isinstance(
+            argument_type, (ListType, SetType, DictType, TupleType)
+        ):
+            return self._record(node, INT)
+        self._error(
+            "The built-in 'len' only accepts String or collection arguments in "
+            f"oort-core, got {describe_type(argument_type)}.",
+            argument.value.position,
+        )
+        return self._record(node, INT)
 
     def visit_unary_expr(self, node: nodes.UnaryExpr) -> Type:
         operand_type = node.operand.accept(self)
@@ -738,6 +811,22 @@ class CoreTypeChecker(ASTVisitor[Type]):
             return self._record(node, UNKNOWN)
         if (_is_numeric(left) and _is_numeric(right)) or (left == right and left in (BOOL, STRING)):
             return self._record(node, BOOL)
+        if _is_container(left) and _is_container(right):
+            if not (_supports_value_equality(left) and _supports_value_equality(right)):
+                self._error(
+                    "Equality is not supported for collections containing enums "
+                    "or functions in oort-core yet.",
+                    node.position,
+                )
+                return self._record(node, UNKNOWN)
+            if _is_same_container(left, right):
+                return self._record(node, BOOL)
+            self._error(
+                f"Operator '{node.op.text}' requires both operands to have the same "
+                f"collection type, got {describe_type(left)} and {describe_type(right)}.",
+                node.position,
+            )
+            return self._record(node, UNKNOWN)
         self._error(
             f"Operator '{node.op.text}' requires two numbers, two Bool or two String "
             f"operands, got {describe_type(left)} and {describe_type(right)}.",
@@ -961,14 +1050,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
             ret = self.resolve_annotation(node.rhs, allow_unit=True)
             return FunctionType(tuple(params), ret)
         if isinstance(node, nodes.Subscript):
-            self._error(
-                "Generic type applications are not supported in oort-core yet.",
-                node.position,
-            )
-            return UNKNOWN
+            return self._resolve_container_type(node)
         if isinstance(node, nodes.TupleLiteral):
             self._error(
-                "Tuple types are not supported in oort-core yet.",
+                "Tuple types are written Tuple[Int, Bool] in oort-core.",
                 node.position,
             )
             return UNKNOWN
@@ -992,6 +1077,12 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 return UNIT
             self._error(
                 "Unit is only allowed as a function return type in oort-core.",
+                node.position,
+            )
+            return UNKNOWN
+        if node.id in {"List", "Set", "Dict", "Tuple"}:
+            self._error(
+                f"Type '{node.id}' requires type arguments; write {node.id}[...].",
                 node.position,
             )
             return UNKNOWN
@@ -1056,16 +1147,82 @@ class CoreTypeChecker(ASTVisitor[Type]):
         return self._unsupported(node, "Classes are not supported in oort-core yet.")
 
     def visit_while_expr(self, node: nodes.WhileExpr) -> Type:
-        return self._unsupported(node, "Loops are not supported in oort-core yet.")
+        condition = node.condition.accept(self) or UNKNOWN
+        self.expect(BOOL, condition, node.condition, "while condition must be Bool")
+        self._loop_depth += 1
+        try:
+            node.body.accept(self)
+        finally:
+            self._loop_depth -= 1
+        return self._record(node, UNIT)
 
     def visit_for_expr(self, node: nodes.ForExpr) -> Type:
-        return self._unsupported(node, "Loops are not supported in oort-core yet.")
+        iterable_type = node.iterator.accept(self) or UNKNOWN
+        element_type = self._iterable_element_type(iterable_type, node.iterator)
+        if len(node.vars) != 1:
+            self._unsupported(node, "Multiple loop variables are not supported in oort-core yet.")
+            return self._record(node, UNIT)
+
+        loop_var = node.vars[0]
+        self.scopes.append({})
+        self._loop_depth += 1
+        try:
+            variable_type = element_type
+            if loop_var.type_expr is not None:
+                annotation = self.resolve_annotation(loop_var.type_expr, allow_unit=False)
+                self.expect(annotation, element_type, loop_var)
+                variable_type = annotation
+            self.declare(
+                loop_var.name,
+                variable_type,
+                mutable=False,
+                position=loop_var.position,
+            )
+            loop_var.metadata["type"] = describe_type(variable_type)
+            node.body.accept(self)
+        finally:
+            self._loop_depth -= 1
+            self.scopes.pop()
+        return self._record(node, UNIT)
+
+    def _iterable_element_type(self, type_: Type, node: nodes.ASTNode) -> Type:
+        if isinstance(type_, UnknownType):
+            return UNKNOWN
+        if isinstance(type_, (ListType, SetType)):
+            return type_.element
+        if isinstance(type_, DictType):
+            return type_.key
+        if type_ == STRING:
+            return STRING
+        if isinstance(type_, TupleType):
+            if not type_.elements:
+                return UNKNOWN
+            first = type_.elements[0]
+            if all(element == first for element in type_.elements):
+                return first
+            self._error(
+                "Cannot iterate a Tuple with heterogeneous element types in "
+                "oort-core yet; index it or use a List.",
+                node.position,
+            )
+            return UNKNOWN
+        self._error(
+            f"Cannot iterate over values of type {describe_type(type_)} in oort-core.",
+            node.position,
+        )
+        return UNKNOWN
 
     def visit_continue_expr(self, node: nodes.ContinueExpr) -> Type:
-        return self._unsupported(node, "Loops are not supported in oort-core yet.")
+        if self._loop_depth == 0:
+            self._error("continue is only allowed inside a loop.", node.position)
+        return self._record(node, NEVER)
 
     def visit_break_expr(self, node: nodes.BreakExpr) -> Type:
-        return self._unsupported(node, "Loops are not supported in oort-core yet.")
+        if self._loop_depth == 0:
+            self._error("break is only allowed inside a loop.", node.position)
+        if node.value is not None:
+            self._unsupported(node, "break values are not supported in oort-core yet.")
+        return self._record(node, NEVER)
 
     def visit_import_stmt(self, node: nodes.ImportStmt) -> Type:
         if not self.module_level:
@@ -1170,22 +1327,279 @@ class CoreTypeChecker(ASTVisitor[Type]):
         )
 
     def visit_subscript(self, node: nodes.Subscript) -> Type:
-        return self._unsupported(node, "Subscripts are not supported in oort-core yet.")
+        if isinstance(node.index, nodes.SliceLiteral):
+            return self._unsupported(node, "Slices are not supported in oort-core yet.")
+
+        value_type = node.value.accept(self)
+        if isinstance(value_type, UnknownType):
+            node.index.accept(self)
+            return self._record(node, UNKNOWN)
+        if isinstance(value_type, ListType):
+            self._check_expr(node.index, INT)
+            return self._record(node, value_type.element)
+        if isinstance(value_type, DictType):
+            self._check_expr(node.index, value_type.key)
+            return self._record(node, value_type.value)
+        if value_type == STRING:
+            self._check_expr(node.index, INT)
+            return self._record(node, STRING)
+        if isinstance(value_type, TupleType):
+            return self._check_tuple_subscript(node, value_type)
+        self._error(
+            f"Type {describe_type(value_type)} is not subscriptable in oort-core.",
+            node.position,
+        )
+        node.index.accept(self)
+        return self._record(node, UNKNOWN)
+
+    def _check_tuple_subscript(self, node: nodes.Subscript, tuple_type: TupleType) -> Type:
+        index_type = node.index.accept(self) or UNKNOWN
+        self.expect(INT, index_type, node.index)
+        if isinstance(node.index, nodes.IntConstant):
+            index = node.index.value
+            assert isinstance(index, int)
+            if not -len(tuple_type.elements) <= index < len(tuple_type.elements):
+                self._error(
+                    f"Index {index} is out of range for {describe_type(tuple_type)}.",
+                    node.index.position,
+                )
+                return self._record(node, UNKNOWN)
+            return self._record(node, tuple_type.elements[index])
+        if not tuple_type.elements:
+            self._error("Cannot index an empty Tuple in oort-core.", node.position)
+            return self._record(node, UNKNOWN)
+        first = tuple_type.elements[0]
+        if all(element == first for element in tuple_type.elements):
+            return self._record(node, first)
+        self._error(
+            "Tuple subscripts with a non-literal index require all elements to "
+            "have the same type in oort-core.",
+            node.position,
+        )
+        return self._record(node, UNKNOWN)
 
     def visit_slice_literal(self, node: nodes.SliceLiteral) -> Type:
         return self._unsupported(node, "Slices are not supported in oort-core yet.")
 
     def visit_list_literal(self, node: nodes.ListLiteral) -> Type:
-        return self._unsupported(node, "Lists are not supported in oort-core yet.")
+        return self._check_collection_literal(node, UNKNOWN)
 
     def visit_tuple_literal(self, node: nodes.TupleLiteral) -> Type:
-        return self._unsupported(node, "Tuples are not supported in oort-core yet.")
+        return self._check_collection_literal(node, UNKNOWN)
 
     def visit_dict_literal(self, node: nodes.DictLiteral) -> Type:
-        return self._unsupported(node, "Dicts are not supported in oort-core yet.")
+        return self._check_collection_literal(node, UNKNOWN)
 
     def visit_set_literal(self, node: nodes.SetLiteral) -> Type:
-        return self._unsupported(node, "Sets are not supported in oort-core yet.")
+        return self._check_collection_literal(node, UNKNOWN)
+
+    # -- collection literal checking -----------------------------------
+
+    def _check_collection_literal(self, node: nodes.ASTNode, expected: Type) -> Type:
+        if isinstance(node, nodes.ListLiteral):
+            return self._check_list_literal(node, expected)
+        if isinstance(node, nodes.TupleLiteral):
+            return self._check_tuple_literal(node, expected)
+        if isinstance(node, nodes.DictLiteral):
+            return self._check_dict_literal(node, expected)
+        assert isinstance(node, nodes.SetLiteral)
+        return self._check_set_literal(node, expected)
+
+    def _check_list_literal(self, node: nodes.ListLiteral, expected: Type) -> Type:
+        if isinstance(expected, ListType):
+            for element in node.elements:
+                self._check_expr(element, expected.element)
+            return self._record(node, expected)
+        if not node.elements:
+            self._error(
+                "Cannot infer the element type of an empty List; add a type annotation.",
+                node.position,
+            )
+            actual = ListType(UNKNOWN)
+        else:
+            actual = ListType(self._infer_homogeneous(node.elements, "List"))
+        return self._finish_literal(node, expected, actual)
+
+    def _check_set_literal(self, node: nodes.SetLiteral, expected: Type) -> Type:
+        if isinstance(expected, SetType):
+            for element in node.elements:
+                self._check_expr(element, expected.element)
+            return self._record(node, expected)
+        if not node.elements:
+            self._error(
+                "Cannot infer the element type of an empty Set; add a type annotation.",
+                node.position,
+            )
+            actual = SetType(UNKNOWN)
+        else:
+            actual = SetType(self._infer_homogeneous(node.elements, "Set", key_elements=True))
+        return self._finish_literal(node, expected, actual)
+
+    def _check_tuple_literal(self, node: nodes.TupleLiteral, expected: Type) -> Type:
+        if isinstance(expected, TupleType):
+            if len(node.elements) != len(expected.elements):
+                self._error(
+                    f"Tuple has {len(node.elements)} elements, expected {len(expected.elements)}.",
+                    node.position,
+                )
+                for element in node.elements:
+                    element.accept(self)
+                return self._record(node, expected)
+            for element, element_type in zip(node.elements, expected.elements):
+                self._check_expr(element, element_type)
+            return self._record(node, expected)
+
+        element_types: list[Type] = []
+        for element in node.elements:
+            element_type = element.accept(self) or UNKNOWN
+            element_types.append(self._validate_value_type(element_type, "Tuple", element.position))
+        actual = TupleType(tuple(element_types))
+        return self._finish_literal(node, expected, actual)
+
+    def _check_dict_literal(self, node: nodes.DictLiteral, expected: Type) -> Type:
+        if isinstance(expected, DictType):
+            for key, value in node.items:
+                if key is None:
+                    self._unsupported(node, "Dict unpacking is not supported in oort-core yet.")
+                    continue
+                self._check_expr(key, expected.key)
+                self._check_expr(value, expected.value)
+            return self._record(node, expected)
+
+        if not node.items:
+            self._error(
+                "Cannot infer the key/value types of an empty Dict; add a type annotation.",
+                node.position,
+            )
+            actual = DictType(UNKNOWN, UNKNOWN)
+        else:
+            key_types: list[nodes.ASTNode] = []
+            value_types: list[nodes.ASTNode] = []
+            for key, value in node.items:
+                if key is None:
+                    self._unsupported(node, "Dict unpacking is not supported in oort-core yet.")
+                    continue
+                key_types.append(key)
+                value_types.append(value)
+            if not key_types:
+                actual = DictType(UNKNOWN, UNKNOWN)
+            else:
+                key_type = self._infer_homogeneous(
+                    key_types, "Dict", key_elements=True, label="Dict keys"
+                )
+                value_type = self._infer_homogeneous(value_types, "Dict", label="Dict values")
+                actual = DictType(key_type, value_type)
+        return self._finish_literal(node, expected, actual)
+
+    def _finish_literal(self, node: nodes.ASTNode, expected: Type, actual: Type) -> Type:
+        if isinstance(expected, UnknownType):
+            return self._record(node, actual)
+        self.expect(expected, actual, node)
+        return self._record(node, expected)
+
+    def _infer_homogeneous(
+        self,
+        elements: Iterable[nodes.ASTNode],
+        kind: str,
+        *,
+        key_elements: bool = False,
+        label: str | None = None,
+    ) -> Type:
+        label = label or f"{kind} elements"
+        result: Type = UNKNOWN
+        started = False
+        for element in elements:
+            element_type = element.accept(self) or UNKNOWN
+            if key_elements:
+                element_type = self._validate_key_type(element_type, kind, label, element.position)
+            else:
+                element_type = self._validate_value_type(element_type, kind, element.position)
+            if not started:
+                result = element_type
+                started = True
+                continue
+            joined = join_types(result, element_type)
+            if joined is None:
+                self._error(
+                    f"{label} have incompatible types: "
+                    f"{describe_type(result)} and {describe_type(element_type)}.",
+                    element.position,
+                )
+                result = UNKNOWN
+            else:
+                result = joined
+        return result
+
+    def _validate_value_type(self, type_: Type, kind: str, position) -> Type:
+        if isinstance(type_, NeverType):
+            return UNKNOWN
+        if type_ == UNIT:
+            self._error(f"Unit cannot be stored in a {kind} in oort-core.", position)
+            return UNKNOWN
+        if isinstance(type_, ModuleType):
+            self._error(f"Modules cannot be stored in a {kind} in oort-core.", position)
+            return UNKNOWN
+        return type_
+
+    def _validate_key_type(self, type_: Type, container: str, label: str, position) -> Type:
+        type_ = self._validate_value_type(type_, container, position)
+        if isinstance(type_, UnknownType) or _is_valid_key_type(type_):
+            return type_
+        self._error(
+            f"{label} must be Int, Float, Bool, String, an enum or a Tuple "
+            f"of key types, got {describe_type(type_)}.",
+            position,
+        )
+        return UNKNOWN
+
+    def _resolve_container_type(self, node: nodes.Subscript) -> Type:
+        base = node.value
+        if not isinstance(base, nodes.Name) or base.id not in {"List", "Set", "Dict", "Tuple"}:
+            self._error(
+                "Generic type applications are only supported for List, Set, Dict and Tuple.",
+                node.position,
+            )
+            return UNKNOWN
+
+        if isinstance(node.index, nodes.TupleLiteral):
+            arguments = node.index.elements
+        else:
+            arguments = [node.index]
+
+        name = base.id
+        expected_count = {"List": 1, "Set": 1, "Dict": 2}.get(name)
+        if expected_count is not None and len(arguments) != expected_count:
+            self._error(
+                f"Type '{name}' expects {expected_count} type argument(s), got {len(arguments)}.",
+                node.position,
+            )
+            return UNKNOWN
+        if name == "Tuple" and not arguments:
+            self._error("Tuple requires at least one element type.", node.position)
+            return UNKNOWN
+
+        resolved = [self.resolve_annotation(argument, allow_unit=False) for argument in arguments]
+        if name == "List":
+            return ListType(resolved[0])
+        if name == "Set":
+            if not _is_valid_key_type(resolved[0]):
+                self._error(
+                    "Set elements must be Int, Float, Bool, String, an enum or a "
+                    f"Tuple of key types, got {describe_type(resolved[0])}.",
+                    node.position,
+                )
+                return SetType(UNKNOWN)
+            return SetType(resolved[0])
+        if name == "Dict":
+            if not _is_valid_key_type(resolved[0]):
+                self._error(
+                    "Dict keys must be Int, Float, Bool, String, an enum or a "
+                    f"Tuple of key types, got {describe_type(resolved[0])}.",
+                    node.position,
+                )
+                return DictType(UNKNOWN, resolved[1])
+            return DictType(resolved[0], resolved[1])
+        return TupleType(tuple(resolved))
 
     def visit_null_constant(self, node: nodes.NullConstant) -> Type:
         return self._unsupported(node, "null is not supported in oort-core yet.")

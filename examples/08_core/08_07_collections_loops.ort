@@ -1,0 +1,37 @@
+#lang oort-core
+
+# 集合类型：List/Tuple/Dict/Set 字面量、下标、len，以及 for/while 循环。
+
+val xs: List[Int] = [3, 1, 2]
+val pair: Tuple[Int, Bool] = (7, true)
+val scores: Dict[String, Int] = {: "a": 1, "b": 2 :}
+val tags: Set[String] = {. "core", "static" .}
+
+def total(values: List[Int]) -> Int {
+    var sum = 0
+    for value in values {
+        sum = sum + value
+    }
+    sum
+}
+
+print(xs[0], len(xs))
+print(pair[0], pair[1], len(pair))
+print(scores["b"], len(scores), len(tags))
+print(total(xs))
+
+for key in scores {
+    print(key, scores[key])
+}
+
+for ch in "oort" {
+    print(ch)
+}
+
+var i = 0
+while i < 4 {
+    i = i + 1
+    if i == 2: continue
+    if i == 4: break
+    print(i)
+}
