@@ -21,6 +21,20 @@ for i in range(10000) {
 }
 total
 """
+_METHODS = """\
+class Counter {
+    def __init__() { this.value = 0 }
+    def bump() { this.value = this.value + 1 }
+}
+def run(n) {
+    val counter = Counter()
+    for i in range(n) {
+        counter.bump()
+    }
+    counter.value
+}
+run(5000)
+"""
 
 
 def _setup(source: str):
@@ -46,4 +60,14 @@ def test_interpreter_loop(benchmark):
 
 def test_vm_loop(benchmark):
     _, _, vm, program = _setup(_LOOP)
+    benchmark(vm.run, program)
+
+
+def test_interpreter_methods(benchmark):
+    interpreter, ast, _, _ = _setup(_METHODS)
+    benchmark(run_compiled, interpreter, ast)
+
+
+def test_vm_methods(benchmark):
+    _, _, vm, program = _setup(_METHODS)
     benchmark(vm.run, program)

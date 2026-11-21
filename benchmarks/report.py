@@ -64,8 +64,13 @@ LABELS = {
     "test_compiler_construction": "compiler construction",
     "test_runtime_construction": "runtime construction",
     "test_empty_program": "empty program",
+    "test_empty_program_vm": "empty program (vm)",
+    "test_hir_lowering_empty": "HIR lowering (empty)",
+    "test_hir_lowering_fib": "HIR lowering (fib)",
+    "test_bytecode_compile_empty": "bytecode compile (empty)",
+    "test_bytecode_compile_fib": "bytecode compile (fib)",
 }
-VM_LABELS = {"fib": "fib(15)", "loop": "loop 10000"}
+VM_LABELS = {"fib": "fib(15)", "loop": "loop 10000", "methods": "method dispatch (5000)"}
 REFERENCE_WORKLOADS = {
     "fib": "fib(20)",
     "loop": "loop 20000",
@@ -101,7 +106,13 @@ def _group_for(name: str) -> str:
     if name.startswith("test_extension_"):
         return "extensions"
     if name.startswith(
-        ("test_compiler_construction", "test_runtime_construction", "test_empty_program")
+        (
+            "test_compiler_construction",
+            "test_runtime_construction",
+            "test_empty_program",
+            "test_hir_lowering",
+            "test_bytecode_compile",
+        )
     ):
         return "startup"
     return "other"

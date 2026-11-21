@@ -60,10 +60,10 @@
 | `test_macro.py` | 递归、循环、方法分派 |
 | `test_stdlib.py` | map/filter/sorted/zip/enumerate、字符串 join、宿主投影与 `len` |
 | `test_iterators.py` | 内置循环、用户 `__iter__` 闭包、无限迭代器 + `break` |
-| `test_startup.py` | 编译器/运行时构造、空程序 |
+| `test_startup.py` | 编译器/运行时构造、空程序（eval 与 vm 管道）、HIR lowering 与字节码编译成本 |
 | `test_memory.py` | Runtime 与程序的峰值内存上限 |
 | `test_ast_interpreter.py` | 历史 Fibonacci 基线 |
-| `test_vm.py` | 同一 HIR 程序在解释器与字节码 VM 上的对比 |
+| `test_vm.py` | 同一 HIR 程序在解释器与字节码 VM 上的对比（fib/loop/方法分派） |
 
 微/宏基准由 `bench_utils.compile_program` 先完成解析、语义分析和解释器
 构造，基准函数只测 `interpreter.run(ast)`；编译开销由启动/空程序基准单独
