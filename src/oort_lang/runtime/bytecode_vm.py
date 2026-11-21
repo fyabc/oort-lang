@@ -29,6 +29,7 @@ from ..bytecode.opcodes import (
     UNARY_OPCODES,
     Op,
 )
+from ..diagnostics import OortSyntaxError
 from ..diagnostics.runtime_errors import (
     OortImportError,
     OortNameError,
@@ -45,6 +46,8 @@ from .call_protocol import (
 )
 from .environment import DefineResult, Environment
 from .functions import (
+    OortFunction,
+    OortMethod,
     OortNativeFunction,
     OortNativeMethod,
     OortVMInvokable,
@@ -474,7 +477,7 @@ class BytecodeVM:
                 else:
                     entry = env.get(name)
                     if entry is None:
-                        raise OortNameError(f"Name {name!r} is not defined in bytecode.", position)
+                        raise OortNameError(f"Name {name!r} is not defined", position)
                     registers[a] = entry.value
                     cache[name] = entry.value
                 pc += 1
@@ -600,7 +603,7 @@ class BytecodeVM:
                             name=constructor,
                             mode=NativeMode.VALUE,
                         )
-                    self._define_import(env, constructor, constructor_value, position)
+                    self._define_enum_constructor(env, constructor, constructor_value, position)
                 registers[a] = enum_type
                 pc += 1
             elif op is Op.MATCH:
@@ -823,7 +826,10 @@ class BytecodeVM:
                     )
                 receiver = registers[a]
                 if not isinstance(receiver, OortType):
-                    raise OortTypeError("Extension receiver is not a type.", position)
+                    raise OortTypeError(
+                        f"Extension receiver {spec.receiver_name!r} is not a type.",
+                        position,
+                    )
                 extension = OortVMClosure(
                     self,
                     module,
@@ -855,7 +861,7 @@ class BytecodeVM:
                         "is already defined in this scope."
                     )
                 if result == DefineResult.REDEFINED:
-                    raise OortTypeError(duplicate, position)
+                    raise OortSyntaxError(duplicate, position)
                 pc += 1
             elif op is Op.GET_ATTR:
                 name = str(constants[decoded.bx])
@@ -1018,6 +1024,17 @@ class BytecodeVM:
             raise OortNameError(f"Name {name!r} is already defined", position)
         self._cache_for(env)[name] = value
 
+    def _define_enum_constructor(
+        self,
+        env: Environment,
+        name: str,
+        value: OortObject,
+        position: SourcePosition,
+    ) -> None:
+        if env.define(name, value, mutable=False) == DefineResult.REDEFINED:
+            raise OortSyntaxError(f"Constructor {name!r} is already defined.", position)
+        self._cache_for(env)[name] = value
+
     def _cache_for(self, env: Environment) -> dict[str, OortObject]:
         return self._global_caches.setdefault(env, {})
 
@@ -1117,10 +1134,13 @@ class BytecodeVM:
                     f"Built-in function {callee.name!r} does not accept keyword arguments",
                     position,
                 )
-            raise OortTypeError(
-                f"{callee.type.name} object does not accept keyword arguments",
-                position,
-            )
+            if isinstance(callee, (OortFunction, OortMethod)):
+                # Interpreter closures bind keyword arguments themselves.
+                try:
+                    return callee(self.interpreter, args)
+                except ArgumentBindingError as e:
+                    raise OortTypeError(str(e), position) from e
+            raise OortTypeError(f"{callee.type.name} object is not callable", position)
 
         values = [arg.value for arg in args if arg.kind is not ArgKind.BLOCK]
         values.extend(arg.value for arg in args if arg.kind is ArgKind.BLOCK)

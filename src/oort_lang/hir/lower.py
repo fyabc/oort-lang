@@ -295,6 +295,7 @@ class HirLowerer:
                 index,
                 symbol,
                 operand_count if operand_count is not None else 0,
+                receiver_name,
             )
         )
 

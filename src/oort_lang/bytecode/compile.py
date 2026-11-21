@@ -430,6 +430,7 @@ class _ProtoCompiler:
                 function_index=instruction.function_index,
                 symbol=instruction.symbol,
                 operand_count=instruction.operand_count,
+                receiver_name=instruction.receiver_name,
             )
             bx = self._constant(extension_spec, position)
             self._word(

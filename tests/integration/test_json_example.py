@@ -62,6 +62,24 @@ def test_json_example_default_sample(compiled_example, capsys):
     )
 
 
+def test_json_example_runs_on_vm(run_file):
+    """The showcase must produce identical output under the bytecode VM."""
+    result = run_file(EXAMPLE, target="vm")
+    assert result.stdout == (
+        "{:\n"
+        '  "active": true,\n'
+        '  "name": "Oort",\n'
+        '  "owner": null,\n'
+        '  "tags": [\n'
+        '    "language",\n'
+        '    "interpreter"\n'
+        "  ],\n"
+        '  "unicode": "你好 😀",\n'
+        '  "version": 0.3\n'
+        ":}\n"
+    )
+
+
 def test_json_example_parses_file(compiled_example, capsys):
     _run_example(compiled_example, SAMPLE)
     out = capsys.readouterr().out

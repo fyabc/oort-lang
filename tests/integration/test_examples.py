@@ -65,8 +65,9 @@ EXAMPLE_FILES = [path for path in ALL_EXAMPLE_FILES if path not in SEPARATE_EXAM
 
 
 @pytest.mark.parametrize("rel_path", EXAMPLE_FILES)
-def test_example_runs(rel_path: str, run_file):
-    result = run_file(EXAMPLES_DIR / rel_path)
+@pytest.mark.parametrize("target", ["eval", "vm"])
+def test_example_runs(rel_path: str, target: str, run_file):
+    result = run_file(EXAMPLES_DIR / rel_path, target=target)
 
     if rel_path == "01_functions/01_00_fibonacci.ort":
         # The elapsed time is non-deterministic; check the result only.

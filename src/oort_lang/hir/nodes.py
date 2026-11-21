@@ -227,6 +227,7 @@ class RegisterExtension(Instruction):
     function_index: int
     symbol: str | None = None
     operand_count: int = 0
+    receiver_name: str = ""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

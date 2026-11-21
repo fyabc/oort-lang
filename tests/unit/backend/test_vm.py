@@ -656,7 +656,7 @@ def test_vm_reports_unbound_global(caplog: pytest.LogCaptureFixture):
     compiler = get_compiler(["NOT_EXIST", "-t", "vm"])
     with pytest.raises(CompilerError):
         compiler.run_string("print(missing)\n")
-    assert "is not defined in bytecode" in caplog.text
+    assert "Name 'missing' is not defined" in caplog.text
 
 
 def test_vm_reports_function_arity(caplog: pytest.LogCaptureFixture):

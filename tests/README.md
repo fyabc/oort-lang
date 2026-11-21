@@ -86,6 +86,7 @@ REPL 按层次测试，不依赖手动输入：
 | 类型化 Binding / 作用域布局 | `unit/frontend/test_bindings.py` |
 | 诊断配对/排序 | `unit/frontend/test_error_handler.py` |
 | 未实现特性诊断 | `unit/frontend/test_unsupported.py` |
+| VM/解释器错误差分 | `unit/backend/test_vm_error_diff.py` |
 | 导入语法与 AST | `unit/frontend/test_imports.py` |
 | 基础语句/增强赋值 | `unit/runtime/test_basic.py` |
 | 控制流 | `unit/runtime/test_control_flow.py` |
