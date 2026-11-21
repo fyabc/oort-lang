@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
 GLOBAL_ENV_NAME = "<global>"
 
+logger = logging.getLogger(__name__)
+
 
 @dataclasses.dataclass
 class Entry:
@@ -98,20 +100,21 @@ class Environment:
         if value is None and self.outer is not None:
             value = self.outer.get(name)
         else:
-            logging.debug(f"Get {name!r} from {self.name}.")
+            # Lazy %-formatting: the message is only built when debug logging
+            # is enabled (get() sits on the VM and interpreter hot paths).
+            logger.debug("Get %r from %s.", name, self.name)
         return value
 
     def get_at(self, name: str, depth: int) -> Entry | None:
         env = self._ancestor(depth)
-        logging.debug(f"Get {name!r} from {env.name} (depth = {depth}).")
+        logger.debug("Get %r from %s (depth = %d).", name, env.name, depth)
         return env.values.get(name, None)
 
     def define(self, name: str, value: OortObject, mutable: bool = False) -> DefineResult:
         """Define a new name to value."""
         if name in self.values and not self.allow_redefine:
             return DefineResult.REDEFINED
-        mut_s = "(mut) " if mutable else ""
-        logging.debug(f"Define {name!r} to {mut_s}{value}.")
+        logger.debug("Define %r to %s%s.", name, "(mut) " if mutable else "", value)
         self.values[name] = Entry(value, mutable)
         return DefineResult.OK
 

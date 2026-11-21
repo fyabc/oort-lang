@@ -25,5 +25,14 @@
     "loop_ms": 94.19,
     "loop_speedup": 1.99,
     "note": "VM 动态子集完整（闭包/元类/super/扩展/协议）"
+  },
+  {
+    "date": "2026-11-22",
+    "status": "热路径快赢",
+    "fib_ms": 31.90,
+    "fib_speedup": 2.88,
+    "loop_ms": 69.07,
+    "loop_speedup": 2.21,
+    "note": "STORE_G 快路径、惰性环境日志、循环不变量提升；loop 稳定过 2×（methods 1.35× 待调用点缓存）"
   }
 ]

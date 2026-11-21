@@ -216,6 +216,7 @@ class BytecodeVM:
             is_module_root=True,
         )
         self._decoded_cache: dict[int, tuple[Decoded, ...]] = {}
+        self._simple_protos: dict[int, bool] = {}
         self._global_caches: dict[Environment, dict[str, OortObject]] = {}
 
     def run(self, module: BytecodeModule, env: Environment | None = None) -> OortObject:
@@ -237,7 +238,7 @@ class BytecodeVM:
                 *(_Cell(null) for _ in range(proto.local_count)),
                 *(null for _ in range(proto.register_count - proto.local_count)),
             ]
-        return [null for _ in range(proto.register_count)]
+        return [null] * proto.register_count
 
     @staticmethod
     def _read_slot(proto: Proto, registers: list[Any], slot: int) -> OortObject:
@@ -264,31 +265,31 @@ class BytecodeVM:
         this: OortObject | None,
         position: SourcePosition | None,
     ) -> OortObject:
-        signature = closure.proto.signature
+        proto = closure.proto
+        signature = proto.signature
         params = signature.params
-        if len(args) == len(params) and all(
-            param.kind in (ParamKind.POS_ONLY, ParamKind.POS_OR_KW) and not param.has_default
-            for param in params
-        ):
+        if len(args) == len(params) and self._is_simple_positional(proto):
             if signature.has_this and this is None:
                 raise OortTypeError(
-                    f"Method {closure.proto.name!r} requires a receiver.",
-                    position
-                    or (
-                        closure.proto.positions[0]
-                        if closure.proto.positions
-                        else _fallback_position()
-                    ),
+                    f"Method {proto.name!r} requires a receiver.",
+                    position or (proto.positions[0] if proto.positions else _fallback_position()),
                 )
-            registers = self._new_registers(closure.proto)
-            if signature.has_this:
-                assert this is not None
-                self._write_slot(closure.proto, registers, 0, this)
-            for param, value in zip(params, args, strict=True):
-                self._write_slot(closure.proto, registers, param.slot, value)
+            registers = self._new_registers(proto)
+            if proto.uses_cells:
+                if signature.has_this:
+                    assert this is not None
+                    self._write_slot(proto, registers, 0, this)
+                for param, value in zip(params, args, strict=True):
+                    self._write_slot(proto, registers, param.slot, value)
+            else:
+                if signature.has_this:
+                    assert this is not None
+                    registers[0] = this
+                for param, value in zip(params, args, strict=True):
+                    registers[param.slot] = value
             return self._execute(
                 closure.module,
-                closure.proto,
+                proto,
                 None,
                 closure.frame,
                 closure.env,
@@ -297,6 +298,21 @@ class BytecodeVM:
             )
         evaluated = [EvaluatedArg(value) for value in args]
         return self.invoke_evaluated_closure(closure, evaluated, position, this)
+
+    def _is_simple_positional(self, proto: Proto) -> bool:
+        """Whether every parameter is positional without a default.
+
+        Cached per proto: the check walks the whole signature, and the
+        positional fast path above runs on every call.
+        """
+        cached = self._simple_protos.get(id(proto))
+        if cached is None:
+            cached = all(
+                param.kind in (ParamKind.POS_ONLY, ParamKind.POS_OR_KW) and not param.has_default
+                for param in proto.signature.params
+            )
+            self._simple_protos[id(proto)] = cached
+        return cached
 
     def invoke_evaluated_closure(
         self,
@@ -448,10 +464,19 @@ class BytecodeVM:
         constants = proto.constants
         instructions = self._decoded(proto)
         positions = proto.positions
+        positions_count = len(positions)
+        instructions_count = len(instructions)
+        # Loop-invariant views for the hot opcodes below. `env` is fixed for
+        # the whole frame, so the global-value cache and values table are too.
+        global_cache = self._cache_for(env)
+        global_values = env.values
+        uses_cells = proto.uses_cells
+        interpreter = self.interpreter
+        runtime_null = interpreter.runtime.null
         pc = 0
-        while pc < len(instructions):
+        while pc < instructions_count:
             decoded = instructions[pc]
-            position = positions[pc] if pc < len(positions) else _fallback_position()
+            position = positions[pc] if pc < positions_count else _fallback_position()
             op = decoded.op
             a = decoded.a
             b = decoded.b
@@ -461,17 +486,23 @@ class BytecodeVM:
                 registers[a] = self._wrap_constant(constants[decoded.bx])
                 pc += 1
             elif op is Op.LOAD_L:
-                registers[a] = self._read_slot(proto, registers, b)
+                value = registers[b]
+                # Inlined `_read_slot`: the cell protocol is per-proto.
+                registers[a] = value.value if uses_cells else value
                 pc += 1
             elif op is Op.STORE_L:
                 value = registers[b]
-                assert isinstance(value, OortObject)
-                self._write_slot(proto, registers, a, value)
+                # Inlined `_write_slot` (same cell protocol as LOAD_L).
+                if uses_cells:
+                    registers[a].value = value
+                else:
+                    registers[a] = value
                 pc += 1
             elif op is Op.LOAD_G:
+                # Constants holding global names are always str, and the
+                # per-env cache makes the common path a single dict lookup.
                 name = str(constants[decoded.bx])
-                cache = self._cache_for(env)
-                cached = cache.get(name)
+                cached = global_cache.get(name)
                 if cached is not None:
                     registers[a] = cached
                 else:
@@ -479,12 +510,21 @@ class BytecodeVM:
                     if entry is None:
                         raise OortNameError(f"Name {name!r} is not defined", position)
                     registers[a] = entry.value
-                    cache[name] = entry.value
+                    global_cache[name] = entry.value
                 pc += 1
             elif op is Op.STORE_G:
+                # Fast path: mutating the existing entry avoids the Entry
+                # allocation and duplicate check of `define`. The lowering
+                # statically rejects immutable-global assignment, so a store
+                # always targets a mutable module binding either way.
                 name = str(constants[decoded.bx])
-                env.define(name, registers[a], mutable=True)
-                self._cache_for(env)[name] = registers[a]
+                value = registers[a]
+                entry = global_values.get(name)
+                if entry is not None:
+                    entry.value = value
+                else:
+                    env.define(name, value, mutable=True)
+                global_cache[name] = value
                 pc += 1
             elif op is Op.IMPORT:
                 spec = constants[decoded.bx]
@@ -774,12 +814,12 @@ class BytecodeVM:
             elif op is Op.JUMP:
                 pc = pc + 1 + decoded.sbx
             elif op is Op.JUMP_FALSE:
-                if self.interpreter.is_truthy(registers[a]):
+                if interpreter.is_truthy(registers[a]):
                     pc += 1
                 else:
                     pc = pc + 1 + decoded.sbx
             elif op is Op.JUMP_TRUE:
-                if self.interpreter.is_truthy(registers[a]):
+                if interpreter.is_truthy(registers[a]):
                     pc = pc + 1 + decoded.sbx
                 else:
                     pc += 1
@@ -895,7 +935,7 @@ class BytecodeVM:
                 pc += 1
             elif op is Op.CALL:
                 callee = registers[a]
-                positional_values = [registers[a + 1 + index] for index in range(c)]
+                positional_values = registers[a + 1 : a + 1 + c]
                 registers[a] = self._call_positional(
                     callee,
                     positional_values,
@@ -937,11 +977,11 @@ class BytecodeVM:
             elif op is Op.RET:
                 return registers[a]
             elif op is Op.OPEN_ITER:
-                registers[a] = self.interpreter.open_iterator(registers[b], position)
+                registers[a] = interpreter.open_iterator(registers[b], position)
                 pc += 1
             elif op is Op.ITER_NEXT:
-                value, valid = self.interpreter.iterator_next(registers[b], position)
-                registers[a] = self.interpreter.runtime.null if value is None else value
+                value, valid = interpreter.iterator_next(registers[b], position)
+                registers[a] = runtime_null if value is None else value
                 registers[c] = OortBool.get_bool_value(valid)
                 pc += 1
             elif op is Op.UNPACK:
