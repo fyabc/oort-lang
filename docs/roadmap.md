@@ -83,7 +83,8 @@ P1 已完成。后续打磨（P2）：
 已完成 expected-type 分支传播：标注、赋值、返回、函数体与实参的期望类型
 下推到 `if`/块/`match` 分支。已完成 Float/String 标量扩展、Int/Float 混合
 算术与 `/`（固定返回 Float），以及 `List[T]`/`Set[T]`/`Dict[K, V]`/`Tuple[...]`
-集合、下标/`len`、`while`/`for`。后续按 [OP 0005](proposals/0005-type-system.md)
+集合、下标/`len`、`while`/`for`。已完成静态类与固定槽：槽类型/初始化顺序、
+确定赋值、`val` 只读与构造器检查。后续按 [OP 0005](proposals/0005-type-system.md)
 实现函数返回类型推断、泛型 ADT（内部单态化 + 边界擦除）、
 `Result`/`Option`、字面量/元组/守卫/或模式与嵌套穷尽性、静态对象模型与槽
 变量，以及跨方言 FFI 边界。

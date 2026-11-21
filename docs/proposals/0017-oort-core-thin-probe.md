@@ -9,7 +9,7 @@
 在完整 `oort-core` v1 之前，先用一个**薄探针**验证方言路由与语义隔离：
 
 - `#lang oort-core`；
-- 最小静态子集：`Int`、`Float`、`Bool`、`String`、`Unit`、集合与循环、函数、单态 ADT 与 `match`；
+- 最小静态子集：`Int`、`Float`、`Bool`、`String`、`Unit`、集合与循环、静态类/槽、函数、单态 ADT 与 `match`；
 - 独立类型检查器，复用 AST、诊断、模块加载、CLI 与测试框架；
 - 同一份源码在 `oort-object` 下动态运行、在 `oort-core` 下静态检查。
 
@@ -53,12 +53,13 @@
 
 ### 类型
 
-- `Int`、`Float`、`Bool`、`String`、单态 `enum` 类型；
+- `Int`、`Float`、`Bool`、`String`、单态 `enum` 与类类型；
 - `List[T]`、`Set[T]`、`Dict[K, V]`、`Tuple[T1, ...]`；可嵌套；
 - `Unit`：仅允许作为函数返回类型；
 - 数值标注不做隐式转换：`val x: Float = 1` 报错，必须写 `1.0`；
+- 类类型：顶层的 `class`；名义相等；
 - 函数类型：`Int -> Bool`、`(Int, Bool) -> Int`、`() -> Unit`；
-- 内部 `FunctionType`、`ModuleType`、`AdtType`、`Unknown`（错误恢复）、
+- 内部 `FunctionType`、`ModuleType`、`AdtType`、`ClassType`、`Unknown`（错误恢复）、
   `Never`（所有路径 `return`）。
 
 ### 声明与语句
@@ -70,6 +71,10 @@
   传参、返回与调用。函数类型箭头右结合；不做自动柯里化，链式调用
   `f(1)(2)` 由手动返回 lambda 支持。
 - 顶层 `enum`：单态、非空；构造器与字段；字段类型为 Int/Float/Bool/String/本地 enum。
+- 顶层 `class`：固定 `val`/`var` 槽（标注）、方法、`__init__`；无继承/元类/
+  类方法/运算符方法。槽初始化器在构造时、`__init__` 前按声明顺序求值。
+- 构造器确定赋值：无初始化器的槽必须在 `__init__` 所有落空路径赋值；
+  赋值前读取、提前 return、分支遗漏均报错；`val` 只读且最多赋值一次。
 - 函数体、块、`if`/`else`、`match`、表达式语句、`return`。
 - `while` 条件必须 Bool；`for` 遍历 List/Set/Dict 键/String/同质 Tuple；
   循环变量单目标、不可变；`break`/`continue` 仅循环内，`break value` 拒绝。
@@ -87,8 +92,10 @@
 - 二元 `+ - * // %`（Int/Float 混合，任一为 Float 则结果 Float）、
   `/`（固定 Float）、`< <= > >=`（数值或 String）、`== !=`（数值、Bool 或
   String）、`and`、`or`。
+- `this`、`obj.slot`、`obj.method`、`this.slot = value`、构造器 `C(...)`；
+  类实例不可打印或比较。
 - `print`：未被用户遮蔽时，接受任意个 Int/Float/Bool/String/Unit/enum/集合参数，
-  返回 Unit；函数值不可打印/比较。
+  返回 Unit；函数值与类实例不可打印。
 
 ### ADT 与 `match`
 
@@ -103,11 +110,11 @@
 
 ### 显式拒绝
 
-类、方法、扩展、`this`/`super`、匿名/泛型/默认值 lambda、嵌套/泛型/运算符定义、
-`yield`/`await`、宏、编译器属性、Null、切片、非模块属性、多目标声明与循环解包、
-下标赋值、增强赋值、`**`、位运算、`in`、`is`、默认值、关键字实参、变长参数、
-`&block`；跨方言与 native 模块导入；泛型 ADT、字面量/元组/守卫/或模式、
-嵌套穷尽性。
+类继承/元类/泛型类/类方法/运算符方法、扩展方法、`super`、匿名/泛型/默认值
+lambda、嵌套/泛型/运算符定义、`yield`/`await`、宏、编译器属性、Null、切片、
+非模块/非类属性、多目标声明与循环解包、下标赋值、增强赋值、`**`、位运算、`in`、
+`is`、默认值、关键字实参、变长参数、`&block`、未声明槽、非法槽赋值；
+跨方言与 native 模块导入；泛型 ADT、字面量/元组/守卫/或模式、嵌套穷尽性。
 
 拒绝时使用带位置的 `UnsupportedSyntax` 或 `TypeCheckError`，不静默降级。
 
@@ -133,7 +140,11 @@
   `Pass1Analyzer` 或 `CoreAnalyzer`（Pass1 + `CoreTypeChecker`）。
 - `semantics/core/{types,checker}.py`：独立类型模型与检查器；只依赖
   `ast`/`diagnostics`/`parser`/`source`。`ModuleType` 表示模块命名空间，
-  `AdtType` 表示名义 ADT；检查器负责构造器、模式与顶层穷尽性。
+  `AdtType` 表示名义 ADT，`ClassType` 表示固定槽类；检查器负责构造器、模式、
+  顶层穷尽性与类成员。
+- `semantics/core/definite_assignment.py`：构造器 (definite, maybe) 确定赋值分析。
+- `runtime/type_system.py` + `interpreter.py`：槽定义/初始化、`val` 只读与缺失槽
+  运行时兜底。
 - `driver/compiler.py`：`CompiledUnit` 缓存 AST、方言与导出类型；
   `_resolve_core_module` 递归编译 core 导入并检测循环。
 - `runtime/modules.py`：`CompiledModule` 携带方言名；导入时做方言比较。
@@ -143,10 +154,10 @@
 ## 未决/后续
 
 - 函数返回类型推断（签名仍必须显式标注）；更强的 expected-type 传播。
-- null、类/槽、泛型 ADT/HKT、`Option[T]`/`Result[T,E]`。
+- null、类继承/元类、泛型 ADT/HKT、`Option[T]`/`Result[T,E]`。
 - 集合切片/原地修改、`in`、排序、惰性视图。
 - 字面量/元组/列表/守卫/或模式、嵌套穷尽性、ADT 相等与迭代。
 - 跨方言 FFI trampoline/blame；更完整的模块接口版本管理与增量编译。
 - REPL 方言切换与持久方言状态。
-- 静态对象模型、确定赋值。
+- 继承/接口、属性访问器与槽的跨方言边界。
 - HIR 与字节码后端。

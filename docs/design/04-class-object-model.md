@@ -171,8 +171,8 @@ x.validate_schema()     # ✗ 实例无此方法
 ## 4. 属性查找（Slot-Bag-Handler 模型）
 
 > **实现状态**：`oort-object` 只实现 Bag（开放实例字段）与简化的 MRO 查找。
-> Slots 属于 `oort-core` 静态对象模型（随类型系统实现），Handler 进一步排在
-> 扩展方法/属性协议之后。
+> `oort-core` 薄探针已实现固定 Slots（声明、初始化顺序、确定赋值、`val` 只读）；
+> Handler 进一步排在扩展方法/属性协议之后。
 
 ### 4.1 三层内存模型
 

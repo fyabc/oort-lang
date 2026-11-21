@@ -166,7 +166,8 @@ c.f = 2             # 错误：不能用一个实例字段遮蔽方法 f
 
 ## 当前限制
 
-- 槽变量属于 `oort-core` 静态对象模型，尚未实现；`oort-object` 的类体
+- 槽变量属于 `oort-core` 静态对象模型（已在 core 薄探针实现：固定槽、确定赋值、
+  `val` 只读）；`oort-object` 的类体
   `var`/`val` 已被显式拒绝，实例字段通过 `this.x = ...` 创建。
 - 缺失字段读取抛出 `OortAttributeError`；属性查找没有 `__getattr__` /
   `__setattr__` 等钩子。

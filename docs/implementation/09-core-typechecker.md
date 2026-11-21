@@ -34,6 +34,8 @@ source
 
 - `PrimitiveType("Int"|"Float"|"Bool"|"String"|"Unit")`；
 - `ListType`/`SetType`/`DictType`/`TupleType`：结构相等的集合类型；
+- `ClassType(origin, name, slots, methods)`：名义相等，槽/方法在注册后填充；
+- `SlotInfo(name, slot_type, mutable, has_initializer)`；
 - `FunctionType(params, ret)`、`ModuleType(name, exports)`；
 - `AdtType(origin, name, constructors)`：名义相等只看 `(origin, name)`，
   `constructors` 在声明注册后填充，以支持自递归 payload；
@@ -78,6 +80,11 @@ source
   （Tuple 可异构）；空字面量用期望类型；下标、`len`、集合相等。
 - 循环：`while` 条件 Bool；`for` 遍历 List/Set/Dict 键/String/同质 Tuple；
   循环变量单目标且不可变；`break`/`continue` 走 `Never`，`break value` 拒绝。
+- 类：两遍处理——先收集槽/方法签名并注册 `ClassType`，再检查槽初始化器与
+  方法体；方法体作用域绑定 `this: ClassType`；槽赋值按 `val`/`var` 检查。
+- 构造器确定赋值：`semantics/core/definite_assignment.py` 用 (definite, maybe)
+  集合分析 `__init__`，处理分支交集、循环保守、提前 return、赋值前读取与
+  `val` 单次赋值；运行时另有槽初始化与缺失槽兜底。
 - `print`：特殊内建，返回 Unit；用户绑定优先；ADT 值可打印，函数值不可打印。
 - expected-type 传播：标注、赋值、返回、函数体与调用实参的期望类型会下推到
   `if` 分支、块最后表达式和 `match` arm；不匹配时定位到具体分支/实参。

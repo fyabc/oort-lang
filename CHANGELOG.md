@@ -34,7 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   assignments, returns, function bodies and call arguments now push expected
   types into `if` branches, block tails and `match` arms, improving diagnostics
   at the exact branch or argument.
-- The VSCode grammar (0.1.2) highlights `enum`, `match`, `=>` and `Unit`.
+- The VSCode grammar (0.1.3) highlights `enum` declarations and names,
+  `match`, `=>` and `Unit`; 0.1.2 added the first enum/match scopes.
+- `oort-core` static classes and slots: top-level classes with fixed typed
+  `val`/`var` slots, per-instance slot initializers that run before `__init__`,
+  definite-assignment checking of constructors, read-only `val` slots,
+  typed methods/`this`, and constructor calls. Inheritance, metaclasses,
+  class methods, operator methods and dynamic fields remain rejected.
 - `oort-core` collections and loops: `List[T]`, `Set[T]`, `Dict[K, V]` and
   `Tuple[...]` annotations, homogeneous/empty literal checking, indexing,
   the special `len` builtin, same-type collection equality, and `while`/`for`

@@ -2,8 +2,8 @@
 
 本页描述 `#lang oort-core` 当前**已实现**的最小静态子集。它不是完整的
 `oort-core` v1：已实现 Int/Float/Bool/String、集合与循环、函数、单态 ADT
-（`enum`）与 `match`，但泛型 ADT、`Option[T]`/`Result[T,E]`、静态对象模型与
-跨方言 FFI 尚未实现。
+（`enum`）与 `match`、静态类与固定槽，但泛型 ADT、`Option[T]`/`Result[T,E]`
+与跨方言 FFI 尚未实现。
 设计取舍见 [OP 0017](../proposals/0017-oort-core-thin-probe.md)。
 
 ## 启用
@@ -34,6 +34,7 @@ print(add(1, 2))
 | `Unit` | **仅函数返回类型**；声明的内部类型，不是变量类型 |
 | `enum` 类型 | 参数、变量、返回值、字段类型；单态，名称在模块内唯一 |
 | 集合类型 | `List[T]`、`Set[T]`、`Dict[K, V]`、`Tuple[T1, ...]`；参数/变量/返回值/字段 |
+| 类类型 | 类名；参数、变量、返回值、槽类型；名义相等 |
 | 函数类型 | `Int -> Bool`、`(Int, Bool) -> Int`、`() -> Unit`；参数/变量/返回值/字段 |
 
 - `Int`、`Float`、`Bool`、`String` 严格区分，没有隐式转换或 truthiness：
@@ -128,6 +129,9 @@ print(l.add(1, 2))
 | `[1, 2]`、`(1, true)`、`{: ... :}`、`{. ... .}` | 集合字面量；同质 List/Set/Dict 推断，Tuple 可异构 |
 | `xs[i]` | List/Tuple/String 用 Int，Dict 用键类型；Tuple 字面量下标检查越界 |
 | `len(x)` | String 或集合 -> Int |
+| `this`、`obj.slot`、`obj.method` | 方法内的当前实例、槽读取、方法引用 |
+| `this.slot = value` | 槽赋值；`val` 只读，固定布局拒绝未声明槽 |
+| `C(...)` | 构造器调用；参数来自 `__init__`，无 `__init__` 时为零参 |
 | `for x in xs { ... }`、`while c { ... }` | 循环表达式，结果 Unit；循环变量不可变 |
 | `break`、`continue` | 仅循环内；`break value` 显式拒绝 |
 | `a and b`、`a or b` | `Bool, Bool -> Bool` |
@@ -176,6 +180,40 @@ while total > 0 {
   元素类型不同显式拒绝。集合大小比较（`<` 等）在 core 中尚未支持。
 - core 集合不可原地修改：下标赋值、切片与 `in` 第一切片均未实现。
 
+## 静态类与槽
+
+```oort
+class Point {
+    val x: Int
+    val y: Int
+    var label: String = "point"
+
+    def __init__(x: Int, y: Int) {
+        this.x = x
+        this.y = y
+    }
+
+    def sum() -> Int { this.x + this.y }
+}
+```
+
+- `class` 只能声明在模块顶层；第一切片不支持继承、元类、泛型类、类方法、
+  运算符方法与扩展方法，类体只允许槽（`val`/`var`）和方法声明。
+- 槽是**固定布局**：每个槽必须在类体中声明且带类型标注；给未声明槽或方法
+  赋值会报错，不存在动态字段。
+- 槽初始化器可选；有初始化器的槽在**每个实例**构造时、`__init__` 之前按
+  声明顺序求值（无继承时就是类体顺序）。初始化器不能引用 `this`。
+- `var` 槽可在任意方法中赋值；`val` 槽只能由初始化器赋值，或在 `__init__`
+  中赋值一次，且不能在循环中赋值。
+- **确定赋值**：没有初始化器的槽必须在 `__init__` 的所有落空路径上赋值；
+  在赋值前读取 `this.slot`、提前 `return`、缺少分支赋值都会报错。
+  循环体不会让赋值在循环之后“确定”；方法调用内部是否初始化槽不在分析范围内。
+- `__init__` 参数必须标注；返回类型可省略（视为 Unit），显式标注时必须是
+  Unit。构造函数是类名值 `C(...)`，参数即 `__init__` 参数。
+- 方法参数/返回必须标注；`this` 的类型是当前类。方法可读取槽、调用其他方法、
+  返回 `this`，方法引用可作为函数值传递。
+- 类实例不可打印、不可用 `==` 比较；类类型可用于参数/变量/返回值与槽类型。
+
 ## ADT（`enum`）与 `match`
 
 ```oort
@@ -195,8 +233,8 @@ def area(shape: Shape) -> Int {
 ```
 
 - `enum` 只能出现在模块顶层；必须至少有一个构造器；字段类型必须标注，
-  可为 `Int`、`Float`、`Bool`、`String` 或当前/此前定义的本地 enum
-  （支持自递归）。enum 类型名
+  可为任意已支持的静态类型（标量、集合、函数、此前声明的 enum/类，不能是
+  Unit）；支持自递归。enum 类型名
   与构造器按源码顺序可见，不支持前向/互递归枚举。
 - 构造器是普通可调用值：`Circle(2)`；零参构造器是值：`Empty`。
 - 字段名用于声明/文档；构造与模式都按**位置**绑定，暂不支持命名字段。
@@ -218,11 +256,19 @@ def area(shape: Shape) -> Int {
 
 | 类别 | 示例 | 诊断 |
 |------|------|------|
-| 类/方法/扩展 | `class A {}`、`def C.f` | `Classes are not supported...` / `Extension methods...` |
+| 类继承/元类/泛型类 | `class B < A`、`class C :: M`、`class C[T]` | 对应 "not supported" 诊断 |
+| 类方法/运算符方法 | `def class.f`、类体内 `def operator` | `Only plain instance methods...` |
+| 类体其他语句 | 类体中的 `print(1)` | `Only slot and method declarations...` |
+| 槽未标注/重名 | `val x = 1`、重复成员 | `Slot ... requires a type annotation` / 重复诊断 |
+| 未声明槽 | `this.y = 2`（未声明） | `Class 'C' has no slot 'y'.` |
+| `val` 只读 | 方法内改 `val`、初始化器已赋值的 `val`、循环中赋值 | 只读槽诊断 |
+| 确定赋值 | 分支漏赋值、赋值前读取、提前 return | `Constructor must initialize...` 等 |
+| 类实例打印/相等 | `print(C())`、`c == c` | 不可打印 / `Class equality is not supported` |
+| 扩展方法 | `def C.f` | `Extension methods...` |
 | lambda/嵌套函数 | `do: 1`、函数体里的 `def` | `Lambdas...` / `Nested function definitions...` |
 | null | `null` | `null is not supported...` |
 | 切片 | `xs[1:2]`、`text[1:]` | `Slices are not supported...` |
-| 属性 | `xs.length`、`a.b`（非模块） | `Attribute access is only supported on imported modules...` |
+| 属性 | `xs.length`、`a.b`（非模块/非类成员） | `Attribute access is only supported on imported modules...` |
 | 空字面量 | 无标注的 `[]`、`{: :}`、`{. .}` | `Cannot infer ...; add a type annotation.` |
 | 异构容器 | `[1, true]`、`{: 1: true :}` | `... have incompatible types` |
 | 非法键类型 | `{. [1] .}`、`{: f: 1 :}` | `Set elements/Dict keys must be ... key types` |
@@ -270,6 +316,6 @@ print(x)          # 1
 
 ## 尚未实现
 
-null、类与槽、泛型 ADT、`Option[T]`/`Result[T,E]`、函数返回类型推断、
-匿名 $n lambda、跨方言 FFI、REPL 方言切换、静态对象模型、确定赋值、
-字面量/元组/守卫/或模式、嵌套穷尽性、ADT 相等、HIR/字节码后端。
+null、类继承与元类、泛型 ADT、`Option[T]`/`Result[T,E]`、函数返回类型推断、
+匿名 $n lambda、跨方言 FFI、REPL 方言切换、字面量/元组/守卫/或模式、
+嵌套穷尽性、ADT 相等、HIR/字节码后端。
