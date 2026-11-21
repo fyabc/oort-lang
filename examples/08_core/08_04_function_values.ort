@@ -1,6 +1,6 @@
 #lang oort-core
 
-# 函数类型、lambda、函数值与高阶函数。
+# 函数值：lambda 赋给变量、作为实参传入 apply，以及 make_adder 返回的闭包。
 
 def apply(f: (Int) -> Int, x: Int) -> Int {
     f(x)

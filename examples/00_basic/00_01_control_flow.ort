@@ -1,4 +1,4 @@
-# 控制语句：if, while, continue, break
+# 控制流：while 中 continue 跳过 5，break 在 8 处结束循环。
 var i = 0
 
 # => 1 2 3 4 6 7

@@ -1,5 +1,7 @@
 #lang oort-core
 
+# 被 08_02 导入的 core 模块：导出 val base 与 add/square。
+
 val base: Int = 7
 
 def add(a: Int, b: Int) -> Int { a + b }

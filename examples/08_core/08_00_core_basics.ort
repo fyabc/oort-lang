@@ -1,6 +1,6 @@
 #lang oort-core
 
-# oort-core 薄探针：Int/Bool、声明、条件与 print。
+# core 基础：Int/Bool 标注与推断、可变的 var、if 条件与 print。
 
 var count: Int = 2
 val enabled: Bool = true

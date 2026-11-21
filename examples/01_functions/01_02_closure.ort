@@ -1,4 +1,4 @@
-# 嵌套函数与闭包
+# 闭包：内层 count 捕获外层 i，多次调用共享并递增同一状态。
 
 def makeCounter {
     var i = 0

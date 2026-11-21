@@ -1,4 +1,4 @@
-# 原生标准库模块：math / string（OP 0012）
+# 原生模块 math/string：数学函数与常量；string 的 join/split/upper 等与 from 导入。
 
 import "math"
 import "string"

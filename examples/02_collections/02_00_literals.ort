@@ -1,4 +1,4 @@
-# 容器字面量与切片
+# 容器字面量：Tuple/Dict/Set 的打印与成员测试，以及 List/字符串切片。
 
 val point = (1, 2)
 val d = {:

@@ -1,4 +1,4 @@
-# 模块导入（OP 0006）
+# 模块导入：import 绑定命名空间，from ... import ... as 直接绑定导出名。
 
 import "./greeting"
 from "./greeting" import greet as hello

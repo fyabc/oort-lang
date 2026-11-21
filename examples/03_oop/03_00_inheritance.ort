@@ -1,4 +1,4 @@
-# 类、继承与元类
+# 继承：Rect/Square 覆盖 area 并调用 super.__init__；后段演示类方法与元类。
 
 class Shape {
     def __init__(name) {
