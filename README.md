@@ -40,7 +40,8 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 - 类、方法、类方法、多重继承（C3 MRO）、元类、`this` / `super`
 - 扩展方法与扩展运算符：类外 `def C.f` / `def C.operator "+"(x)`，按词法
   作用域生效，导入激活，成员/字段/类内运算符优先
-- 运算符重载：`def operator "+"(other)` 等方法，内建类型使用同一套调度
+- 运算符重载：`def operator "+"(other)` 等方法，内建类型使用同一套调度；
+  下标 `operator "[]"`/`"[]="` 与缺失属性 `on_missing`
 - 行首 `.` 方法链续行；`Bool` 与 `Int` 语义分离
 - 内建：`print`、`clock`、`type`、`len`、`range`、`str`、`repr`、
   `int`、`float`、`bool`；集合助手 `map`/`filter`/`sorted`/`zip`/`enumerate`

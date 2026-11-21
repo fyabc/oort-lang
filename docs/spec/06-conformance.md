@@ -13,7 +13,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 |------|------|
 | 方言 | 首行 `#lang oort-object`（可选，缺省即此方言）与 `#lang oort-core` 薄探针；未知/未实现方言与错位声明显式报错 |
 | 字面量 | 整数、浮点、字符串（含 `r`、三引号）、布尔、`null`、List/Tuple/Dict/Set、切片 |
-| 表达式 | 全部内建运算符、运算符重载（`def operator "<sym>"`）、位运算高于比较、比较非结合、`Bool` 与 `Int` 严格区分（含嵌套容器）、容器递归值相等、Dict/Set 键相等、List/Tuple 字典序与 Set 子集比较（Dict 无排序）、`and`/`or` 短路、属性、下标、调用、尾随 lambda、块、`if`/`while`/`for` 表达式、行首 `.` 方法链续行 |
+| 表达式 | 全部内建运算符、运算符重载（`def operator "<sym>"`、`"[]"`/`"[]="`）、位运算高于比较、比较非结合、`Bool` 与 `Int` 严格区分（含嵌套容器）、容器递归值相等、Dict/Set 键相等、List/Tuple 字典序与 Set 子集比较（Dict 无排序）、`and`/`or` 短路、属性与 `on_missing` fallback、下标、调用、尾随 lambda、块、`if`/`while`/`for` 表达式、行首 `.` 方法链续行 |
 | 语句 | `var`/`val`（含多目标解包）、赋值（含 `//=` 等增强赋值、元组交换）、`if`/`elif`/`else`、`while`、`for`、`return`、`break expr`、`continue` |
 | 函数 | `def`、`do` lambda、闭包、递归、尾随闭包；所有显式形参列表都使用括号；lambda 支持 `$0`/`$1` 匿名参数；默认值、关键字实参、`/`、`*`、`*args`、`**kwargs`、`&block` |
 | 类 | 定义、实例化、`__init__`、方法、类方法、单/多重继承、C3 MRO、元类、`this`/`super`；开放字段袋、方法遮蔽检查、身份键哈希 |
@@ -85,7 +85,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
   `def C.operator "<sym>"`（[扩展方法](10-extensions.md)）。
 - 扩展方法的接收者必须是单个已定义的类标识符；多级接收者、类体内的扩展与
   特殊方法名（`__init__` 等）会被拒绝。
-- 下标（`a[b]`）与属性（`a.b`）重载尚未接入运算符调度。
+- 下标通过 `operator "[]"`/`"[]="` 接入用户类；属性只有 `on_missing` 只读 fallback，没有全量写钩子。
 - 类体中的 `var`/`val` 在 `oort-object` 中被显式拒绝；实例字段只能通过
   `this.x = ...` 创建（[OP 0007](../proposals/0007-oort-object-object-model.md)）。
   槽变量属于 `oort-core`。

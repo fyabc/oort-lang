@@ -39,6 +39,7 @@
 | [0015](0015-minimal-io-and-process.md) | 最小 I/O、命令行参数与退出码 | Implemented |
 | [0016](0016-equality-protocol.md) | 统一相等性协议（值相等 / 键相等） | Implemented |
 | [0017](0017-oort-core-thin-probe.md) | `oort-core` 薄探针（Int/Float/Bool/String/Unit/函数） | Implemented |
+| [0018](0018-subscript-and-missing-attribute-protocol.md) | 下标与缺失属性协议（`operator "[]"`/`"[]="`、`on_missing`） | Implemented |
 
 ## 流程
 
@@ -90,3 +91,4 @@
 - **拒绝半成品**：未实现的语法要么移除，要么在语义分析阶段显式报错。
 - **先语义后性能**：动态语义稳定前不引入字节码/JIT 复杂度。
 - **元编程最后**：宏与编译期计算依赖稳定的 AST、作用域与类型模型。
+| 2026-11-21 | 下标协议 `operator "[]"`/`"[]="`；缺失属性只读 fallback `on_missing`；不引入 dunder 魔术名与写钩子 | [OP 0018](0018-subscript-and-missing-attribute-protocol.md)（Implemented） |

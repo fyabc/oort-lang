@@ -77,6 +77,7 @@ class Vec {
 ```
 
 - 方法参数不含 `this`：一元运算符方法 0 个参数，二元运算符方法 1 个参数。
+  `"[]"` 为 1 个参数、`"[]="` 为 2 个参数，是下标的受限例外。
 - 同一符号的一元与二元形式可以并存（如上例的 `-`）。
 - 二元运算在**左操作数**的类型上查找方法；`in` / `!in` 在**右操作数**
   （容器）上查找。
@@ -94,6 +95,9 @@ class Vec {
 类体中只有 `__init__` 与 `__iter__` 是运行时识别的特殊方法。其他 dunder
 名字（`__str__`、`__repr__`、`__op_*__`、`__getitem__` 等）定义在类体中会报
 `Special method '<name>' is not supported.`，避免看起来生效、实际从不分派。
+
+下标不是普通中缀运算符，但复用运算符方法表：getter 与 setter 分别写作
+`def operator "[]"(index)`、`def operator "[]="(index, value)`。
 
 扩展运算符可以补上目标类型没有定义的运算符，写作
 `def C.operator "+"(other)`。查找顺序是类/继承/原生运算符优先，miss 后才查
@@ -142,15 +146,36 @@ class Vec {
 "hello"[1:]         # "ello"
 ```
 
-- 下标表达式可以带多个参数（会组成元组），为未来的多维下标保留。
+- 下标表达式可以带多个参数（会组成元组），为未来的多维下标保留；切片作为
+  单个 `Slice` 对象传入。
 - 切片对 List/Tuple/String 返回同类型的新对象。
 - 越界/类型错误转换为 `OortRuntimeError`。
+- 用户类可实现下标协议：
+
+```oort
+class Bag {
+    def operator "[]"(key) { this.items[key] }
+    def operator "[]="(key, value) { this.items[key] = value }
+}
+```
+
+- `"[]"` 接收 1 个参数，`"[]="` 接收 2 个参数；读/写分别独立，缺少对应
+  operator 时报错。增强赋值 `a[i] += v` 先读后写。
+- 类/继承/扩展运算符按正常运算符查找；内置容器保持原生下标，扩展下标不会
+  覆盖内置行为。
+- 用户类实例没有 `"[]"` 时读报 `does not support subscripting`，写报缺少
+  `"[]="`。
 
 ## 属性访问
 
 - 实例属性先查实例字段，再沿类的 MRO 查类属性；函数会绑定为方法。
 - 类对象的属性先查类 MRO（返回未绑定函数），再查元类 MRO（绑定为类方法）。
-- 访问不存在的属性抛出 `OortAttributeError`。
+- 实例属性未命中时会再查扩展方法，最后调用只读 fallback
+  `def on_missing(name) { ... }`（如果定义）；`name` 是 String。
+- `on_missing` 只处理读取；写入仍直接进入开放字段袋，不提供 `__setattr__`
+  或全量写钩子。钩子执行期间同一实例再次缺失属性不会重入，而是按普通
+  `OortAttributeError` 报错。
+- 访问不存在的属性且没有 `on_missing` 时抛出 `OortAttributeError`。
 
 ## 调用
 

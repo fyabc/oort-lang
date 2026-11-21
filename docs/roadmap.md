@@ -67,8 +67,8 @@ ANTLR 语法与 Pratt 表达式解析、AST、名称解析、树遍历解释器�
 P1 已完成。后续打磨（P2）：
 
 - 字段初始化器语法糖；
-- 下标/属性访问协议（另立提案）；
 - 覆盖率与基准回归持续维护。
+- 已完成下标/缺失属性协议（[OP 0018](proposals/0018-subscript-and-missing-attribute-protocol.md)）。
 
 ### 阶段 2：`oort-core` v1（薄探针已完成）
 

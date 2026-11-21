@@ -35,6 +35,7 @@
 | [继承](https://github.com/fyabc/oort-lang.py/blob/main/examples/03_oop/03_00_inheritance.ort) | 继承、`super`、元类 |
 | [对象模型](https://github.com/fyabc/oort-lang.py/blob/main/examples/03_oop/03_01_object_model.ort) | 字段袋、方法遮蔽与相等 |
 | [扩展方法](https://github.com/fyabc/oort-lang.py/blob/main/examples/03_oop/03_02_extensions.ort) | `def C.f`、扩展运算符、词法作用域 |
+| [下标与缺失属性](https://github.com/fyabc/oort-lang.py/blob/main/examples/03_oop/03_03_protocols.ort) | `operator "[]"` / `"[]="`、`on_missing` |
 
 ## 模块与标准库
 

@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   at the exact branch or argument.
 - The VSCode grammar (0.1.3) highlights `enum` declarations and names,
   `match`, `=>` and `Unit`; 0.1.2 added the first enum/match scopes.
+- `oort-object` subscript and missing-attribute protocols (OP 0018):
+  `def operator "[]"(index)` / `def operator "[]="(index, value)` for
+  user-defined indexing (including slices and tuple indices), and a read-only
+  `on_missing(name)` fallback after fields, methods and extensions. Built-in
+  containers keep native indexing; there is no `__setattr__`-style write hook.
 - `oort-core` static classes and slots: top-level classes with fixed typed
   `val`/`var` slots, per-instance slot initializers that run before `__init__`,
   definite-assignment checking of constructors, read-only `val` slots,
