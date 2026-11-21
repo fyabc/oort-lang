@@ -57,6 +57,28 @@ Dunfield & Krishnaswami 的 *bidirectional typing* 综述都支持「局部双�
   Never 是单位元、相等取自身、**其余（含 Int/Float）返回 None 表示不兼容**。
   不做数值提升、不做子类型 join——混合分支报错而非隐式转换。
 
+### 为什么 join 不合并到 Object？
+
+直觉上 `if c { 1 } else { "s" }` 类似乎可以推成「Object」，但当前刻意不这么做：
+
+- **静态模型没有顶类型，也没有子类型**。类型只有上述那些，没有一个可持有/使用的
+  静态 `Object`/`Any`；`is_assignable` 对 Primitive 是严格相等、对类/ADT 是名义相等，
+  不做子类型判断（运行时虽有 `object_type` 作为类继承的根，但静态检查器不建模它）。
+  没有子类型，「最小上界」就只剩「相等」一种情形，故只能返回 None。
+- **即便推出 Object 也是死胡同**。静态子集没有向下转型/类型测试/按类型匹配，
+  Object 值既不能调 Int 也不能调 String 的方法，什么都做不了；只会把错误从分支处
+  推迟到使用处（`v + 1` 才报「Object 不支持 +」），更难定位。在分支处直接报
+  「Int 和 String 不兼容」更符合「错误就地归责」（blame）。
+- **与「显式优于隐式」一致**。连 Int→Float 都不偷偷提升，合并到 Object 属隐式向上
+  宽化，同样拒绝。
+- **「Int 或 String」的正确表达是和类型/ADT**，而非 Object：
+  `enum IntOrStr { I(Int), S(String) }` + `match` 取用，显式、类型安全、可消费。
+  Object/any 是跨方言动态边界的逃生舱，不是静态合并工具。
+
+跨语言对照：这是**没有 union 类型的语言的共同选择**——Rust/Haskell 同样报错、
+引导用 enum；TypeScript 因有 union 才推出 `number | string`。待 Oort 引入 union
+或更依赖 ADT，此规则再议。
+
 ## 3. expected-type 传播
 
 期望类型从这些位置下推：变量标注、赋值 RHS、`return` 值、函数体尾表达式、
