@@ -70,7 +70,10 @@ P1 已完成。后续打磨（P2）：
 - 覆盖率与基准回归持续维护。
 - 已完成下标/缺失属性协议（[OP 0018](proposals/0018-subscript-and-missing-attribute-protocol.md)）。
 
-### 阶段 2：`oort-core` v1（薄探针已完成）
+### 阶段 2：`oort-core` v1（薄探针已完成，**当前主线**）
+
+> 2026-11-22 战略转向：共享后端（阶段 3）已达 VM v1 门禁并切为默认，
+> Python VM 微优化冻结；主线回到语义，聚焦本阶段的完整类型系统（OP 0005）。
 
 已完成薄探针（[OP 0017](proposals/0017-oort-core-thin-probe.md)）：
 `#lang oort-core`、Int/Float/Bool/String/Unit 与函数、独立类型检查器、同一
@@ -97,9 +100,12 @@ P1 已完成。后续打磨（P2）：
 ADT/match 与完整参数绑定）。`examples/08_core` 与 `examples/` 已全部在 VM 下运行，包括循环内创建闭包、
 元类/`super`、扩展方法与扩展运算符。**默认后端已切换为 VM**（fib 2.92×、
 loop 2.05× 稳定 ≥2×，以 fib/loop 为门禁口径；`-t eval` 保留为回退，REPL 仍用
-eval）；method dispatch 1.44× 为已知弱项，待调用点缓存。最新数字见
+eval）；method dispatch 1.44× 为已知弱项。最新数字见
 [`benchmarks/RESULTS.md`](https://github.com/fyabc/oort-lang/blob/main/benchmarks/RESULTS.md)。
-接下来继续 VM 性能优化（调用点/属性缓存、寄存器复用、帧内联）与补齐剩余子集。
+**Python VM 微优化已冻结**（调用点/属性缓存、寄存器复用、帧内联降级为可选
+学习练习 / Rust 设计输入）：玩具语言以语义为先，Python 宿主的性能天花板是
+结构性的，真性能留给阶段 5 的 Rust/LLVM。本阶段余下工作为**收口**：HIR/字节码/VM
+正式规范（默认后端已稳定，前置满足）、补齐剩余显式拒绝项与差分覆盖。
 
 ### 阶段 4：`oort-systems` / `oort-meta` 与 DSL 开关（按需）
 
