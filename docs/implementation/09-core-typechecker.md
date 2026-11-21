@@ -33,6 +33,7 @@ source
 `semantics/core/types.py` 定义独立于运行时的类型：
 
 - `PrimitiveType("Int"|"Float"|"Bool"|"String"|"Unit")`；
+- `ListType`/`SetType`/`DictType`/`TupleType`：结构相等的集合类型；
 - `FunctionType(params, ret)`、`ModuleType(name, exports)`；
 - `AdtType(origin, name, constructors)`：名义相等只看 `(origin, name)`，
   `constructors` 在声明注册后填充，以支持自递归 payload；
@@ -71,8 +72,12 @@ source
   部分应用。
 - 条件：条件必须 Bool；无 `else` 为 Unit；分支类型用 `join_types` 合并。
 - 运算：Int/Float 混合算术（结果类型见规则）、`/` 固定返回 Float、
-  数值与 String 比较、数值/Bool/String 相等；`**` 因结果类型依赖指数而
-  显式拒绝。数值标注不做隐式转换（`val x: Float = 1` 报错）。
+  数值与 String 比较、数值/Bool/String/同类型集合相等；`**` 因结果类型
+  依赖指数而显式拒绝。数值标注不做隐式转换（`val x: Float = 1` 报错）。
+- 集合：`List[T]`/`Set[T]`/`Dict[K, V]`/`Tuple[...]` 注解；字面量同质推断
+  （Tuple 可异构）；空字面量用期望类型；下标、`len`、集合相等。
+- 循环：`while` 条件 Bool；`for` 遍历 List/Set/Dict 键/String/同质 Tuple；
+  循环变量单目标且不可变；`break`/`continue` 走 `Never`，`break value` 拒绝。
 - `print`：特殊内建，返回 Unit；用户绑定优先；ADT 值可打印，函数值不可打印。
 - expected-type 传播：标注、赋值、返回、函数体与调用实参的期望类型会下推到
   `if` 分支、块最后表达式和 `match` arm；不匹配时定位到具体分支/实参。

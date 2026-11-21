@@ -9,7 +9,7 @@
 > 并由编译器显式拒绝。
 >
 > 方言契约（首行 `#lang`）已落地：缺省 `oort-object`；`oort-core` 已有
-> **薄探针**（Int/Float/Bool/String/函数与独立类型检查器），规范见
+> **薄探针**（Int/Float/Bool/String/集合/循环/函数与独立类型检查器），规范见
 > [11-core-probe.md](11-core-probe.md)。其余章节描述 `oort-object` 的参考语义；
 > 开发模型见 [OP 0001 §5](../proposals/0001-feature-layers-and-dialects.md#5-开发模型共享骨架--方言垂直切片2026-11-18-已接受)。
 
@@ -26,7 +26,7 @@
 | [08-stdlib.md](08-stdlib.md) | 集合助手、`math` / `string` 原生模块 |
 | [09-iterators.md](09-iterators.md) | `__iter__` 协议、流式 `for`、内置迭代器 |
 | [10-extensions.md](10-extensions.md) | 扩展方法/运算符、作用域、导入、`super` |
-| [11-core-probe.md](11-core-probe.md) | `oort-core` 薄探针：Int/Float/Bool/String/函数、Unit、单态 ADT/`match`、拒绝清单 |
+| [11-core-probe.md](11-core-probe.md) | `oort-core` 薄探针：Int/Float/Bool/String、集合/循环、函数、Unit、单态 ADT/`match`、拒绝清单 |
 | [06-conformance.md](06-conformance.md) | 实现状态矩阵与诊断规则 |
 
 ## 术语

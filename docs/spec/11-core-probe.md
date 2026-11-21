@@ -1,8 +1,8 @@
 # `oort-core` 薄探针
 
 本页描述 `#lang oort-core` 当前**已实现**的最小静态子集。它不是完整的
-`oort-core` v1：已实现 Int/Float/Bool/String、函数、单态 ADT（`enum`）与
-`match`，但集合与循环、泛型 ADT、`Option[T]`/`Result[T,E]`、静态对象模型与
+`oort-core` v1：已实现 Int/Float/Bool/String、集合与循环、函数、单态 ADT
+（`enum`）与 `match`，但泛型 ADT、`Option[T]`/`Result[T,E]`、静态对象模型与
 跨方言 FFI 尚未实现。
 设计取舍见 [OP 0017](../proposals/0017-oort-core-thin-probe.md)。
 
@@ -33,11 +33,17 @@ print(add(1, 2))
 | `String` | 参数、变量、返回值、表达式 |
 | `Unit` | **仅函数返回类型**；声明的内部类型，不是变量类型 |
 | `enum` 类型 | 参数、变量、返回值、字段类型；单态，名称在模块内唯一 |
+| 集合类型 | `List[T]`、`Set[T]`、`Dict[K, V]`、`Tuple[T1, ...]`；参数/变量/返回值/字段 |
 | 函数类型 | `Int -> Bool`、`(Int, Bool) -> Int`、`() -> Unit`；参数/变量/返回值/字段 |
 
 - `Int`、`Float`、`Bool`、`String` 严格区分，没有隐式转换或 truthiness：
   `val x: Float = 1` 报 `Expected Float, got Int.`，必须写 `1.0`。
 - 数值运算允许 Int/Float 混合；结果是否为 Float 见“表达式”。
+- 集合类型参数化且结构相等：`List[Int]` 与 `List[Float]` 不同，
+  不做元素类型提升；`Tuple[Int, Bool]` 可异构。
+- 空集合字面量必须能从期望类型推断（标注、参数、返回值等）。
+- `Unit` 与模块值不能存入集合；`Set` 元素与 `Dict` 键必须是
+  `Int`/`Float`/`Bool`/`String`/enum/可哈希 `Tuple`。
 - 静态 `Unit` 在运行时对应 `null`；`print` 返回 Unit。
 - 内部还有 `Unknown`（错误恢复）与 `Never`（所有路径 `return`）。
 
@@ -118,7 +124,12 @@ print(l.add(1, 2))
 | `a + b`、`-`、`*`、`//`、`%` | 两个数值 -> `Int`，任一为 Float 则 `Float` |
 | `a / b` | 两个数值 -> `Float` |
 | `a < b`、`<=`、`>`、`>=` | 两个数值或两个 String -> Bool |
-| `a == b`、`!=` | 两个数值、两个 Bool 或两个 String -> Bool；`1 == 1.0` 允许 |
+| `a == b`、`!=` | 两个数值、两个 Bool、两个 String 或同类型集合 -> Bool；`1 == 1.0` 允许 |
+| `[1, 2]`、`(1, true)`、`{: ... :}`、`{. ... .}` | 集合字面量；同质 List/Set/Dict 推断，Tuple 可异构 |
+| `xs[i]` | List/Tuple/String 用 Int，Dict 用键类型；Tuple 字面量下标检查越界 |
+| `len(x)` | String 或集合 -> Int |
+| `for x in xs { ... }`、`while c { ... }` | 循环表达式，结果 Unit；循环变量不可变 |
+| `break`、`continue` | 仅循环内；`break value` 显式拒绝 |
 | `a and b`、`a or b` | `Bool, Bool -> Bool` |
 | `f(...)` | 仅位置实参；精确元数；实参类型匹配；被调者可为函数值 |
 | `do(x: Int) -> Int { ... }` | 函数值；参数/返回必须标注 |
@@ -128,6 +139,42 @@ print(l.add(1, 2))
 | `print(...)` | 任意个 Int/Float/Bool/String/Unit/enum 实参 -> Unit；可被用户定义遮蔽 |
 
 `if` 没有 `else` 时类型为 Unit。`Never`（例如 `return`）可与任一分支类型合并。
+
+## 集合与循环
+
+```oort
+val xs: List[Int] = [3, 1, 2]
+val pair: Tuple[Int, Bool] = (7, true)
+val scores: Dict[String, Int] = {: "a": 1, "b": 2 :}
+val tags: Set[String] = {. "core", "static" .}
+
+var total = 0
+for x in xs {
+    total = total + x
+}
+while total > 0 {
+    total = total - 1
+}
+```
+
+- 类型写法：`List[T]`、`Set[T]`、`Dict[K, V]`、`Tuple[T1, ...]`；
+  可嵌套（如 `Dict[String, List[Int]]`）。裸 `List`/`Tuple` 等需要参数。
+- List/Set/Dict 字面量要求元素（键/值）类型可合并；空字面量需要期望类型，
+  例如 `val xs: List[Int] = []`。
+- Tuple 字面量可异构，长度即类型的一部分；`()` 推断为 `Tuple[]`。
+- 下标：List/String 用 Int；Dict 用键类型；Tuple 用 Int。
+  Tuple 的**非字面量**下标要求所有元素同类型；字面量下标检查边界，
+  负数按运行时规则从尾部计数。
+- `len` 是 core 的特殊内建（与 `print` 一样可被用户绑定遮蔽），
+  只接受 String 或集合；集合的 `.length` 属性在 core 中仍被拒绝。
+- `for` 遍历 List/Set 元素、Dict 键、String 字符，以及元素同类型的 Tuple；
+  循环变量可用 `for x: Int in xs` 显式标注，必须与元素类型兼容。
+  多变量解包第一切片不支持。
+- `while` 条件必须是 Bool；`break`/`continue` 只能在循环内。
+  `break value` 与把循环结果当值使用（循环类型为 Unit）均不支持。
+- 集合相等要求同类型（`List[Int]` 对 `List[Int]`）；跨 List/Tuple 或
+  元素类型不同显式拒绝。集合大小比较（`<` 等）在 core 中尚未支持。
+- core 集合不可原地修改：下标赋值、切片与 `in` 第一切片均未实现。
 
 ## ADT（`enum`）与 `match`
 
@@ -173,9 +220,15 @@ def area(shape: Shape) -> Int {
 |------|------|------|
 | 类/方法/扩展 | `class A {}`、`def C.f` | `Classes are not supported...` / `Extension methods...` |
 | lambda/嵌套函数 | `do: 1`、函数体里的 `def` | `Lambdas...` / `Nested function definitions...` |
-| 循环 | `while`、`for`、`break`、`continue` | `Loops are not supported...` |
-| 集合/null | `[1]`、`(1, 2)`、`{: 1: 2 :}`、`{. 1 .}`、`null` | `Lists...`、`Tuples...`、`Dicts...`、`Sets...`、`null...` |
-| 属性/下标 | `a.b`、`a[0]` | `Attribute access...` / `Subscripts...` |
+| null | `null` | `null is not supported...` |
+| 切片 | `xs[1:2]`、`text[1:]` | `Slices are not supported...` |
+| 属性 | `xs.length`、`a.b`（非模块） | `Attribute access is only supported on imported modules...` |
+| 空字面量 | 无标注的 `[]`、`{: :}`、`{. .}` | `Cannot infer ...; add a type annotation.` |
+| 异构容器 | `[1, true]`、`{: 1: true :}` | `... have incompatible types` |
+| 非法键类型 | `{. [1] .}`、`{: f: 1 :}` | `Set elements/Dict keys must be ... key types` |
+| Tuple 动态异构下标 | `pair[i]`，`pair = (1, "a")` | `... require all elements to have the same type` |
+| 集合跨类型相等/排序 | `[1] == (1,)`、`[1] < [2]` | 同类型相等；排序尚未支持 |
+| 循环误用 | `for x in 1`、多变量、异构 Tuple、`break value` | 对应诊断 |
 | 多目标/增强赋值 | `val a, b = ...`、`x += 1` | 对应诊断 |
 | 默认值/关键字/变长 | `def f(x: Int = 1)`、`f(x = 1)`、`*args` | 对应诊断 |
 | `**` | `2 ** -1` | 结果类型依赖指数，显式拒绝 |
@@ -191,7 +244,7 @@ def area(shape: Shape) -> Int {
 | 其他模式 | 字面量/元组/守卫/或模式 | 第一切片不支持（语法或诊断） |
 | 匿名 lambda | `do: $0 + 1` | `Lambdas without an explicit parameter list...` |
 | 泛型 lambda | `do[T](x: Int) -> Int ...` | `Generic functions are not implemented yet.` |
-| 函数值打印/相等 | `print(f)`、`f == g` | 打印仅接受标量/ADT；相等仅数值/Bool/String |
+| 函数值打印/相等 | `print(f)`、`f == g` | 打印仅接受标量/ADT/集合；相等仅数值/Bool/String/同类型集合 |
 
 类型错误使用 `TypeCheckError`，未实现构造使用 `UnsupportedSyntax`。
 
@@ -217,6 +270,6 @@ print(x)          # 1
 
 ## 尚未实现
 
-集合与 null、循环、类与槽、泛型 ADT、`Option[T]`/`Result[T,E]`、
-函数返回类型推断、匿名 $n lambda、跨方言 FFI、REPL 方言切换、静态对象模型、
-确定赋值、字面量/元组/守卫/或模式、嵌套穷尽性、ADT 相等、HIR/字节码后端。
+null、类与槽、泛型 ADT、`Option[T]`/`Result[T,E]`、函数返回类型推断、
+匿名 $n lambda、跨方言 FFI、REPL 方言切换、静态对象模型、确定赋值、
+字面量/元组/守卫/或模式、嵌套穷尽性、ADT 相等、HIR/字节码后端。

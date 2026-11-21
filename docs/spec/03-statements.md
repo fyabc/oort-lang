@@ -32,7 +32,7 @@ val z: Int = 3          # 类型标注：oort-object 忽略，oort-core 检查
 - 多目标声明要求右侧是长度相同的元组或列表。
 - `val` 绑定不可重新赋值，但对象内容（如列表元素）不受限制。
 - 类型标注在 `oort-object` 中只作为文档；在 `oort-core` 薄探针中会检查，
-  且只支持单目标、`Int`/`Float`/`Bool`/`String` 变量标注（`Unit` 仅用于函数返回）。
+  且只支持单目标与 `Int`/`Float`/`Bool`/`String`/集合/枚举变量标注（`Unit` 仅用于函数返回）。
   详见 [11-core-probe.md](11-core-probe.md)。
 
 ## 赋值

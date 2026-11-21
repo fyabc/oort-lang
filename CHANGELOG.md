@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   types into `if` branches, block tails and `match` arms, improving diagnostics
   at the exact branch or argument.
 - The VSCode grammar (0.1.2) highlights `enum`, `match`, `=>` and `Unit`.
+- `oort-core` collections and loops: `List[T]`, `Set[T]`, `Dict[K, V]` and
+  `Tuple[...]` annotations, homogeneous/empty literal checking, indexing,
+  the special `len` builtin, same-type collection equality, and `while`/`for`
+  loops over lists, sets, dict keys, strings and uniform tuples. Collections
+  are immutable and slices, `in`, ordering and heterogeneous-tuple iteration
+  remain rejected.
 - `oort-core` scalar expressions: `Float` and `String` types and literals,
   mixed Int/Float arithmetic, `/` (always `Float`), numeric and String
   comparison/equality, and annotated parameters/returns for both. Numeric
