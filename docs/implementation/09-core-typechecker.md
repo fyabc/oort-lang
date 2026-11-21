@@ -33,7 +33,10 @@ source
 `semantics/core/types.py` 定义独立于运行时的类型：
 
 - `PrimitiveType("Int"|"Bool"|"Unit")`；
-- `FunctionType(params, ret)`；
+- `FunctionType(params, ret)`、`ModuleType(name, exports)`；
+- `AdtType(origin, name, constructors)`：名义相等只看 `(origin, name)`，
+  `constructors` 在声明注册后填充，以支持自递归 payload；
+- `ConstructorInfo(name, field_names, payload)`；
 - `UnknownType`（错误恢复，兼容一切）；
 - `NeverType`（不能正常落到的表达式，例如 `return`）。
 
@@ -60,7 +63,34 @@ source
 - 函数：顶层、标注必填、位置参数、精确元数、所有路径返回。
 - 条件：条件必须 Bool；无 `else` 为 Unit；分支类型用 `join_types` 合并。
 - 运算：Int 算术/比较、Bool 逻辑、同类型相等；`/` 与 `**` 显式拒绝。
-- `print`：特殊内建，返回 Unit；用户绑定优先。
+- `print`：特殊内建，返回 Unit；用户绑定优先；ADT 值可打印。
+
+## ADT 与 `match`
+
+- `visit_enum_def`：
+  - 仅模块顶层、非泛型、非空；enum 名进入类型命名空间，构造器名进入模块
+    值命名空间；先注册 `AdtType` 再解析字段，支持自递归；
+  - payload 构造器是 `FunctionType(payload, adt)`，零参构造器是 `AdtType` 值。
+- 模式检查（`_check_pattern`）：
+  - `_`：覆盖全部；
+  - 绑定名：绑定当前期望类型；若命中当前 enum 的零参构造器，则同时限定该
+    variant 并绑定该名字；
+  - 构造器模式：必须属于当前 enum，元数匹配，子模式按字段类型递归；
+  - 同一模式重复绑定由 Pass1/arm 作用域报错。
+- 每个 arm 独立作用域；arm 体类型用 `join_types` 合并。
+- 穷尽性只做**顶层构造器覆盖**：`_`/绑定覆盖全部；构造器模式的子模式都
+  不可反驳时覆盖该构造器；嵌套穷尽性未实现。
+- 构造器调用复用 `visit_call`（`FunctionType`），零参构造器复用 `visit_name`。
+- `enum ==` 显式拒绝；`print(enum)` 允许。
+
+运行时（`interpreter.py`）：
+
+- `visit_enum_def` 创建 `OortType`，设置 `adt_variants`，定义构造器；
+  payload 构造器是 `OortNativeFunction(VALUE)`，零参构造器预构造 `OortADT`。
+- `visit_match_expr` 顺序扫描 arms；`_match_pattern` 返回绑定；命中后建立
+  独立 `Environment`，按 Pass1 相同顺序定义绑定并求值 body；无命中抛
+  `OortRuntimeError`。
+- 裸零参构造器模式同样绑定该名字，保证 Pass1 槽位与运行时环境一致。
 
 ## 模块导入
 
@@ -79,7 +109,8 @@ Checker.visit_import -> Compiler._resolve_core_module
 - `ModuleType` 保存模块命名空间导出；`visit_attribute` 只允许在模块上取属性，
   `visit_call` 同时接受 `Name` 与模块属性作为被调者。
 - `from` 直接绑定导出名；导入名与模块别名均为不可变绑定。
-- 导出包括顶层函数、变量与再导出的导入名，因此支持 re-export。
+- 导出包括顶层函数、变量、构造器与再导出的导入名，因此支持 re-export；
+  enum 类型名只进类型命名空间，暂不支持跨模块类型注解。
 - 编译期检测循环导入；跨方言与 native 导入在检查器中拒绝。
 
 `runtime/modules.py` 的 `CompiledModule` 仍携带方言名，`ModuleLoader` 在执行前
@@ -97,6 +128,8 @@ Checker.visit_import -> Compiler._resolve_core_module
 - `tests/unit/frontend/test_core_checker.py`：正向/拒绝/错误恢复矩阵。
 - `tests/unit/frontend/test_analyzer_dispatch.py`：分析器选择。
 - `tests/unit/runtime/test_core_execution.py`：检查后执行与 Unit/null 映射。
+- `tests/unit/runtime/test_core_adt_execution.py`：构造、match、嵌套、递归、
+  跨模块构造器与打印。
 - `tests/unit/runtime/test_core_modules.py`：同方言导入、再导出、类型检查、
   缺失导出、跨方言/native 拒绝与循环检测。
 - `tests/unit/runtime/test_modules.py`：跨方言导入拒绝。

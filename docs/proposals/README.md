@@ -80,6 +80,7 @@
 | 2026-11-20 | 相等性：值 `==` 递归容器；Bool/Int 全层严格；Dict/Set 使用独立键相等/哈希（Ruby `eql?` 模型）；移除相等/成员/集合代数的 HOST 投影 | [OP 0016](0016-equality-protocol.md)（Implemented） |
 | 2026-11-20 | `oort-core` 初版薄探针：Int/Bool/Unit/函数、标注必填、独立检查器；`/`/`**` 因可能产生 Float 而拒绝；跨方言导入显式拒绝 | [OP 0017](0017-oort-core-thin-probe.md)（Implemented） |
 | 2026-11-20 | core 同方言模块导入：`import` / `from`、模块命名空间只读、导出顶层名字与再导出、编译期循环检测；仍拒绝 object↔core 与 native 导入 | [OP 0017](0017-oort-core-thin-probe.md)（Implemented） |
+| 2026-11-21 | core 单态 ADT 第一切片：模块顶层 `enum`、构造器、`match`、`_`/绑定/嵌套构造器模式、顶层构造器穷尽性；泛型 ADT、`Option[T]`/`Result[T,E]`、字面量/守卫/或模式与嵌套穷尽性留后 | [OP 0017](0017-oort-core-thin-probe.md)（Implemented） |
 
 ## 设计原则（所有提案必须满足）
 

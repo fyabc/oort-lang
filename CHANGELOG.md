@@ -18,9 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   expose typed module exports, support re-exports, and detect missing exports
   and circular imports during compilation. Cross-dialect and native imports
   remain rejected.
+- Monomorphic `oort-core` ADTs: top-level `enum` declarations, constructor
+  values, `match` expressions with wildcard/binding/nested constructor
+  patterns, and top-level constructor exhaustiveness checks. Enum values can
+  be printed; enum equality, generic ADTs and full nested exhaustiveness are
+  deferred. `oort-object` rejects `enum`/`match` explicitly.
+- The VSCode grammar (0.1.2) highlights `enum`, `match`, `=>` and `Unit`.
 
 ### Changed
 
+- `enum` and `match` are now hard keywords, and `=>` is a reserved
+  `FATARROW` token (not a user operator) used for `match` arms; existing
+  identifiers named `enum`/`match` and user operators spelled `=>` are no
+  longer valid.
 - Dialect boundaries are explicit: `oort-core` may import other core modules,
   while the loader still rejects `oort-object` ↔ `oort-core` imports until FFI
   trampolines land.

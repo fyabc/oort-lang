@@ -26,7 +26,7 @@
 | [08-stdlib.md](08-stdlib.md) | 集合助手、`math` / `string` 原生模块 |
 | [09-iterators.md](09-iterators.md) | `__iter__` 协议、流式 `for`、内置迭代器 |
 | [10-extensions.md](10-extensions.md) | 扩展方法/运算符、作用域、导入、`super` |
-| [11-core-probe.md](11-core-probe.md) | `oort-core` 薄探针：Int/Bool/函数、Unit、拒绝清单 |
+| [11-core-probe.md](11-core-probe.md) | `oort-core` 薄探针：Int/Bool/函数、Unit、单态 ADT/`match`、拒绝清单 |
 | [06-conformance.md](06-conformance.md) | 实现状态矩阵与诊断规则 |
 
 ## 术语

@@ -9,12 +9,12 @@
 在完整 `oort-core` v1 之前，先用一个**薄探针**验证方言路由与语义隔离：
 
 - `#lang oort-core`；
-- 最小静态子集：`Int`、`Bool`、`Unit`、函数；
+- 最小静态子集：`Int`、`Bool`、`Unit`、函数、单态 ADT 与 `match`；
 - 独立类型检查器，复用 AST、诊断、模块加载、CLI 与测试框架；
 - 同一份源码在 `oort-object` 下动态运行、在 `oort-core` 下静态检查。
 
-探针不是 OP 0005 的完整实现：泛型、ADT/`match`、静态对象模型、跨方言 FFI
-都留给后续。
+探针不是 OP 0005 的完整实现：泛型 ADT、`Option[T]`/`Result[T,E]`、
+静态对象模型、跨方言 FFI 都留给后续。
 
 ## 跨语言调研
 
@@ -53,16 +53,18 @@
 
 ### 类型
 
-- `Int`、`Bool`；
+- `Int`、`Bool`、单态 `enum` 类型；
 - `Unit`：仅允许作为函数返回类型；
-- 内部 `FunctionType`、`Unknown`（错误恢复）、`Never`（所有路径 `return`）。
+- 内部 `FunctionType`、`ModuleType`、`AdtType`、`Unknown`（错误恢复）、
+  `Never`（所有路径 `return`）。
 
 ### 声明与语句
 
 - 顶层与函数内 `val`/`var`，单目标；标注或从初始化器局部推断。
 - 赋值只允许 `=` 到 `var`；`val`、参数、函数不可变。
 - 顶层 `def`：参数与返回必须标注；允许自递归；按源码顺序可见。
-- 函数体、块、`if`/`else`、表达式语句、`return`。
+- 顶层 `enum`：单态、非空；构造器与字段；字段类型为 Int/Bool/本地 enum。
+- 函数体、块、`if`/`else`、`match`、表达式语句、`return`。
 - `if` 条件必须是 Bool；无 `else` 时类型为 Unit；分支类型需一致
   （`Never` 可与任一类型合并）。
 - 非 Unit 函数必须所有路径返回值，或函数体最后一个表达式的类型可赋给返回类型。
@@ -72,14 +74,26 @@
 - Int/Bool 字面量、名字、块、`if`/`else`、调用（仅位置实参、精确元数）。
 - 一元 `+`、`-`、`not`。
 - 二元 `+ - * // %`、`< <= > >=`、`== !=`、`and`、`or`。
-- `print`：未被用户遮蔽时，接受任意个 Int/Bool/Unit 参数，返回 Unit。
+- `print`：未被用户遮蔽时，接受任意个 Int/Bool/Unit/enum 参数，返回 Unit。
+
+### ADT 与 `match`
+
+- 单态 `enum Name { Variant(field: Type, ...) Variant }`，仅模块顶层；
+  字段类型为 Int/Bool/本地 enum，支持自递归。
+- 构造器进入值命名空间；零参构造器是值，有参构造器是可调用值。
+- `match` 的 scrutinee 必须是 enum；arm 用 `,` 或换行分隔。
+- 模式：`_`、绑定名、构造器模式（可嵌套）；裸零参构造器名同时限定 variant
+  并绑定该名字。
+- arm 独立作用域、implicit join；顶层构造器穷尽性；嵌套穷尽性暂不做。
+- `print` 接受 enum 值；`enum ==` 显式拒绝。
 
 ### 显式拒绝
 
 类、方法、扩展、`this`/`super`、lambda、嵌套/泛型/运算符定义、循环、
 `break`/`continue`、`yield`/`await`、宏、编译器属性、Float/String/Null/
 集合字面量、属性/下标、多目标声明、增强赋值、`/`、`**`、位运算、`in`、
-`is`、默认值、关键字实参、变长参数、`&block`；跨方言与 native 模块导入。
+`is`、默认值、关键字实参、变长参数、`&block`；跨方言与 native 模块导入；
+泛型 ADT、字面量/元组/守卫/或模式、嵌套穷尽性。
 
 拒绝时使用带位置的 `UnsupportedSyntax` 或 `TypeCheckError`，不静默降级。
 
@@ -87,8 +101,9 @@
 
 - 每个模块独立解析 `#lang`。
 - core 模块可以导入其他 core 模块：`import "m"` 绑定模块命名空间，
-  `from "m" import f` 绑定导出名。模块导出顶层函数、变量与再导出的导入名；
-  导入名不可变，模块命名空间属性不可写。
+  `from "m" import f` 绑定导出名。模块导出顶层函数、变量、构造器与再导出的
+  导入名；导入名不可变，模块命名空间属性不可写。enum 类型名只进入类型
+  命名空间，暂不支持跨模块类型注解；函数签名可携带 `AdtType`。
 - 静态检查器通过编译器注入的 resolver 递归编译目标模块，取得导出类型，
   并缓存 `CompiledUnit`；编译期循环导入显式报错。
 - `ModuleLoader` 在编译后比较目标模块与导入方方言；object↔core 双向导入
@@ -103,7 +118,8 @@
 - `semantics/analyzer.py`：`create_semantic_analyzer()` 按方言返回
   `Pass1Analyzer` 或 `CoreAnalyzer`（Pass1 + `CoreTypeChecker`）。
 - `semantics/core/{types,checker}.py`：独立类型模型与检查器；只依赖
-  `ast`/`diagnostics`/`parser`/`source`。`ModuleType` 表示模块命名空间。
+  `ast`/`diagnostics`/`parser`/`source`。`ModuleType` 表示模块命名空间，
+  `AdtType` 表示名义 ADT；检查器负责构造器、模式与顶层穷尽性。
 - `driver/compiler.py`：`CompiledUnit` 缓存 AST、方言与导出类型；
   `_resolve_core_module` 递归编译 core 导入并检测循环。
 - `runtime/modules.py`：`CompiledModule` 携带方言名；导入时做方言比较。
@@ -114,9 +130,10 @@
 
 - 双向检查的 expected-type 传播、函数返回类型推断。
 - Float/String/集合/null、`/`。
-- 循环、类/槽、ADT/`match`、泛型/HKT。
+- 循环、类/槽、泛型 ADT/HKT、`Option[T]`/`Result[T,E]`。
+- 字面量/元组/列表/守卫/或模式、嵌套穷尽性、ADT 相等与迭代。
 - 函数值与高阶函数、函数类型标注。
 - 跨方言 FFI trampoline/blame；更完整的模块接口版本管理与增量编译。
 - REPL 方言切换与持久方言状态。
-- 静态对象模型、确定赋值、穷尽性检查。
+- 静态对象模型、确定赋值。
 - HIR 与字节码后端。

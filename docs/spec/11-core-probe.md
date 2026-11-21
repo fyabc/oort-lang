@@ -1,7 +1,8 @@
 # `oort-core` 薄探针
 
 本页描述 `#lang oort-core` 当前**已实现**的最小静态子集。它不是完整的
-`oort-core` v1；泛型、ADT/`match`、静态对象模型与跨方言 FFI 尚未实现。
+`oort-core` v1：已实现单态 ADT（`enum`）与 `match`，但泛型 ADT、
+`Option[T]`/`Result[T,E]`、静态对象模型与跨方言 FFI 尚未实现。
 设计取舍见 [OP 0017](../proposals/0017-oort-core-thin-probe.md)。
 
 ## 启用
@@ -28,6 +29,7 @@ print(add(1, 2))
 | `Int` | 参数、变量、返回值、表达式 |
 | `Bool` | 参数、变量、返回值、条件、逻辑运算 |
 | `Unit` | **仅函数返回类型**；声明的内部类型，不是变量类型 |
+| `enum` 类型 | 参数、变量、返回值、字段类型；单态，名称在模块内唯一 |
 
 - `Int` 与 `Bool` 严格区分，没有隐式转换或 truthiness。
 - 静态 `Unit` 在运行时对应 `null`；`print` 返回 Unit。
@@ -102,10 +104,46 @@ print(l.add(1, 2))
 | `a and b`、`a or b` | `Bool, Bool -> Bool` |
 | `f(...)` | 仅位置实参；精确元数；实参类型匹配 |
 | `if c { ... } else { ... }` | 条件 Bool；两分支类型一致 |
+| `match e { ... }` | `e` 必须是 enum；arm 为 `pattern => expr`；结果类型为各 arm 的合并 |
 | `{ ... }` | 块的值是最后一条语句的值；空块为 Unit |
-| `print(...)` | 任意个 Int/Bool/Unit 实参 -> Unit；可被用户定义遮蔽 |
+| `print(...)` | 任意个 Int/Bool/Unit/enum 实参 -> Unit；可被用户定义遮蔽 |
 
 `if` 没有 `else` 时类型为 Unit。`Never`（例如 `return`）可与任一分支类型合并。
+
+## ADT（`enum`）与 `match`
+
+```oort
+enum Shape {
+    Circle(radius: Int),
+    Rect(width: Int, height: Int),
+    Empty
+}
+
+def area(shape: Shape) -> Int {
+    match shape {
+        Circle(r) => r * r * 3,
+        Rect(w, h) => w * h,
+        Empty => 0
+    }
+}
+```
+
+- `enum` 只能出现在模块顶层；必须至少有一个构造器；字段类型必须标注，
+  可为 `Int`、`Bool` 或当前/此前定义的本地 enum（支持自递归）。enum 类型名
+  与构造器按源码顺序可见，不支持前向/互递归枚举。
+- 构造器是普通可调用值：`Circle(2)`；零参构造器是值：`Empty`。
+- 字段名用于声明/文档；构造与模式都按**位置**绑定，暂不支持命名字段。
+- 构造器名进入模块值命名空间，可被 `from`/`import` 导出；enum 类型名只进入
+  类型命名空间，暂不支持跨模块类型注解。
+- `match` 的 scrutinee 必须是 enum；arm 用 `,` 或换行分隔。
+- 模式第一切片：`_`、绑定名、构造器模式（可嵌套）。
+  - 裸名字若命中当前 enum 的零参构造器：只匹配该 variant，并同时绑定该名字；
+  - 否则按普通绑定处理。
+- 每个 arm 独立作用域；绑定不可变；重复绑定报错。
+- arm 体类型必须可合并；`Never` 可参与合并。
+- **顶层构造器穷尽性**：`_`/普通绑定覆盖全部；构造器模式在其所有子模式都
+  不可反驳时覆盖该构造器。嵌套穷尽性尚未实现，需用 `_`/绑定兜底。
+- 空 enum、泛型 enum、非顶层 enum、匹配非 enum、enum `==` 均显式拒绝。
 
 ## 显式拒绝
 
@@ -124,6 +162,13 @@ print(l.add(1, 2))
 | 位运算/`in`/`is` | `1 & 2`、`x in xs` | 运算符不支持 |
 | 跨方言 import | core 导入 object 模块 | `Cannot import a 'oort-object' module...` |
 | native import | `import "math"` | `Native modules are not supported...` |
+| 泛型 enum | `enum E[T] { A }` | `Generic enums are not supported...` |
+| 非顶层 enum | 函数/块内 `enum` | `Enum declarations are only allowed at module top level...` |
+| 空 enum | `enum E { }` | `An enum must declare at least one constructor.` |
+| match 非 enum | `match 1 { _ => 1 }` | `The scrutinee of match must have an enum type...` |
+| 非穷尽 | 缺少构造器 | `Match is not exhaustive; missing: ...` |
+| enum 相等 | `A == A` | `Enum equality is not supported...` |
+| 其他模式 | 字面量/元组/守卫/或模式 | 第一切片不支持（语法或诊断） |
 
 类型错误使用 `TypeCheckError`，未实现构造使用 `UnsupportedSyntax`。
 
@@ -149,6 +194,6 @@ print(x)          # 1
 
 ## 尚未实现
 
-Float/String/集合/null、`/`、循环、类与槽、ADT/`match`、泛型、函数值、
-跨方言 FFI、REPL 方言切换、静态对象模型、确定赋值、穷尽性检查、
-HIR/字节码后端。
+Float/String/集合/null、`/`、循环、类与槽、泛型 ADT、`Option[T]`/`Result[T,E]`、
+函数值、跨方言 FFI、REPL 方言切换、静态对象模型、确定赋值、
+字面量/元组/守卫/或模式、嵌套穷尽性、ADT 相等、HIR/字节码后端。

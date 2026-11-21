@@ -51,6 +51,7 @@
 | [基础子集](https://github.com/fyabc/oort-lang.py/blob/main/examples/08_core/08_00_core_basics.ort) | `#lang oort-core`、Int/Bool、`var`/`val`、`if`、`print` |
 | [静态函数](https://github.com/fyabc/oort-lang.py/blob/main/examples/08_core/08_01_core_functions.ort) | 标注必填、自递归、`-> Unit` 过程 |
 | [模块导入](https://github.com/fyabc/oort-lang.py/blob/main/examples/08_core/08_02_core_modules.ort) | core→core `import` / `from`、导出类型 |
+| [ADT 与 match](https://github.com/fyabc/oort-lang.py/blob/main/examples/08_core/08_03_adt_match.ort) | `enum`、构造器、模式匹配、穷尽性 |
 
 ```bash
 oort examples/08_core/08_01_core_functions.ort
