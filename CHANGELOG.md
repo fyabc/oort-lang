@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   patterns, and top-level constructor exhaustiveness checks. Enum values can
   be printed; enum equality, generic ADTs and full nested exhaustiveness are
   deferred. `oort-object` rejects `enum`/`match` explicitly.
+- Function types, lambdas and first-class function values in `oort-core`:
+  `(Int, Bool) -> Int`, `do(x: Int) -> Int { ... }`, higher-order functions,
+  function-valued variables/ADT payloads, and function values exported from
+  core modules. Function-type arrows are right-associative
+  (`Int -> Int -> Int` = `Int -> (Int -> Int)`), and calls may chain through
+  function values (`add(1)(2)`). Multi-argument functions are not automatically
+  curried. Anonymous/generic/default-argument lambdas remain rejected.
 - The VSCode grammar (0.1.2) highlights `enum`, `match`, `=>` and `Unit`.
 
 ### Changed

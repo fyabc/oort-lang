@@ -73,13 +73,13 @@ P1 已完成。后续打磨（P2）：
 动态/静态方言下的路由隔离。已完成同方言模块导入与导出接口：core→core 的
 `import` / `from`、模块命名空间、再导出与编译期循环检测；跨方言仍拒绝。
 已完成单态 ADT 第一切片：`enum`、构造器、`match`、嵌套构造器模式、
-`_`/绑定与顶层构造器穷尽性，端到端可执行。规范见
-[spec 11](spec/11-core-probe.md)。
+`_`/绑定与顶层构造器穷尽性，端到端可执行。已完成函数类型、lambda 与
+函数值/高阶函数。规范见 [spec 11](spec/11-core-probe.md)。
 
-后续按 [OP 0005](proposals/0005-type-system.md) 实现双向类型检查的
-expected-type 传播、泛型 ADT（内部单态化 + 边界擦除）、
-`Result`/`Option`、字面量/元组/守卫/或模式与嵌套穷尽性、
-静态对象模型与槽变量，以及跨方言 FFI 边界。
+后续按 [OP 0005](proposals/0005-type-system.md) 实现完整的 expected-type
+分支传播、泛型 ADT（内部单态化 + 边界擦除）、`Result`/`Option`、
+字面量/元组/守卫/或模式与嵌套穷尽性、静态对象模型与槽变量，
+以及跨方言 FFI 边界。
 
 ### 阶段 3：共享后端
 

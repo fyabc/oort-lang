@@ -55,6 +55,7 @@
 
 - `Int`、`Bool`、单态 `enum` 类型；
 - `Unit`：仅允许作为函数返回类型；
+- 函数类型：`Int -> Bool`、`(Int, Bool) -> Int`、`() -> Unit`；
 - 内部 `FunctionType`、`ModuleType`、`AdtType`、`Unknown`（错误恢复）、
   `Never`（所有路径 `return`）。
 
@@ -63,6 +64,9 @@
 - 顶层与函数内 `val`/`var`，单目标；标注或从初始化器局部推断。
 - 赋值只允许 `=` 到 `var`；`val`、参数、函数不可变。
 - 顶层 `def`：参数与返回必须标注；允许自递归；按源码顺序可见。
+- 显式参数列表的 `do(...)` lambda：参数/返回必须标注；函数值可推断、赋值、
+  传参、返回与调用。函数类型箭头右结合；不做自动柯里化，链式调用
+  `f(1)(2)` 由手动返回 lambda 支持。
 - 顶层 `enum`：单态、非空；构造器与字段；字段类型为 Int/Bool/本地 enum。
 - 函数体、块、`if`/`else`、`match`、表达式语句、`return`。
 - `if` 条件必须是 Bool；无 `else` 时类型为 Unit；分支类型需一致
@@ -72,9 +76,11 @@
 ### 表达式
 
 - Int/Bool 字面量、名字、块、`if`/`else`、调用（仅位置实参、精确元数）。
+- `do(x: Int) -> Int { ... }` 函数值；函数值可作为被调者/实参/返回值。
 - 一元 `+`、`-`、`not`。
 - 二元 `+ - * // %`、`< <= > >=`、`== !=`、`and`、`or`。
-- `print`：未被用户遮蔽时，接受任意个 Int/Bool/Unit/enum 参数，返回 Unit。
+- `print`：未被用户遮蔽时，接受任意个 Int/Bool/Unit/enum 参数，返回 Unit；
+  函数值不可打印/比较。
 
 ### ADT 与 `match`
 
@@ -89,7 +95,7 @@
 
 ### 显式拒绝
 
-类、方法、扩展、`this`/`super`、lambda、嵌套/泛型/运算符定义、循环、
+类、方法、扩展、`this`/`super`、匿名/泛型/默认值 lambda、嵌套/泛型/运算符定义、循环、
 `break`/`continue`、`yield`/`await`、宏、编译器属性、Float/String/Null/
 集合字面量、属性/下标、多目标声明、增强赋值、`/`、`**`、位运算、`in`、
 `is`、默认值、关键字实参、变长参数、`&block`；跨方言与 native 模块导入；
@@ -128,11 +134,10 @@
 
 ## 未决/后续
 
-- 双向检查的 expected-type 传播、函数返回类型推断。
+- 完整的 expected-type 分支传播、函数返回类型推断。
 - Float/String/集合/null、`/`。
 - 循环、类/槽、泛型 ADT/HKT、`Option[T]`/`Result[T,E]`。
 - 字面量/元组/列表/守卫/或模式、嵌套穷尽性、ADT 相等与迭代。
-- 函数值与高阶函数、函数类型标注。
 - 跨方言 FFI trampoline/blame；更完整的模块接口版本管理与增量编译。
 - REPL 方言切换与持久方言状态。
 - 静态对象模型、确定赋值。

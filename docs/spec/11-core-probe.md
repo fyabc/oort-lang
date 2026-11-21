@@ -30,11 +30,11 @@ print(add(1, 2))
 | `Bool` | 参数、变量、返回值、条件、逻辑运算 |
 | `Unit` | **仅函数返回类型**；声明的内部类型，不是变量类型 |
 | `enum` 类型 | 参数、变量、返回值、字段类型；单态，名称在模块内唯一 |
+| 函数类型 | `Int -> Bool`、`(Int, Bool) -> Int`、`() -> Unit`；参数/变量/返回值/字段 |
 
 - `Int` 与 `Bool` 严格区分，没有隐式转换或 truthiness。
 - 静态 `Unit` 在运行时对应 `null`；`print` 返回 Unit。
-- 内部还有函数类型、`Unknown`（错误恢复）与 `Never`（所有路径 `return`），
-  但它们没有用户可写的标注语法。
+- 内部还有 `Unknown`（错误恢复）与 `Never`（所有路径 `return`）。
 
 ## 声明
 
@@ -57,12 +57,22 @@ def show(n: Int) -> Unit {
 }
 ```
 
-- 只有顶层 `def`；不允许嵌套函数、lambda、方法、扩展或运算符定义。
+- 顶层 `def` 与非匿名的 `do(...)` lambda；不允许嵌套 `def`、方法、扩展或
+  运算符定义。
 - 每个参数与返回类型都必须标注；参数只支持普通位置参数。
 - 返回值遵循 Oort 的运行语义：函数体最后一个表达式的值，或显式 `return`。
 - 非 Unit 函数必须所有路径返回值，或函数体最后一个表达式的类型可赋给返回类型。
 - 裸 `return` 只允许用于 `-> Unit` 函数。
 - 顶层函数与变量按源码顺序可见；允许自递归，不支持前向引用或互递归。
+- 函数值可存入变量/ADT 字段、作为实参、返回和调用；函数类型使用
+  `(参数类型, ...) -> 返回类型`，`()` 表示零参。函数值不可打印/比较。
+- `->` 在函数类型中右结合：`Int -> Int -> Int` 等同于
+  `Int -> (Int -> Int)`；需要函数参数时写 `(Int -> Int) -> Int`。
+- 多参数函数**不会自动柯里化**；手动柯里化用返回 lambda：
+  `do(a: Int) -> Int -> Int { do(b: Int) -> Int { a + b } }`。
+  函数值链式调用 `add(1)(2)` 可用。
+- lambda 必须写显式参数列表与返回类型；匿名 `$0` lambda、泛型 lambda、
+  默认值/变长参数 lambda 第一切片不支持。
 
 ## 模块导入
 
@@ -102,7 +112,8 @@ print(l.add(1, 2))
 | `a < b`、`<=`、`>`、`>=` | `Int, Int -> Bool` |
 | `a == b`、`!=` | 两个 Int 或两个 Bool -> Bool |
 | `a and b`、`a or b` | `Bool, Bool -> Bool` |
-| `f(...)` | 仅位置实参；精确元数；实参类型匹配 |
+| `f(...)` | 仅位置实参；精确元数；实参类型匹配；被调者可为函数值 |
+| `do(x: Int) -> Int { ... }` | 函数值；参数/返回必须标注 |
 | `if c { ... } else { ... }` | 条件 Bool；两分支类型一致 |
 | `match e { ... }` | `e` 必须是 enum；arm 为 `pattern => expr`；结果类型为各 arm 的合并 |
 | `{ ... }` | 块的值是最后一条语句的值；空块为 Unit |
@@ -169,6 +180,9 @@ def area(shape: Shape) -> Int {
 | 非穷尽 | 缺少构造器 | `Match is not exhaustive; missing: ...` |
 | enum 相等 | `A == A` | `Enum equality is not supported...` |
 | 其他模式 | 字面量/元组/守卫/或模式 | 第一切片不支持（语法或诊断） |
+| 匿名 lambda | `do: $0 + 1` | `Lambdas without an explicit parameter list...` |
+| 泛型 lambda | `do[T](x: Int) -> Int ...` | `Generic functions are not implemented yet.` |
+| 函数值打印/相等 | `print(f)`、`f == g` | 打印仅接受值/ADT；相等仅 Int/Bool |
 
 类型错误使用 `TypeCheckError`，未实现构造使用 `UnsupportedSyntax`。
 
@@ -195,5 +209,6 @@ print(x)          # 1
 ## 尚未实现
 
 Float/String/集合/null、`/`、循环、类与槽、泛型 ADT、`Option[T]`/`Result[T,E]`、
-函数值、跨方言 FFI、REPL 方言切换、静态对象模型、确定赋值、
-字面量/元组/守卫/或模式、嵌套穷尽性、ADT 相等、HIR/字节码后端。
+完整 expected-type 传播（`if`/`match` 分支）、匿名 $n lambda、跨方言 FFI、
+REPL 方言切换、静态对象模型、确定赋值、字面量/元组/守卫/或模式、
+嵌套穷尽性、ADT 相等、HIR/字节码后端。

@@ -60,10 +60,20 @@ source
 
 - 声明：`val`/`var` 单目标；标注优先，否则局部推断；`Unit` 不能作为变量类型。
 - 赋值：只允许 `=` 到 `var`；参数与函数不可变。
-- 函数：顶层、标注必填、位置参数、精确元数、所有路径返回。
+- 函数：顶层、标注必填、位置参数、精确元数、所有路径返回；lambda 必须显式
+  参数列表与返回类型；函数值可推断、赋值、传参、返回与调用。
+- 函数类型：注解中的 `Int -> Bool` / `(Int, Bool) -> Int` / `() -> Unit` 解析为
+  `FunctionType`；`is_assignable` 对函数类型逐参数/返回递归比较，`Unknown`
+  参与错误恢复。`->` 在 Pratt 表中为右结合（`Int -> Int -> Int` =
+  `Int -> (Int -> Int)`）。
+- 调用：被调者可以是任意推断为 `FunctionType` 的表达式，因此支持
+  `add(1)(2)` 与返回函数的调用；多参数 `def` 仍要求完整元数，不做自动
+  部分应用。
 - 条件：条件必须 Bool；无 `else` 为 Unit；分支类型用 `join_types` 合并。
 - 运算：Int 算术/比较、Bool 逻辑、同类型相等；`/` 与 `**` 显式拒绝。
-- `print`：特殊内建，返回 Unit；用户绑定优先；ADT 值可打印。
+- `print`：特殊内建，返回 Unit；用户绑定优先；ADT 值可打印，函数值不可打印。
+- 完整 expected-type 分支传播（把期望类型下推到 `if`/`match` 的每个分支）
+  尚未实现；当前在绑定/赋值/返回/实参位置做检查。
 
 ## ADT 与 `match`
 
@@ -130,6 +140,8 @@ Checker.visit_import -> Compiler._resolve_core_module
 - `tests/unit/runtime/test_core_execution.py`：检查后执行与 Unit/null 映射。
 - `tests/unit/runtime/test_core_adt_execution.py`：构造、match、嵌套、递归、
   跨模块构造器与打印。
+- `tests/unit/runtime/test_core_function_values.py`：lambda、闭包、高阶函数、
+  函数值跨模块与 ADT payload。
 - `tests/unit/runtime/test_core_modules.py`：同方言导入、再导出、类型检查、
   缺失导出、跨方言/native 拒绝与循环检测。
 - `tests/unit/runtime/test_modules.py`：跨方言导入拒绝。
