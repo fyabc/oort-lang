@@ -153,7 +153,9 @@ lambda、嵌套/泛型/运算符定义、`yield`/`await`、宏、编译器属性
 
 ## 未决/后续
 
-- 函数返回类型推断（签名仍必须显式标注）；更强的 expected-type 传播。
+- ~~函数返回类型推断~~（2026-11-22 已实现顶层 def + lambda，自递归仍需标注，
+  见 [design 14](../design/14-core-typechecking.md)）；类方法返回推断、更强的
+  expected-type 传播仍待做。
 - null、类继承/元类、泛型 ADT/HKT、`Option[T]`/`Result[T,E]`。
 - 集合切片/原地修改、`in`、排序、惰性视图。
 - 字面量/元组/列表/守卫/或模式、嵌套穷尽性、ADT 相等与迭代。

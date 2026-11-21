@@ -125,6 +125,72 @@ class TestCorePositive:
         )
         assert result.stdout == "true\n"
 
+    def test_infer_return_from_tail_expression(self, run_source):
+        result = run_source(core("def add(a: Int, b: Int) { a + b }\nprint(add(1, 2))\n"))
+        assert result.stdout == "3\n"
+
+    def test_infer_return_from_single_return(self, run_source):
+        result = run_source(core("def inc(n: Int) { return n + 1 }\nprint(inc(4))\n"))
+        assert result.stdout == "5\n"
+
+    def test_infer_return_all_paths_return(self, run_source):
+        result = run_source(
+            core(
+                "def sign(n: Int) {\n"
+                "    if n < 0 { return -1 }\n"
+                "    if n > 0 { return 1 }\n"
+                "    return 0\n"
+                "}\n"
+                "print(sign(-3), sign(0), sign(2))\n"
+            )
+        )
+        assert result.stdout == "-1 0 1\n"
+
+    def test_infer_return_mixed_return_and_tail(self, run_source):
+        result = run_source(
+            core("def f(x: Bool) {\n    if x { return 1 }\n    2\n}\nprint(f(true), f(false))\n")
+        )
+        assert result.stdout == "1 2\n"
+
+    def test_infer_unit_return(self, run_source):
+        result = run_source(core("def show(n: Int) { print(n) }\nshow(7)\n"))
+        assert result.stdout == "7\n"
+
+    def test_infer_return_if_expression(self, run_source):
+        result = run_source(
+            core("def pick(x: Bool) { if x { 1 } else { 2 } }\nprint(pick(true))\n")
+        )
+        assert result.stdout == "1\n"
+
+    def test_infer_return_float_and_string(self, run_source):
+        result = run_source(
+            core(
+                "def half(x: Float) { x / 2.0 }\n"
+                'def greet(name: String) { "hi " + name }\n'
+                'print(half(5.0), greet("oort"))\n'
+            )
+        )
+        assert result.stdout == "2.5 hi oort\n"
+
+    def test_annotated_recursion_still_works(self, run_source):
+        result = run_source(
+            core(
+                "def fact(n: Int) -> Int { if n <= 1 { 1 } else { n * fact(n - 1) } }\n"
+                "print(fact(5))\n"
+            )
+        )
+        assert result.stdout == "120\n"
+
+    def test_inferred_function_used_by_later_function(self, run_source):
+        result = run_source(
+            core(
+                "def double(n: Int) { n * 2 }\n"
+                "def quad(n: Int) { double(double(n)) }\n"
+                "print(quad(3))\n"
+            )
+        )
+        assert result.stdout == "12\n"
+
 
 class TestCoreRejections:
     def test_annotation_mismatch(self, caplog):
@@ -168,11 +234,30 @@ class TestCoreRejections:
             "Parameter 'x' requires a type annotation",
         )
 
-    def test_missing_return_annotation(self, caplog):
+    def test_recursive_function_requires_return_annotation(self, caplog):
+        # Return types are inferred for non-recursive functions, but a
+        # self-recursive call cannot pin down the placeholder return type, so
+        # an explicit annotation is still required (as in Kotlin/Scala).
         check_error(
             caplog,
-            "def f(x: Int) { x }\n",
-            "requires a return type annotation",
+            "def fact(n: Int) { if n <= 1 { 1 } else { n * fact(n - 1) } }\n",
+            "Recursive function 'fact' requires a return type annotation",
+        )
+
+    def test_incompatible_return_types(self, caplog):
+        check_error(
+            caplog,
+            'def f(x: Bool) {\n  if x { return 1 }\n  return "s"\n}\n',
+            "The return types of function 'f' are incompatible: Int and String.",
+        )
+
+    def test_method_return_annotation_still_required(self, caplog):
+        # Return inference covers top-level functions and lambdas only; class
+        # methods keep requiring an annotation in this slice.
+        check_error(
+            caplog,
+            "class C { def m() { 1 } }\n",
+            "Function 'C.m' requires a return type annotation",
         )
 
     def test_unit_in_variable_annotation(self, caplog):
@@ -621,6 +706,33 @@ class TestCoreFunctionValues:
         )
         assert result.stdout == "15\n"
 
+    def test_lambda_return_inferred_without_annotation(self, run_source):
+        result = run_source(core("val inc = do(x: Int) { x + 1 }\nprint(inc(2))\n"))
+        assert result.stdout == "3\n"
+
+    def test_lambda_return_from_expected_type(self, run_source):
+        result = run_source(core("val f: (Int) -> Int = do(x: Int) { x * 2 }\nprint(f(4))\n"))
+        assert result.stdout == "8\n"
+
+    def test_lambda_return_inferred_as_argument(self, run_source):
+        result = run_source(
+            core(
+                "def apply(f: (Int) -> Int, x: Int) { f(x) }\n"
+                "print(apply(do(x: Int) { x * 3 }, 4))\n"
+            )
+        )
+        assert result.stdout == "12\n"
+
+    def test_lambda_unit_return_inferred(self, run_source):
+        result = run_source(core("val show = do(x: Int) { print(x) }\nshow(7)\n"))
+        assert result.stdout == "7\n"
+
+    def test_currying_with_inferred_returns(self, run_source):
+        result = run_source(
+            core("def make(n: Int) { do(x: Int) { x + n } }\nval add5 = make(5)\nprint(add5(3))\n")
+        )
+        assert result.stdout == "8\n"
+
 
 class TestCoreFunctionValueRejections:
     def test_anonymous_lambda_is_rejected(self, caplog):
@@ -637,11 +749,13 @@ class TestCoreFunctionValueRejections:
             "Parameter 'x' requires a type annotation",
         )
 
-    def test_lambda_return_annotation_required(self, caplog):
+    def test_lambda_uninferrable_return_needs_annotation(self, caplog):
+        # Without an expected return type, a lambda body that cannot infer
+        # (an empty collection) still requires an annotation.
         check_error(
             caplog,
-            "val f: (Int) -> Int = do(x: Int) { x }\n",
-            "requires a return type annotation",
+            "val f = do(x: Int) { [] }\n",
+            "Cannot infer the element type of an empty List",
         )
 
     def test_function_type_mismatch(self, caplog):

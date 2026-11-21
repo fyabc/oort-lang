@@ -113,6 +113,22 @@ class PatternResult:
     failed: bool = False
 
 
+@dataclasses.dataclass(slots=True)
+class _ReturnInfer:
+    """Return-type inference state for one function body being checked.
+
+    Pushed on ``CoreTypeChecker._infer_stack`` while the body of a function
+    without a return annotation is checked; ``returns`` collects the types of
+    its ``return`` expressions and ``recursive`` is set when the body calls the
+    function itself (such functions must keep an explicit annotation).
+    """
+
+    name: str
+    node: nodes.FunctionDef
+    returns: list[Type] = dataclasses.field(default_factory=list)
+    recursive: bool = False
+
+
 class CoreTypeChecker(ASTVisitor[Type]):
     """Type-check the `oort-core` subset and record inferred types."""
 
@@ -138,6 +154,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
         self.current_class: ClassType | None = None
         self._in_initializer = False
         self._loop_depth = 0
+        # Parallel to function-body nesting: an entry is a `_ReturnInfer` when
+        # that function's return type is being inferred, else None. The top
+        # entry belongs to the innermost function currently being checked.
+        self._infer_stack: list[_ReturnInfer | None] = []
 
     # ------------------------------------------------------------------
     # Entry point and scopes
@@ -223,6 +243,17 @@ class CoreTypeChecker(ASTVisitor[Type]):
             node, (nodes.ListLiteral, nodes.TupleLiteral, nodes.DictLiteral, nodes.SetLiteral)
         ):
             return self._check_collection_literal(node, expected)
+
+        if isinstance(node, nodes.FunctionDef) and node.is_lambda:
+            # Thread the expected return type into the lambda; without one the
+            # lambda infers its return type from the body.
+            actual = self._check_lambda(node, expected)
+            if isinstance(actual, NeverType):
+                return NEVER
+            self.expect(expected, actual, node, message)
+            if isinstance(expected, UnknownType):
+                return actual
+            return expected
 
         actual = node.accept(self)
         if actual is None:
@@ -711,7 +742,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 node, "Nested function definitions are not supported in oort-core yet."
             )
 
-        signature = self._build_signature(node, node.name)
+        infer_return = node.ret_type is None
+        signature = self._build_signature(node, node.name, infer_return=infer_return)
+        # Declare before checking the body so self-recursive calls resolve; the
+        # inferred return type is backfilled afterwards.
         self.declare(
             node.name,
             signature,
@@ -719,11 +753,15 @@ class CoreTypeChecker(ASTVisitor[Type]):
             position=node.name_position,
             is_function=True,
         )
+        signature = self._check_function_body(node, signature, node.name, infer_return=infer_return)
+        if infer_return:
+            info = self.lookup(node.name)
+            if info is not None:
+                info.type = signature
         node.metadata["type"] = describe_type(signature)
-        self._check_function_body(node, signature, node.name)
         return UNIT
 
-    def _check_lambda(self, node: nodes.FunctionDef) -> Type:
+    def _check_lambda(self, node: nodes.FunctionDef, expected: Type = UNKNOWN) -> Type:
         if not node.has_explicit_param_list:
             return self._unsupported(
                 node,
@@ -731,9 +769,21 @@ class CoreTypeChecker(ASTVisitor[Type]):
             )
         if node.type_params:
             return self._unsupported(node, "Generic lambdas are not supported in oort-core yet.")
-        signature = self._build_signature(node, "<lambda>")
+        default_return: Type | None = None
+        infer_return = False
+        if node.ret_type is None:
+            if isinstance(expected, FunctionType):
+                # An expected function type supplies the return type (check mode).
+                default_return = expected.ret
+            else:
+                infer_return = True
+        signature = self._build_signature(
+            node, "<lambda>", default_return=default_return, infer_return=infer_return
+        )
+        signature = self._check_function_body(
+            node, signature, "<lambda>", infer_return=infer_return
+        )
         node.metadata["type"] = describe_type(signature)
-        self._check_function_body(node, signature, "<lambda>")
         return signature
 
     def _build_signature(
@@ -743,6 +793,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
         *,
         default_return: Type | None = None,
         forced_return: Type | None = None,
+        infer_return: bool = False,
     ) -> FunctionType:
         param_types: list[Type] = []
         for param in node.params:
@@ -769,6 +820,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
         elif node.ret_type is None:
             if default_return is not None:
                 return_type = default_return
+            elif infer_return:
+                # Placeholder: the body is checked in infer mode and the real
+                # return type is computed afterwards (_check_function_body).
+                return_type = UNKNOWN
             else:
                 self._error(
                     f"Function '{display_name}' requires a return type annotation in oort-core.",
@@ -786,7 +841,15 @@ class CoreTypeChecker(ASTVisitor[Type]):
         display_name: str,
         *,
         this_type: ClassType | None = None,
-    ) -> None:
+        infer_return: bool = False,
+    ) -> FunctionType:
+        """Check a function body; return its (possibly inferred) signature.
+
+        With ``infer_return`` the body is checked in infer mode and the return
+        type is computed from the collected ``return`` types joined with the
+        fall-through body type. Otherwise the body is checked against the
+        declared return type and the signature is returned unchanged.
+        """
         previous_function = self.current_function
         previous_name = self.current_function_name
         previous_module_level = self.module_level
@@ -794,6 +857,8 @@ class CoreTypeChecker(ASTVisitor[Type]):
         self.current_function_name = display_name
         self.module_level = False
         self.scopes.append({})
+        frame = _ReturnInfer(display_name, node) if infer_return else None
+        self._infer_stack.append(frame)
         try:
             if this_type is not None:
                 self.declare(
@@ -810,28 +875,82 @@ class CoreTypeChecker(ASTVisitor[Type]):
                     position=param.position,
                 )
             start_errors = self.error_handler.error_count
-            body_type = self._check_statements_expected(node.body.statements, signature.ret)
+            expected = UNKNOWN if infer_return else signature.ret
+            body_type = self._check_statements_expected(node.body.statements, expected)
         finally:
             self.scopes.pop()
+            self._infer_stack.pop()
             self.current_function = previous_function
             self.current_function_name = previous_name
             self.module_level = previous_module_level
 
-        if (
-            not isinstance(body_type, NeverType)
-            and not is_assignable(signature.ret, body_type)
-            and self.error_handler.error_count == start_errors
-        ):
+        if not infer_return:
+            if (
+                not isinstance(body_type, NeverType)
+                and not is_assignable(signature.ret, body_type)
+                and self.error_handler.error_count == start_errors
+            ):
+                self._error(
+                    f"Function '{display_name}' is declared to return "
+                    f"{describe_type(signature.ret)}, but its body has type "
+                    f"{describe_type(body_type)}.",
+                    node.position,
+                )
+            return signature
+
+        assert frame is not None
+        had_errors = self.error_handler.error_count != start_errors
+        if frame.recursive:
+            # A self-recursive call saw the placeholder return type, so the
+            # body cannot pin it down; require an explicit annotation (as
+            # Kotlin/Scala do for recursive functions).
+            if not had_errors:
+                self._error(
+                    f"Recursive function '{display_name}' requires a return type "
+                    f"annotation in oort-core; add '-> T'.",
+                    node.name_position,
+                )
+            return FunctionType(signature.params, UNKNOWN)
+
+        candidates = list(frame.returns)
+        if not isinstance(body_type, NeverType):
+            candidates.append(body_type)
+        inferred: Type = NEVER
+        conflict: tuple[Type, Type] | None = None
+        for candidate in candidates:
+            joined = join_types(inferred, candidate)
+            if joined is None:
+                conflict = (inferred, candidate)
+                break
+            inferred = joined
+        if had_errors:
+            return FunctionType(signature.params, UNKNOWN)
+        if conflict is not None:
             self._error(
-                f"Function '{display_name}' is declared to return "
-                f"{describe_type(signature.ret)}, but its body has type "
-                f"{describe_type(body_type)}.",
+                f"The return types of function '{display_name}' are incompatible: "
+                f"{describe_type(conflict[0])} and {describe_type(conflict[1])}.",
                 node.position,
             )
+            return FunctionType(signature.params, UNKNOWN)
+        if isinstance(inferred, UnknownType):
+            return FunctionType(signature.params, UNKNOWN)
+        if isinstance(inferred, NeverType):
+            inferred = UNIT
+        return FunctionType(signature.params, inferred)
 
     def visit_return_expr(self, node: nodes.ReturnExpr) -> Type:
         if self.current_function is None:
             self._error("Return outside function.", node.position)
+            return NEVER
+
+        frame = self._infer_stack[-1] if self._infer_stack else None
+        if frame is not None:
+            # The current function's return type is being inferred: collect
+            # this return's type instead of checking it against a declaration.
+            if node.value is None:
+                frame.returns.append(UNIT)
+            else:
+                frame.returns.append(node.value.accept(self))
             return NEVER
 
         return_type = self.current_function.ret
@@ -883,6 +1002,17 @@ class CoreTypeChecker(ASTVisitor[Type]):
             return self._record(node, UNKNOWN)
         return self._record(node, info.type)
 
+    def _mark_recursive_call(self, name: str) -> None:
+        """Flag inference frames whose function is called from its own body.
+
+        Only named functions can be called by name, so this detects the
+        self-recursion that return-type inference cannot resolve (forward and
+        mutual recursion are already rejected by source-order visibility).
+        """
+        for frame in self._infer_stack:
+            if frame is not None and frame.name == name:
+                frame.recursive = True
+
     def visit_call(self, node: nodes.Call) -> Type:
         if node.infix:
             return self._unsupported(node, "Infix calls are not supported in oort-core yet.")
@@ -904,6 +1034,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 return self._record(node, UNKNOWN)
             signature = info.type
             display_name = name
+            self._mark_recursive_call(name)
         else:
             callee_type = node.func.accept(self)
             if isinstance(callee_type, UnknownType):

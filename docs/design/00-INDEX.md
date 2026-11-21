@@ -23,6 +23,7 @@
 | [11-latest-research-2025.md](11-latest-research-2025.md) | 2025–2026 年语言设计前沿调研 |
 | [12-host-boundary.md](12-host-boundary.md) | 宿主边界、HostBridge、原生调用模式与 Rust 迁移 |
 | [13-hir-design.md](13-hir-design.md) | 当前 HIR / 32 位字节码 / 寄存器 VM 实现：指令、子集范围、调用约定与下一步 |
+| [14-core-typechecking.md](14-core-typechecking.md) | oort-core 已实现的双向检查与局部推断算法（含函数返回推断）；03 是远期目标 |
 
 ## 使用注意
 
@@ -31,6 +32,7 @@
 1. HIR、字节码编码与寄存器 VM 第一切片已实现（13）；02 是长期设计目标，
    部分 opcode/架构尚未实现。
 2. 宏系统（05）与 `comptime` 尚未实现，属于最晚期特性。
-3. 类型系统（03）描述的是目标设计；当前动态方言不检查类型。
+3. 类型系统（03）描述的是目标设计；动态方言 `oort-object` 不检查类型，
+   静态方言 `oort-core` 的已实现检查/推断算法见 [14](14-core-typechecking.md)。
 4. 文档中的示例使用 Oort 注释语法 `#`；保留的 `//` 只出现在 TypeScript 等对比代码中。
 5. 部分性能/社区调研数据有时效性，引用前请复核。

@@ -216,6 +216,20 @@ val s = "a" + "b"
     assert "type='String'" in out
 
 
+def test_core_astm_shows_inferred_function_return_types(monkeypatch, capsys):
+    source = """\
+#lang oort-core
+def add(a: Int, b: Int) { a + b }
+def show(n: Int) { print(n) }
+val inc = do(x: Int) { x + 1 }
+"""
+    assert _run_cli(monkeypatch, ["-t", "astm", "-c", source]) == 0
+    out = capsys.readouterr().out
+    assert "type='(Int, Int) -> Int'" in out
+    assert "type='(Int) -> Unit'" in out
+    assert "type='(Int) -> Int'" in out
+
+
 def test_core_module_import_from_file(monkeypatch, capsys, tmp_path):
     (tmp_path / "lib.ort").write_text(
         "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",

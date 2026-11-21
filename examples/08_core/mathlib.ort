@@ -1,9 +1,10 @@
 #lang oort-core
 
 # 被 08_02 导入的 core 模块：导出 val base 与 add/square。
+# add/square 省略返回标注，由函数体推断（跨模块导出推断类型）。
 
 val base: Int = 7
 
-def add(a: Int, b: Int) -> Int { a + b }
+def add(a: Int, b: Int) { a + b }
 
-def square(n: Int) -> Int { n * n }
+def square(n: Int) { n * n }

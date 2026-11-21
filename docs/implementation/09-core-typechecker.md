@@ -63,8 +63,10 @@ source
 
 - 声明：`val`/`var` 单目标；标注优先，否则局部推断；`Unit` 不能作为变量类型。
 - 赋值：只允许 `=` 到 `var`；参数与函数不可变。
-- 函数：顶层、标注必填、位置参数、精确元数、所有路径返回；lambda 必须显式
-  参数列表与返回类型；函数值可推断、赋值、传参、返回与调用。
+- 函数：顶层、参数标注必填、位置参数、精确元数、所有路径返回；**返回类型可
+  省略**（顶层 def 与 lambda 从体推断，自递归仍需标注；类方法返回仍必填）；
+  lambda 必须显式参数列表；函数值可推断、赋值、传参、返回与调用。算法见
+  [design 14](../design/14-core-typechecking.md)。
 - 函数类型：注解中的 `Int -> Bool` / `(Int, Bool) -> Int` / `() -> Unit` 解析为
   `FunctionType`；`is_assignable` 对函数类型逐参数/返回递归比较，`Unknown`
   参与错误恢复。`->` 在 Pratt 表中为右结合（`Int -> Int -> Int` =
@@ -88,7 +90,12 @@ source
 - `print`：特殊内建，返回 Unit；用户绑定优先；ADT 值可打印，函数值不可打印。
 - expected-type 传播：标注、赋值、返回、函数体与调用实参的期望类型会下推到
   `if` 分支、块最后表达式和 `match` arm；不匹配时定位到具体分支/实参。
-- 尚未实现函数返回类型推断（签名仍必须显式标注）。
+- 函数返回推断：缺标注时以 `Unknown` 占位建签名，`_infer_stack` 压
+  `_ReturnInfer` 帧收集 `return` 类型，查体后与尾表达式类型 `join_types` 合并，
+  重建 frozen `FunctionType` 并回填 `NameInfo.type`/`metadata`；`visit_call`
+  经 `_mark_recursive_call` 检测自递归（需显式标注）。lambda 的期望返回类型经
+  `_build_signature` 的 `default_return` 挂钩下推。类方法返回推断未实现。
+  算法与跨语言对比见 [design 14](../design/14-core-typechecking.md)。
 
 ## ADT 与 `match`
 

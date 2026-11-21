@@ -59,3 +59,42 @@ def test_function_value_in_adt_payload(run_source):
         )
     )
     assert result.stdout == "6\n"
+
+
+def test_inferred_return_function_exported_from_module(tmp_path, run_file):
+    # The exported function has no return annotation; its inferred type must
+    # propagate across the module boundary.
+    (tmp_path / "lib.ort").write_text(
+        "#lang oort-core\ndef double(n: Int) { n * 2 }\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        '#lang oort-core\nfrom "./lib" import double\nprint(double(21))\n',
+        encoding="utf-8",
+    )
+    assert run_file(main).stdout == "42\n"
+
+
+def test_inferred_return_lambda_exported_from_module(tmp_path, run_file):
+    (tmp_path / "lib.ort").write_text(
+        "#lang oort-core\nval inc = do(x: Int) { x + 1 }\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        '#lang oort-core\nfrom "./lib" import inc\nprint(inc(4))\n',
+        encoding="utf-8",
+    )
+    assert run_file(main).stdout == "5\n"
+
+
+def test_inferred_return_function_execution(run_source):
+    result = run_source(
+        core(
+            "def add(a: Int, b: Int) { a + b }\n"
+            "val inc = do(x: Int) { x + 1 }\n"
+            "print(add(2, 3), inc(10))\n"
+        )
+    )
+    assert result.stdout == "5 11\n"
