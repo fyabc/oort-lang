@@ -16,7 +16,7 @@ benchmark 工作流维护。
 
 ```bash
 uv run --frozen pytest benchmarks/ -q --benchmark-json=benchmark.json
-uv run --frozen python benchmarks/reference/run.py --repeat 3 --runtime oort --runtime oort-vm --runtime python --runtime node --runtime 'ruby=<path-to-ruby>' --runtime 'lua=<path-to-lua>' --json > refvm.json
+uv run --frozen python benchmarks/reference/run.py --repeat 5 --runtime oort --runtime oort-vm --runtime oort-rust --runtime python --runtime node --runtime 'ruby=<path-to-ruby>' --runtime 'lua=<path-to-lua>' --json > refvm.json
 uv run --frozen python benchmarks/report.py --benchmark benchmark.json --reference refvm.json
 ```
 
@@ -112,14 +112,15 @@ uv run --frozen python benchmarks/report.py --benchmark benchmark.json --referen
 
 | 运行时 | fib(20) | loop 20000 | methods 5000 | 启动 |
 |---|---:|---:|---:|---:|
-| Oort 树遍历 0.4.0 | 969.0 ms | 315.8 ms | 169.3 ms | 487.1 ms |
-| Oort VM 0.4.0 | 324.2 ms | 128.0 ms | 127.7 ms | 525.9 ms |
-| Python 3.12.12 | 1.29 ms | 1.33 ms | 0.580 ms | 44.95 ms |
-| Node 24.15.0 | 0.067 ms | 0.007 ms | 0.002 ms | 51.57 ms |
-| Ruby 4.0.10 | 0.559 ms | 0.323 ms | 0.273 ms | 151.3 ms |
-| Lua 5.4.8 | 0.394 ms | 0.075 ms | 0.172 ms | 6.76 ms |
+| Oort 树遍历 0.4.0 | 928.5 ms | 298.7 ms | 167.2 ms | 502.2 ms |
+| Oort VM 0.4.0 | 334.4 ms | 131.7 ms | 121.0 ms | 553.3 ms |
+| Oort Rust VM (spike) | 5.37 ms | 1.10 ms | 1.91 ms | 89.80 ms |
+| Python 3.12.12 | 1.34 ms | 1.33 ms | 0.574 ms | 42.45 ms |
+| Node 24.15.0 | 0.065 ms | 0.006 ms | 0.002 ms | 50.54 ms |
+| Ruby 4.0.10 | 0.567 ms | 0.324 ms | 0.269 ms | 145.0 ms |
+| Lua 5.4.8 | 0.405 ms | 0.075 ms | 0.159 ms | 6.80 ms |
 
-当前 Oort（解释器及 VM）约为 CPython 的 **96–750 倍**耗时。Node 的优化 JIT 可能折叠简单循环/字段更新，其数字只作下限；Ruby/Lua 作语境参考。
+当前 Oort（解释器及 VM）约为 CPython 的 **99–691 倍**耗时。Node 的优化 JIT 可能折叠简单循环/字段更新，其数字只作下限；Ruby/Lua 作语境参考。
 
 详细运行方式与 Node/JIT、Ruby/Lua 的 caveat 见
 [reference/README.md](reference/README.md)。
@@ -140,7 +141,7 @@ uv run --frozen python benchmarks/report.py --benchmark benchmark.json --referen
 ## 5. 维护规则
 
 1. 在安静机器上运行上面的三条命令，确认 benchmark 结果校验通过；
-2. reference 必须跑**完整运行时集**（oort/oort-vm/python/node/ruby/lua）；跨语言表与头部生成命令都按输入 JSON 的运行时生成，漏跑会让对应行消失；
+2. reference 必须跑**完整运行时集**（oort/oort-vm/oort-rust/python/node/ruby/lua）；跨语言表与头部生成命令都按输入 JSON 的运行时生成，漏跑会让对应行消失。oort-rust 是 spike（需先构建 rust/），startup 含 Python 包装器开销、不作原生对比；
 3. 只更新 `benchmarks/history.json` 中的历史里程碑元数据；
 4. 当前表格由 `report.py` 生成，不要手改 RESULTS 数字；
 5. 若结论跨过目标线，只在 design08/roadmap 写一句结论并链接本文件；

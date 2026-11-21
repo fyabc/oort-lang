@@ -15,11 +15,11 @@ runner 里**固定 `-t eval`**（CLI 默认已是 VM，不固定就会与 `oort-
 
 runner 会在 `PATH` 中查找 `node`、`ruby`、`lua`；Python 与 Oort 使用当前
 虚拟环境。也可以用 `--runtime` 显式指定可执行文件。**务必跑完整运行时集**
-（oort/oort-vm/python/node/ruby/lua），否则 RESULTS 跨语言表会缺行：
+（oort/oort-vm/oort-rust/python/node/ruby/lua），否则 RESULTS 跨语言表会缺行：
 
 ```bash
 uv run --frozen python benchmarks/reference/run.py \
-  --runtime oort --runtime oort-vm --runtime python --runtime node \
+  --runtime oort --runtime oort-vm --runtime oort-rust --runtime python --runtime node \
   --runtime 'ruby=<path-to-ruby>' \
   --runtime 'lua=<path-to-lua>'
 ```
@@ -30,6 +30,24 @@ uv run --frozen python benchmarks/reference/run.py \
 - Lua 5.4.8：`<path-to-lua>`
 - Node 24.15.0：`<path-to-node>`
 - Python 3.12：仓库虚拟环境
+- Rust 1.100：`<cargo-bin-dir>`（oort-rust spike，见下）
+
+### oort-rust（Rust VM spike）
+
+`oort-rust` 是消费 `.obc` 字节码的 Rust 寄存器 VM 原型（`rust/oort-vm`，spec 13），
+**不是正式后端**，数字单列作参考。runner 通过包装器 `oort_rust.py` 运行它：把
+`.ort` 编译成 `.obc`（按 mtime 缓存到 `.obc-cache/`）再交 Rust VM 执行。需先构建：
+
+```bash
+cargo build --release --manifest-path rust/Cargo.toml   # 工具链在 <rust-toolchain-dir>
+```
+
+二进制位置可用 `OORT_RUST_BIN` 覆盖（默认 `rust/target/release/oort-vm.exe`）。
+
+**caveat**：`exec_ms`（程序内计时）是公平对比，已排除启动/编译。但 `oort-rust`
+的 **startup 含 Python 包装器进程开销**（编译缓存检查 + Windows 进程创建），不是
+纯 Rust VM 启动（后者仅几 ms），不能与原生运行时的 startup 直接比。spike 未优化
+（无内联缓存、`Rc<RefCell>` 开销、range 物化 list），exec 仍有提升空间。
 
 ## 工作负载
 

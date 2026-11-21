@@ -229,6 +229,7 @@ def _reference_section(reference: dict[str, Any]) -> list[str]:
         name = {
             "oort": "Oort 树遍历",
             "oort-vm": "Oort VM",
+            "oort-rust": "Oort Rust VM (spike)",
             "python": "Python",
             "node": "Node",
             "ruby": "Ruby",
@@ -413,8 +414,9 @@ def render(
             "## 5. 维护规则",
             "",
             "1. 在安静机器上运行上面的三条命令，确认 benchmark 结果校验通过；",
-            "2. reference 必须跑**完整运行时集**（oort/oort-vm/python/node/ruby/lua）；"
-            "跨语言表与头部生成命令都按输入 JSON 的运行时生成，漏跑会让对应行消失；",
+            "2. reference 必须跑**完整运行时集**（oort/oort-vm/oort-rust/python/node/ruby/lua）；"
+            "跨语言表与头部生成命令都按输入 JSON 的运行时生成，漏跑会让对应行消失。"
+            "oort-rust 是 spike（需先构建 rust/），startup 含 Python 包装器开销、不作原生对比；",
             "3. 只更新 `benchmarks/history.json` 中的历史里程碑元数据；",
             "4. 当前表格由 `report.py` 生成，不要手改 RESULTS 数字；",
             "5. 若结论跨过目标线，只在 design08/roadmap 写一句结论并链接本文件；",

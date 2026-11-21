@@ -31,6 +31,7 @@ WORKLOADS = {
 EXTENSIONS = {
     "oort": ".ort",
     "oort-vm": ".ort",
+    "oort-rust": ".ort",
     "python": ".py",
     "node": ".js",
     "ruby": ".rb",
@@ -40,6 +41,7 @@ EXTENSIONS = {
 VERSION_ARGS = {
     "oort": ["--version"],
     "oort-vm": ["--version"],
+    "oort-rust": ["--version"],
     "python": ["--version"],
     "node": ["--version"],
     "ruby": ["--version"],
@@ -59,6 +61,10 @@ def runtime_command(name: str, overrides: dict[str, str]) -> list[str] | None:
         return [sys.executable, "-m", "oort_lang", "-t", "eval"]
     if name == "oort-vm":
         return [sys.executable, "-m", "oort_lang", "-t", "vm"]
+    if name == "oort-rust":
+        # Wrapper compiles .ort -> .obc (cached) and runs the Rust VM spike.
+        wrapper = Path(__file__).resolve().parent / "oort_rust.py"
+        return [sys.executable, str(wrapper)]
     if name == "python":
         return [sys.executable]
     if name in overrides:
