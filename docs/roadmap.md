@@ -41,8 +41,12 @@ ANTLR 语法与 Pratt 表达式解析、AST、名称解析、树遍历解释器�
 已完成：
 
 - 方言契约与按方言构造的 Pratt 表；
-- 动态对象模型：开放字段袋、方法遮蔽检查、身份相等/哈希；
+- 动态对象模型：开放字段袋、方法遮蔽检查；用户类默认身份相等/哈希
+  （容器值/键协议见 OP 0016）；
 - 运算符重载（用户类与内建类型共用方法表）；
+- 统一值/键相等协议：容器相等与成员测试递归使用 Oort 值相等，Dict/Set
+  使用键协议，宿主投影不再定义语言相等
+  （[OP 0016](proposals/0016-equality-protocol.md)）；
 - 表达式/表面语法清理（[OP 0009](proposals/0009-expression-and-surface-cleanup.md)）；
 - 小型 lambda 匿名参数（[OP 0010](proposals/0010-token-responsibilities-and-anonymous-parameters.md)）；
 - 完整参数绑定（[OP 0011](proposals/0011-parameter-binding.md)）；

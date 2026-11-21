@@ -42,7 +42,7 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
   作用域生效，导入激活，成员/字段/类内运算符优先
 - 运算符重载：`def operator "+"(other)` 等方法，内建类型使用同一套调度
 - 行首 `.` 方法链续行；`Bool` 与 `Int` 语义分离
-- 内建：`print`、`clock`、`type`、`super`、`len`、`range`、`str`、`repr`、
+- 内建：`print`、`clock`、`type`、`len`、`range`、`str`、`repr`、
   `int`、`float`、`bool`；集合助手 `map`/`filter`/`sorted`/`zip`/`enumerate`
 - 标准库：`math`（常量与数学函数）、`string`（切分/连接/大小写/查找/替换/
   `ord`/`chr`）、`io`（UTF-8 整文件读写）与 `os`（参数、脚本路径、退出码）

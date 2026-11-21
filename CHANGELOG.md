@@ -38,6 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- List/Tuple ordering is now recursive Oort comparison (elements are compared
+  with Oort `==`/`<`, including user operators) instead of Python host
+  comparison; Dict no longer supports ordering, and Set ordering uses the key
+  protocol. Non-orderable elements such as `Bool` now report an error.
+- List/Tuple `+` and `*` are value-level operators that build a new sequence
+  sharing element objects, instead of a HOST round-trip copy.
+- Dunder methods other than `__init__` and `__iter__` are rejected in class
+  bodies (`Special method '<name>' is not supported.`) instead of being stored
+  but never dispatched; the unused `__op_*__` fields and the shadowed `super`
+  builtin were removed.
 - `enum` and `match` are now hard keywords, and `=>` is a reserved
   `FATARROW` token (not a user operator) used for `match` arms; existing
   identifiers named `enum`/`match` and user operators spelled `=>` are no
@@ -47,6 +57,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   trampolines land.
 - The REPL stays `oort-object`-only and now rejects `#lang` directives with a
   clear message instead of silently treating the submission as dynamic code.
+
+### Fixed
+
+- Errors raised while comparing or testing membership inside built-in
+  containers now report the user expression's source position instead of
+  `<builtin>`.
+- `$0`/`$1` inside a named `def` without an explicit parameter list is no
+  longer silently bound to an enclosing lambda's anonymous parameter.
+- A `KeyboardInterrupt` while initializing an imported module (Ctrl-C in the
+  REPL) discards the failed record so the import can be retried.
+- `zip` documentation now states that it eagerly drains every input and hangs
+  on infinite iterables.
+- `OortIterator.take_remaining` always returns a copy of its backing list.
+- The redundant `NEWLINE*` before `.` in the grammar was removed; leading-dot
+  continuation is still handled by the token post-processor.
 
 ## [0.3.1] - 2026-11-20
 

@@ -85,7 +85,8 @@ print(fs[0](), fs[1]())   # 1 2
   回调注入编译（`Compiler.compile_unit`）、执行（`ASTInterpreter.run_module`）
   与环境/模块工厂，不依赖 driver，满足 import-linter 的分层约束。
 - 缓存键是 `Path.resolve()`；记录状态为 `LOADING → LOADED / FAILED`。
-  重新进入 `LOADING` 记录即报告循环导入，链中包含入口文件。
+  重新进入 `LOADING` 记录即报告循环导入，链中包含入口文件。初始化抛错时标记
+  `FAILED`；`KeyboardInterrupt`（REPL 中 Ctrl-C）则丢弃记录，便于重试。
 - 顶层 import 在 `visit_module` 中被提升到其他语句之前执行（ES/Go 式）。
 - `OortModule` 是 native 值，`get` 只读模块根环境的 `values`，因此导入名
   自动再导出，而内建名与写入 (`m.x = ...`) 都不可见。
@@ -121,19 +122,19 @@ print(fs[0](), fs[1]())   # 1 2
 
 - 类型对象：`Object`、`Type`、`Int`、`Float`、`String`、`Bool`、`Null`、
   `List`、`Tuple`、`Dict`、`Set`、`Function`、`Method`。
-- 函数：`print`、`clock`、`type`、`super`、`len`、`range`、`str`、`repr`、
+- 函数：`print`、`clock`、`type`、`len`、`range`、`str`、`repr`、
   `int`、`float`、`bool`；集合助手 `map`、`filter`、`zip`、`enumerate`、`sorted`。
 
 原生函数通过 `NativeMode` 决定参数/结果如何跨越宿主边界：
 
 - `HOST`：参数经 `HostBridge.to_host` 投影，结果再装箱（运算符、`math`、
   `string`）；
-- `VALUE`：参数保持 Oort 对象（`print`、`type`、`super`、`str`、`repr`、
-  `len`）；
+- `VALUE`：参数保持 Oort 对象（`print`、`type`、`str`、`repr`、`len`）；
 - `CONTEXT`：额外传入 `NativeContext`，可调用 Oort lambda、读取 truthiness、
   迭代容器并应用运算符（集合助手）。
 
-`str` / `repr` 使用对象自己的 `__str__` / `__repr__`，容器因此输出 Oort
+`str` / `repr` 调用宿主 Python 的 `str()` / `repr()`，即各运行时包装类自己的
+格式化；用户类不能定义 `__str__` / `__repr__`（见规范）。容器因此输出 Oort
 字面量形式。`len` 直接在 Oort 容器上取长度，避免深投影。
 
 ## 未实现功能的处理

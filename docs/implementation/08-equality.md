@@ -16,7 +16,18 @@
   都走正常分派；
 - List/Tuple/Dict 的递归使用 `(id(left), id(right))` memo；已访问对象对
   直接返回真，支持循环容器；
-- `NativeContext.equal` 暴露该操作给 CONTEXT 原生运算符。
+- `NativeContext.equal` 暴露该操作给 CONTEXT 原生运算符；
+- 递归会携带调用点的 `SourcePosition`，容器内用户 `==` 的错误不再指向
+  `<builtin>`。
+
+## 序比较
+
+- List/Tuple 的 `< <= > >=` 是 CONTEXT 运算符：先逐元素用值相等判断，
+  再对第一个不同元素调用 Oort `<`（任一方向），返回字典序结果；长度
+  作为最后决胜。
+- Set 的序比较是 VALUE 运算符，底层 Python set 的子集/超集关系即键协议。
+- Dict 不安装序比较。
+- `+` / `*` 是 VALUE 运算符：拼接只复制外层序列，重复共享元素对象。
 
 ## 键协议
 
@@ -49,3 +60,6 @@ Dict 键与 Set 元素继续使用底层 Oort 对象容器：
 - 用户 `==` 在容器值中生效、键仍按身份；
 - List vs Tuple 类型敏感；
 - 循环容器对象对 memo。
+
+`tests/unit/runtime/test_ordering.py` 覆盖容器字典序、Set 子集、Dict 拒绝
+排序、错误位置与 `+`/`*` 浅语义。

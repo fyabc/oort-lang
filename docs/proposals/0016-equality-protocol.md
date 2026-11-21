@@ -117,7 +117,9 @@ Dict 键、Set 元素以及 Tuple 的键哈希使用**键协议**，与值 `==` 
 ### D5：兼容性与版本
 
 - 这是语义修正，会改变可观察行为（嵌套 Bool/Int、Dict/Set 相等）。
-  按 0.x 规则放在下一个 minor（0.4.0）发布，并在 CHANGELOG 标注。
+- 实际随 **0.3.1** 发布：该版本尚未有外部依赖者，按玩具语言 0.x 规则将
+  修正直接并入下一个发布，并在 CHANGELOG 的 0.3.1 条目标注。原计划的
+  “下一个 minor 0.4.0” 不再适用。
 - 现有程序若依赖 HOST 投影相等，需要按新协议调整。
 - `is`/`!is` 仍是身份比较，不参与本协议。
 
@@ -132,6 +134,10 @@ Dict 键、Set 元素以及 Tuple 的键哈希使用**键协议**，与值 `==` 
   用户实例身份）。
 - 测试：`tests/unit/runtime/test_equality.py`，覆盖嵌套 Bool/Int、Int/Float、
   Dict/Set 键语义、集合代数、用户 `==`、类型不敏感、循环容器。
+- 后续补齐序比较（同一协议）：List/Tuple `< <= > >=` 改为 CONTEXT 递归
+  Oort 比较，Set 按键协议做子集/超集比较，Dict 移除排序；`+`/`*` 改为
+  VALUE 浅拼接/重复。测试见 `tests/unit/runtime/test_ordering.py`，规范见
+  spec/02“容器排序”。
 - 示例/集合助手回归全部通过。
 
 ## 替代方案

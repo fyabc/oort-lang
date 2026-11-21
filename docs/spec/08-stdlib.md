@@ -34,7 +34,8 @@ print(filter([1, 2, 3]) do(x): x > 1)    # [2, 3]
 - `map` / `filter` 对 List、Tuple、Set、Dict（迭代键）、String（迭代字符）
   操作，也接受实现了 `__iter__` 的有限用户对象；助手会立即 drain 成 List。
   无限迭代器会让助手一直运行；只有 `for` 是流式。
-- `zip` 在最短输入结束时停止；无参数返回空 List。
+- `zip` 先把每个输入完整 drain 成 List，再按最短输入截断；无参数返回空
+  List。因此**无限输入会让 `zip` 挂起**（与 `map`/`filter` 一样是急切助手）。
 - `enumerate` 的 `start` 必须是 Int，可为负数。
 - `sorted`：
   - 返回新 List，不修改输入；
