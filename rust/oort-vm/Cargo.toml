@@ -1,0 +1,12 @@
+[package]
+name = "oort-vm"
+version = "0.0.1"
+edition = "2021"
+description = "Spike register VM consuming Oort type-erased bytecode (.obc, spec 13)"
+publish = false
+
+[[bin]]
+name = "oort-vm"
+path = "src/main.rs"
+
+[dependencies]
