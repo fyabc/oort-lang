@@ -6,18 +6,20 @@
 
 主对比始终是 **Oort 树遍历解释器 vs Oort VM**（同程序、同结果、同机）。
 跨语言套件同时运行这两个 Oort 后端；输出中的 `vs Oort eval` 以树遍历解释器
-为基准，因此 Oort VM 行的该值就是 VM 相对解释器的加速。
+为基准，因此 Oort VM 行的该值就是 VM 相对解释器的加速。`oort` 运行时在
+runner 里**固定 `-t eval`**（CLI 默认已是 VM，不固定就会与 `oort-vm` 重合）。
 预算与目标见 `docs/design/08-performance-benchmarking.md`；结果见
 [../RESULTS.md](../RESULTS.md)。
 
 ## 运行时
 
 runner 会在 `PATH` 中查找 `node`、`ruby`、`lua`；Python 与 Oort 使用当前
-虚拟环境。也可以用 `--runtime` 显式指定可执行文件：
+虚拟环境。也可以用 `--runtime` 显式指定可执行文件。**务必跑完整运行时集**
+（oort/oort-vm/python/node/ruby/lua），否则 RESULTS 跨语言表会缺行：
 
 ```bash
 uv run --frozen python benchmarks/reference/run.py \
-  --runtime oort --runtime python --runtime node \
+  --runtime oort --runtime oort-vm --runtime python --runtime node \
   --runtime 'ruby=<path-to-ruby>' \
   --runtime 'lua=<path-to-lua>'
 ```

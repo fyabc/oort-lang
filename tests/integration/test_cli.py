@@ -18,10 +18,15 @@ def _run_cli(monkeypatch, argv: list[str]) -> int:
     return exc_info.value.code
 
 
-def test_cmd_uses_eval_by_default(monkeypatch, capsys):
+def test_cmd_uses_vm_by_default(monkeypatch, capsys):
     assert _run_cli(monkeypatch, ["-c", "print(42)"]) == 0
     captured = capsys.readouterr()
     assert captured.out == "42\n"
+
+
+def test_eval_target_still_available_as_fallback(monkeypatch, capsys):
+    assert _run_cli(monkeypatch, ["-t", "eval", "-c", "print(42)"]) == 0
+    assert capsys.readouterr().out == "42\n"
 
 
 def test_file_input(monkeypatch, capsys, tmp_path):
@@ -360,8 +365,11 @@ def test_core_enum_match_astm(monkeypatch, capsys):
         ("print(None)", "Name 'None' is not defined (did you mean 'null'?)"),
         ("print(True)", "Name 'True' is not defined (did you mean 'true'?)"),
         ("val x = self", "Name 'self' is not defined (did you mean 'this'?)"),
-        ("print(1 && 2)", "does not support operator '&&' (did you mean 'and'?)"),
-        ("print(!true)", "does not support operator '!' (did you mean 'not'?)"),
+        # Operators: the VM rejects these at compile time (subset boundary)
+        # while the interpreter reports them at runtime, so the prefixes
+        # differ; assert the did-you-mean suffix common to both backends.
+        ("print(1 && 2)", "(did you mean 'and'?)"),
+        ("print(!true)", "(did you mean 'not'?)"),
     ],
 )
 def test_habit_name_and_operator_suggestions(monkeypatch, caplog, source, message):

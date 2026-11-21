@@ -8,6 +8,13 @@
 
 ### 变更
 
+- **默认执行后端切换为寄存器 VM**（`-t vm`）：文件与 `-c` 执行默认走共享
+  HIR/32 位字节码的 VM；`-t eval` 树遍历解释器保留为回退选项，REPL 仍用
+  eval。切换依据 design08 §6.2 门禁：差分一致性通过，fib(15) 2.92×、
+  loop10000 2.05× 稳定 ≥2×（以 fib/loop 为口径）；method dispatch 1.44×
+  为已知弱项，待调用点缓存继续优化。启动增加约 25 ms 一次性模块 import
+  成本。注意：VM 下部分子集外构造在**编译期**拒绝（解释器在运行期），
+  诊断措辞/时机略有差异，见 [spec 06](docs/spec/06-conformance.md)。
 - 浮点字面量要求整数部分（OP 0021）：`PointFloat` 收紧为
   `Digit+ '.' Digit+`，`.5` 不再合法（写作 `0.5`）；与既有 `1.` 禁用
   对称。解析失败时附带 `Leading-dot floats are not supported; did you
@@ -29,10 +36,10 @@
     `Did you mean a Set/Dict literal …?` 警告（定向 did-you-mean），
     指向 Oort 的 `{. … .}` / `{: … :}` 定界符。
   - Python 习惯建议：`None`/`True`/`False`/`self` 的名称错误与
-    `&&`/`||`/`!` 的运算符错误附带 `(did you mean …?)`（解释器与 VM
-    共享）；`val d = {}`（空代码块陷阱）、行首 `//`（注释习惯）、
-    `i++`（无后缀运算符）、`lambda`、条件内 `=` 附带 SyntaxWarning
-    提示。
+    `&&`/`||`/`!` 的运算符错误附带 `(did you mean …?)`（解释器运行期与
+    VM 编译期拒绝均附带）；`val d = {}`（空代码块陷阱）、行首 `//`
+    （注释习惯）、`i++`（无后缀运算符）、`lambda`、条件内 `=` 附带
+    SyntaxWarning 提示。
   - 新增 `--plain` 选项：诊断输出不走 rich 控制台、每条记录一行，
     避免折行拆断消息，便于管道处理。
 

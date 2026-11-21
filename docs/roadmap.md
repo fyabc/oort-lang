@@ -95,10 +95,11 @@ P1 已完成。后续打磨（P2）：
 已落地（线性寄存器指令、动态子集 lowering、集合/下标/切片/属性、`-t bc`/`-t vm`、
 寄存器 VM、lambda/闭包、一等函数值、动态/静态类、模块导入、core 的
 ADT/match 与完整参数绑定）。`examples/08_core` 与 `examples/` 已全部在 VM 下运行，包括循环内创建闭包、
-元类/`super`、扩展方法与扩展运算符；当前 VM 已覆盖主要宏基准，但 loop 仍接近
-2× 目标、完整子集相对早期切片有回退；最新数字见
+元类/`super`、扩展方法与扩展运算符。**默认后端已切换为 VM**（fib 2.92×、
+loop 2.05× 稳定 ≥2×，以 fib/loop 为门禁口径；`-t eval` 保留为回退，REPL 仍用
+eval）；method dispatch 1.44× 为已知弱项，待调用点缓存。最新数字见
 [`benchmarks/RESULTS.md`](https://github.com/fyabc/oort-lang/blob/main/benchmarks/RESULTS.md)。
-接下来继续补子集、扩大差分/错误路径覆盖，再评估默认后端切换与优化。
+接下来继续 VM 性能优化（调用点/属性缓存、寄存器复用、帧内联）与补齐剩余子集。
 
 ### 阶段 4：`oort-systems` / `oort-meta` 与 DSL 开关（按需）
 

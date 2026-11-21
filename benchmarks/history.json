@@ -34,5 +34,14 @@
     "loop_ms": 69.07,
     "loop_speedup": 2.21,
     "note": "STORE_G 快路径、惰性环境日志、循环不变量提升；loop 稳定过 2×（methods 1.35× 待调用点缓存）"
+  },
+  {
+    "date": "2026-11-22",
+    "status": "属性路径优化 + 默认切 VM",
+    "fib_ms": 31.29,
+    "fib_speedup": 2.92,
+    "loop_ms": 68.92,
+    "loop_speedup": 2.05,
+    "note": "get 去冗余 import/Type 检查、for_class 记忆化、动态字段直写、LOAD_K 整数快路径；methods 1.44×；默认后端切 VM（fib/loop 口径）"
   }
 ]

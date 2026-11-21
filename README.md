@@ -16,10 +16,11 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 
 ## 当前状态
 
-默认执行路径是**树遍历解释器**（动态类型）；共享 HIR 与 32 位字节码的
-**`-t vm` 寄存器 VM** 也已落地，`examples/` 全部示例都能在 VM 下运行。
-语法前端（ANTLR + Pratt）解析的语言超集比运行时更大；**未实现的特性会在语义
-分析阶段显式报错**，不会静默产生错误结果。完整的实现/拒绝清单见
+默认执行路径是共享 HIR 与 32 位字节码的**寄存器 VM**（`-t vm`，动态类型）；
+`examples/` 全部示例都能在 VM 下运行。**`-t eval` 树遍历解释器**保留为回退
+选项（REPL 仍用它）。语法前端（ANTLR + Pratt）解析的语言超集比运行时更大；
+**未实现的特性会显式报错**，不会静默产生错误结果——VM 下部分构造在编译期
+（HIR 降低）拒绝，解释器下在运行期拒绝。完整的实现/拒绝清单见
 [规范：实现状态](docs/spec/06-conformance.md)。
 
 开发以**方言垂直切片**为主轴：`oort-object` 动态方言的 v1 已完成；
@@ -63,7 +64,7 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 - 泛型 ADT、`Option[T]`/`Result[T,E]`、完整模式匹配与槽 — [OP 0005](docs/proposals/0005-type-system.md)
 - 自定义运算符声明与优先级 — [OP 0002](docs/proposals/0002-dsl-support.md)
 - 宏系统与 `comptime` — [设计笔记](docs/design/05-macro-system-design.md)
-- VM 性能优化、默认后端切换与 LLVM 后端 — [OP 0004](docs/proposals/0004-bytecode-vm.md)
+- VM 性能优化（调用点缓存等）与 LLVM 后端 — [OP 0004](docs/proposals/0004-bytecode-vm.md)
 - 语言方言（core / object / systems） — [OP 0001](docs/proposals/0001-feature-layers-and-dialects.md)
 
 ## 样例
@@ -99,7 +100,7 @@ cd oort-lang
 pip install uv
 uv sync
 
-# 运行文件（默认执行）
+# 运行文件（默认用字节码 VM 执行）
 oort test.ort
 
 # 执行一行代码
@@ -112,7 +113,7 @@ oort
 oort test.ort -t ast
 oort test.ort -t astm
 oort test.ort -t bc       # 打印 HIR/字节码反汇编（动态子集）
-oort test.ort -t vm       # 用字节码 VM 执行
+oort test.ort -t eval     # 回退到树遍历解释器
 ```
 
 ### 从源码使用 pip

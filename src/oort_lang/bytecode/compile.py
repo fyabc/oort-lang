@@ -49,6 +49,7 @@ from ..hir.nodes import (
     UnOp,
     Unpack,
 )
+from ..runtime.suggestions import operator_suggestion
 from ..source.source_position import SourcePosition
 from .code import (
     BytecodeModule,
@@ -340,7 +341,8 @@ class _ProtoCompiler:
             opcode = BINARY_OPCODES.get(instruction.op)
             if opcode is None:
                 raise UnsupportedSyntax(
-                    f"Bytecode backend does not support operator {instruction.op!r}.",
+                    f"Bytecode backend does not support operator {instruction.op!r}."
+                    f"{operator_suggestion(instruction.op)}",
                     position,
                 )
             self._word(
@@ -352,7 +354,8 @@ class _ProtoCompiler:
             opcode = UNARY_OPCODES.get(instruction.op)
             if opcode is None:
                 raise UnsupportedSyntax(
-                    f"Bytecode backend does not support unary operator {instruction.op!r}.",
+                    f"Bytecode backend does not support unary operator {instruction.op!r}."
+                    f"{operator_suggestion(instruction.op)}",
                     position,
                 )
             self._word(

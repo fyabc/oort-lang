@@ -54,7 +54,9 @@ def _which(name: str) -> str | None:
 def runtime_command(name: str, overrides: dict[str, str]) -> list[str] | None:
     """Return the base command for a runtime, or None if unavailable."""
     if name == "oort":
-        return [sys.executable, "-m", "oort_lang"]
+        # Explicit -t eval: the CLI default is now the VM, so the
+        # tree-walking baseline must be pinned or it would equal oort-vm.
+        return [sys.executable, "-m", "oort_lang", "-t", "eval"]
     if name == "oort-vm":
         return [sys.executable, "-m", "oort_lang", "-t", "vm"]
     if name == "python":

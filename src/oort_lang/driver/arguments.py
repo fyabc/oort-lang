@@ -9,8 +9,8 @@ COMPILER_MODE_HELPS = {
     "ast": "Print AST.",
     "astm": "Print AST with metadata.",
     "bc": "Compile to bytecode and print disassembly.",
-    "vm": "Execute the supported bytecode subset.",
-    "eval": "Evaluate the AST (default).",
+    "vm": "Execute the supported bytecode subset (default).",
+    "eval": "Evaluate the AST (tree-walking interpreter, fallback).",
 }
 
 
@@ -50,7 +50,7 @@ def get_main_parser() -> argparse.ArgumentParser:
         "-t",
         "--target",
         type=str,
-        default="eval",
+        default="vm",
         choices=list(COMPILER_MODE_HELPS),
         help="\n".join(_help_strs),
     )
