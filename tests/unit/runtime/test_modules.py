@@ -275,3 +275,33 @@ def test_module_path_option_is_required_for_external_module(tmp_path, caplog):
     with pytest.raises(CompilerError):
         _run(main)
     assert "Cannot find module 'extra'" in caplog.text
+
+
+def test_keyboard_interrupt_during_initialization_allows_retry(tmp_path):
+    from oort_lang.parser.dialect import DEFAULT_DIALECT_NAME
+    from oort_lang.runtime.modules import CompiledModule, ModuleLoader
+    from oort_lang.source.source_position import SourcePosition
+
+    _write(tmp_path, "lib.ort", "var value = 1\n")
+    position = SourcePosition.from_location(1, 0, "<string>")
+    attempts: list[int] = []
+
+    def execute_module(ast, env):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise KeyboardInterrupt
+
+    loader = ModuleLoader(
+        compile_module=lambda path: CompiledModule(ast=None, dialect_name=DEFAULT_DIALECT_NAME),
+        execute_module=execute_module,
+        make_environment=lambda name: object(),
+        make_module=lambda name, env: object(),
+        entry_dir=tmp_path,
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        loader.import_module("./lib", position)
+    module = loader.import_module("./lib", position)
+
+    assert module is not None
+    assert len(attempts) == 2

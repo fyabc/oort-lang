@@ -95,11 +95,8 @@ class OortIterator(OortNativeFunction):
         return value, True
 
     def take_remaining(self) -> list[OortObject]:
-        """Consume and return the remaining values (used by eager helpers)."""
-        if self._index == 0:
-            remaining = self._values
-        else:
-            remaining = self._values[self._index :]
+        """Consume and return a copy of the remaining values (used by eager helpers)."""
+        remaining = self._values[self._index :]
         self._index = len(self._values)
         return remaining
 

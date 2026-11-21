@@ -386,7 +386,49 @@ def _setup_native_operators(
 
         return wrapped
 
-    ordering_comparisons = {symbol: func for symbol, func in comparisons.items() if symbol != "=="}
+    def _sequence_concat(lhs, rhs):
+        if type(lhs) is not type(rhs):
+            raise TypeError("Cannot concatenate a List and a Tuple")
+        return type(lhs)(lhs.value + rhs.value)
+
+    def _sequence_repeat(lhs, count):
+        if not isinstance(count, OortInt):
+            raise TypeError("Sequence repetition requires an Int count")
+        return type(lhs)(lhs.value * count.value)
+
+    def _sequence_cmp(ctx, lhs, rhs):
+        if type(lhs) is not type(rhs):
+            raise TypeError("Cannot order a List and a Tuple")
+        for left, right in zip(lhs.value, rhs.value):
+            if ctx.equal(left, right):
+                continue
+            if ctx.truthy(ctx.binary("<", left, right)):
+                return -1
+            if ctx.truthy(ctx.binary("<", right, left)):
+                return 1
+            raise TypeError(
+                f"Elements of type {left.type.name!r} and {right.type.name!r} are not orderable"
+            )
+        return (len(lhs.value) > len(rhs.value)) - (len(lhs.value) < len(rhs.value))
+
+    def _sequence_lt(ctx, lhs, rhs):
+        return _sequence_cmp(ctx, lhs, rhs) < 0
+
+    def _sequence_le(ctx, lhs, rhs):
+        return _sequence_cmp(ctx, lhs, rhs) <= 0
+
+    def _sequence_gt(ctx, lhs, rhs):
+        return _sequence_cmp(ctx, lhs, rhs) > 0
+
+    def _sequence_ge(ctx, lhs, rhs):
+        return _sequence_cmp(ctx, lhs, rhs) >= 0
+
+    def _set_compare(op):
+        def wrapped(lhs, rhs):
+            return op(lhs.value, rhs.value)
+
+        return wrapped
+
     numeric_comparisons = {
         "==": _numeric_eq,
         "<": _numeric_cmp(operator.lt),
@@ -445,21 +487,21 @@ def _setup_native_operators(
     for type_obj in (t_list, t_tuple):
         _install_operators(
             type_obj,
-            binary={
-                "+": operator.add,
-                "*": operator.mul,
-                **ordering_comparisons,
-            },
+            binary={"+": _sequence_concat, "*": _sequence_repeat},
+            mode=NativeMode.VALUE,
         )
         _install_operators(
             type_obj,
-            binary={"==": _sequence_eq, "in": _sequence_contains},
+            binary={
+                "==": _sequence_eq,
+                "in": _sequence_contains,
+                "<": _sequence_lt,
+                "<=": _sequence_le,
+                ">": _sequence_gt,
+                ">=": _sequence_ge,
+            },
             mode=NativeMode.CONTEXT,
         )
-    _install_operators(
-        t_dict,
-        binary=ordering_comparisons,
-    )
     _install_operators(
         t_dict,
         binary={
@@ -476,10 +518,6 @@ def _setup_native_operators(
     )
     _install_operators(
         t_set,
-        binary=ordering_comparisons,
-    )
-    _install_operators(
-        t_set,
         binary={
             "&": _set_op(operator.and_),
             "|": _set_op(operator.or_),
@@ -487,6 +525,10 @@ def _setup_native_operators(
             "-": _set_op(operator.sub),
             "in": _set_contains,
             "==": _set_eq,
+            "<": _set_compare(operator.lt),
+            "<=": _set_compare(operator.le),
+            ">": _set_compare(operator.gt),
+            ">=": _set_compare(operator.ge),
         },
         mode=NativeMode.VALUE,
     )

@@ -66,6 +66,11 @@ print(inner(4))
     ("source", "message"),
     [
         ("def f { $0 }\n", "Anonymous parameters are only allowed in lambdas."),
+        ("def f() { $0 }\n", "Anonymous parameters are only allowed in lambdas."),
+        (
+            "val f = do: $0 + (def g { $0 })\n",
+            "Anonymous parameters are only allowed in lambdas.",
+        ),
         ("do(x): $0\n", "cannot be combined with an explicit parameter list"),
         ("do(): $0\n", "cannot be combined with an explicit parameter list"),
         (

@@ -55,9 +55,14 @@ class ScopeResolverMixin:
         """Resolve a name and attach its typed binding to the AST node."""
         anonymous = anonymous_param_index(name) is not None
         for depth, scope in enumerate(reversed(self.scopes)):
-            # A lambda with an explicit parameter list is a barrier for `$n`:
-            # its body must not silently capture an outer anonymous parameter.
-            if anonymous and scope.function is not None and scope.function.has_explicit_param_list:
+            # Any named function, and any lambda with an explicit parameter
+            # list, is a barrier for `$n`: its body must not silently capture
+            # an anonymous parameter from an enclosing lambda.
+            if (
+                anonymous
+                and scope.function is not None
+                and (not scope.function.is_lambda or scope.function.has_explicit_param_list)
+            ):
                 break
             binding = scope.resolve(name, depth)
             if binding is not None:

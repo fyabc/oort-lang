@@ -2,7 +2,6 @@
 
 """Builtin Oort types and values in AST-interpreter."""
 
-import operator
 import time
 from collections.abc import Callable
 
@@ -14,7 +13,6 @@ from .objects import (
     OortList,
     OortSet,
     OortString,
-    OortSuperProxy,
     OortTuple,
 )
 from .stdlib.collections import define_collection_builtins
@@ -52,21 +50,12 @@ def setup_builtins(runtime: Runtime, env: Environment):
     t_type = runtime.types.type_type
     t_type.fields = {
         "mro": OortNativeFunction(OortType.mro, name="mro"),
-        "__op_le__": OortNativeFunction(lambda t1, t2: t1.is_subclass_of(t2)),
-        "__op_lt__": OortNativeFunction(lambda t1, t2: t1.is_subclass_of(t2) and t1 is not t2),
-        "__op_ge__": OortNativeFunction(lambda t1, t2: t2.is_subclass_of(t1)),
-        "__op_gt__": OortNativeFunction(lambda t1, t2: t2.is_subclass_of(t1) and t1 is not t2),
     }
     env.define(t_type.name, t_type)
 
     # Object
     t_object = runtime.types.object_type
-    t_object.fields = {
-        "__op_eq__": OortNativeFunction(operator.eq),
-        "__op_ne__": OortNativeFunction(operator.ne),
-        "__str__": OortNativeFunction(str),
-        "__repr__": OortNativeFunction(repr),
-    }
+    t_object.fields = {}
     env.define(t_object.name, t_object)
 
     # Function
@@ -91,31 +80,13 @@ def setup_builtins(runtime: Runtime, env: Environment):
     # Int
     t_int = runtime.types.int_type
     t_int.bases = []
-    t_int.fields = {
-        "__op_neg__": OortNativeFunction(operator.neg),
-        "__op_add__": OortNativeFunction(operator.add),
-        "__op_sub__": OortNativeFunction(operator.sub),
-        "__op_mul__": OortNativeFunction(operator.mul),
-        "__op_truediv__": OortNativeFunction(operator.truediv),
-        "__op_floordiv__": OortNativeFunction(operator.floordiv),
-        "__op_mod__": OortNativeFunction(operator.mod),
-        "__op_pow__": OortNativeFunction(operator.pow),
-    }
+    t_int.fields = {}
     env.define(t_int.name, t_int)
 
     # Float
     t_float = runtime.types.float_type
     t_float.bases = []
-    t_float.fields = {
-        "__op_neg__": OortNativeFunction(operator.neg),
-        "__op_add__": OortNativeFunction(operator.add),
-        "__op_sub__": OortNativeFunction(operator.sub),
-        "__op_mul__": OortNativeFunction(operator.mul),
-        "__op_truediv__": OortNativeFunction(operator.truediv),
-        "__op_floordiv__": OortNativeFunction(operator.floordiv),
-        "__op_mod__": OortNativeFunction(operator.mod),
-        "__op_pow__": OortNativeFunction(operator.pow),
-    }
+    t_float.fields = {}
     env.define(t_float.name, t_float)
 
     # Bool
@@ -129,8 +100,6 @@ def setup_builtins(runtime: Runtime, env: Environment):
     t_string = runtime.types.string_type
     t_string.fields = {
         "__iter__": OortNativeFunction(_iter, name="__iter__", mode=NativeMode.VALUE),
-        "__op_add__": OortNativeFunction(operator.add),
-        "__op_mul__": OortNativeFunction(operator.mul),
     }
     env.define(t_string.name, t_string)
 
@@ -139,11 +108,6 @@ def setup_builtins(runtime: Runtime, env: Environment):
     t_list.fields = {
         "__iter__": OortNativeFunction(_iter, name="__iter__", mode=NativeMode.VALUE),
         "length": OortNativeFunction(_len, mode=NativeMode.VALUE),
-        "__op_getitem__": OortNativeFunction(operator.getitem),
-        "__op_setitem__": OortNativeFunction(operator.setitem),
-        "__op_delitem__": OortNativeFunction(operator.delitem),
-        "__op_contains__": OortNativeFunction(operator.contains),
-        "__op_add__": OortNativeFunction(operator.add),
     }
     env.define(t_list.name, t_list)
 
@@ -152,9 +116,6 @@ def setup_builtins(runtime: Runtime, env: Environment):
     t_tuple.fields = {
         "__iter__": OortNativeFunction(_iter, name="__iter__", mode=NativeMode.VALUE),
         "length": OortNativeFunction(_len, mode=NativeMode.VALUE),
-        "__op_getitem__": OortNativeFunction(operator.getitem),
-        "__op_contains__": OortNativeFunction(operator.contains),
-        "__op_add__": OortNativeFunction(operator.add),
     }
     env.define(t_tuple.name, t_tuple)
 
@@ -163,10 +124,6 @@ def setup_builtins(runtime: Runtime, env: Environment):
     t_dict.fields = {
         "__iter__": OortNativeFunction(_iter, name="__iter__", mode=NativeMode.VALUE),
         "length": OortNativeFunction(_len, mode=NativeMode.VALUE),
-        "__op_getitem__": OortNativeFunction(operator.getitem),
-        "__op_setitem__": OortNativeFunction(operator.setitem),
-        "__op_delitem__": OortNativeFunction(operator.delitem),
-        "__op_contains__": OortNativeFunction(operator.contains),
     }
     env.define(t_dict.name, t_dict)
 
@@ -175,7 +132,6 @@ def setup_builtins(runtime: Runtime, env: Environment):
     t_set.fields = {
         "__iter__": OortNativeFunction(_iter, name="__iter__", mode=NativeMode.VALUE),
         "length": OortNativeFunction(_len, mode=NativeMode.VALUE),
-        "__op_contains__": OortNativeFunction(operator.contains),
     }
     env.define(t_set.name, t_set)
 
@@ -190,7 +146,6 @@ def setup_builtins(runtime: Runtime, env: Environment):
     _define_native_function(env, "print", print, mode=NativeMode.VALUE)
     _define_native_function(env, "clock", time.perf_counter)
     _define_native_function(env, "type", lambda obj: obj.type, mode=NativeMode.VALUE)
-    _define_native_function(env, "super", OortSuperProxy, mode=NativeMode.VALUE)
     _define_native_function(env, "len", _len, mode=NativeMode.VALUE)
     _define_native_function(env, "range", range)
     # Keep Oort objects wrapped so their own `__str__` / `__repr__` decide

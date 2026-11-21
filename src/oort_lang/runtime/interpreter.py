@@ -262,11 +262,22 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             )
         return self._invoke_operator(method, [rhs], symbol, error_position)
 
-    def values_equal(self, lhs: OortObject, rhs: OortObject) -> bool:
+    def values_equal(
+        self,
+        lhs: OortObject,
+        rhs: OortObject,
+        position: SourcePosition | None = None,
+    ) -> bool:
         """Recursive Oort value equality (OP 0016)."""
-        return self._values_equal(lhs, rhs, set())
+        return self._values_equal(lhs, rhs, set(), position)
 
-    def _values_equal(self, lhs: OortObject, rhs: OortObject, memo: set[tuple[int, int]]) -> bool:
+    def _values_equal(
+        self,
+        lhs: OortObject,
+        rhs: OortObject,
+        memo: set[tuple[int, int]],
+        position: SourcePosition | None = None,
+    ) -> bool:
         if lhs is rhs:
             return True
 
@@ -282,7 +293,7 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             if len(lhs.value) != len(rhs.value):
                 return False
             return all(
-                self._values_equal(left, right, memo)
+                self._values_equal(left, right, memo, position)
                 for left, right in zip(lhs.value, rhs.value, strict=True)
             )
 
@@ -300,7 +311,7 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                 # strict, Int/Float distinct, identity for instances).
                 if key not in rhs.value:
                     return False
-                if not self._values_equal(value, rhs.value[key], memo):
+                if not self._values_equal(value, rhs.value[key], memo, position):
                     return False
             return True
 
@@ -327,14 +338,19 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                 and lhs.value == rhs.value
             )
 
-        result = self.apply_operator("==", lhs, rhs, self._builtin_position())
+        result = self.apply_operator("==", lhs, rhs, position or self._builtin_position())
         return _is_truthy(result)
 
-    def sequence_contains(self, container: OortObject, item: OortObject) -> bool:
+    def sequence_contains(
+        self,
+        container: OortObject,
+        item: OortObject,
+        position: SourcePosition | None = None,
+    ) -> bool:
         """Sequence membership with Oort value equality."""
         assert isinstance(container, (OortList, OortTuple))
         for element in container.value:
-            if element is item or self._values_equal(element, item, set()):
+            if element is item or self._values_equal(element, item, set(), position):
                 return True
         return False
 
@@ -737,6 +753,11 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             defining_type = receiver.type
         return OortSuperProxy(defining_type, receiver)
 
+    @staticmethod
+    def _is_reserved_method_name(name: str) -> bool:
+        """Dunder-style names the runtime does not dispatch to user code."""
+        return len(name) > 4 and name.startswith("__") and name.endswith("__")
+
     def visit_class_def(self, node: nodes.ClassDef) -> OortType:
         # Visit base classes and metaclasses.
         bases = []
@@ -776,6 +797,16 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                 result = stmt.accept(self)
 
                 if isinstance(stmt, nodes.FunctionDef) and not stmt.is_lambda:
+                    # Dunder methods are only honoured where the runtime
+                    # actually calls them; silently storing the rest would
+                    # look like a working overload that is never used.
+                    if self._is_reserved_method_name(stmt.name) and (
+                        stmt.is_class_method or stmt.name not in ("__init__", "__iter__")
+                    ):
+                        raise OortTypeError(
+                            f"Special method {stmt.name!r} is not supported.",
+                            stmt.name_position,
+                        )
                     # Method definition.
                     if stmt.is_operator:
                         cls.set_operator(stmt.operator_symbol, stmt.operator_operand_count, result)

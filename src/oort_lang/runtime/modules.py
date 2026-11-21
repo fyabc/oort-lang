@@ -226,6 +226,11 @@ class ModuleLoader:
         self._frames.append(frame)
         try:
             self._initialize_module(record, spec, position, frame)
+        except KeyboardInterrupt:
+            # The user aborted initialization; drop the half-built record so a
+            # retry (notably from the REPL) can load the module again.
+            self._records.pop(path, None)
+            raise
         except BaseException:
             record.state = ModuleState.FAILED
             raise

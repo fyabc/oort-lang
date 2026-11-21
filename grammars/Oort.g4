@@ -105,7 +105,7 @@ atomExpr
     | THIS                                                              # IdExpr
     | SUPER LPA argumentList RPA                                        # ExplicitSuperExpr
     | SUPER                                                             # ImplicitSuperExpr
-    | atomExpr NEWLINE* op=DOT dotAttribute                             # DotExpr
+    | atomExpr op=DOT dotAttribute                                       # DotExpr
     | atomExpr LBK subscriptArgumentList RBK                            # SubscriptExpr
     | atomExpr LPA argumentList RPA lambdaDef?                          # FunctionCallExpr
     | atomExpr lambdaDef                                                # FunctionCallExpr

@@ -50,8 +50,8 @@ class NativeContext:
 
     def equal(self, lhs: OortObject, rhs: OortObject) -> bool:
         """Oort value equality, recursive through builtin containers."""
-        return self.interpreter.values_equal(lhs, rhs)
+        return self.interpreter.values_equal(lhs, rhs, self.position)
 
     def contains(self, container: OortObject, item: OortObject) -> bool:
         """Sequence membership using Oort value equality."""
-        return self.interpreter.sequence_contains(container, item)
+        return self.interpreter.sequence_contains(container, item, self.position)

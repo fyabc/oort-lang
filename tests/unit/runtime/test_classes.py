@@ -2,6 +2,7 @@
 
 import pytest
 
+from oort_lang.driver.compiler import CompilerError
 from tests.helpers import get_compiler
 
 
@@ -193,3 +194,42 @@ print(B().x)
 """
     ).stdout
     assert out == "5\n"
+
+
+@pytest.mark.parametrize(
+    "name", ["__str__", "__repr__", "__op_add__", "__getitem__", "__init__", "__iter__"]
+)
+def test_class_method_special_names_are_rejected(name: str, caplog: pytest.LogCaptureFixture):
+    compiler = get_compiler("NOT_EXIST -t eval")
+    with pytest.raises(CompilerError):
+        compiler.run_string(f"class C {{ def class.{name}() {{ 0 }} }}\n")
+    assert f"Special method '{name}' is not supported." in caplog.text
+
+
+@pytest.mark.parametrize("name", ["__str__", "__repr__", "__op_add__", "__getitem__"])
+def test_unsupported_special_methods_are_rejected(name: str, caplog: pytest.LogCaptureFixture):
+    compiler = get_compiler("NOT_EXIST -t eval")
+    with pytest.raises(CompilerError):
+        compiler.run_string(f"class C {{ def {name}() {{ 0 }} }}\n")
+    assert f"Special method '{name}' is not supported." in caplog.text
+
+
+def test_supported_special_methods_still_work(run_source):
+    out = run_source(
+        """\
+class Range2 {
+    def __init__(n) { this.n = n }
+    def __iter__() {
+        var n = this.n
+        do {
+            val current = n
+            n = n - 1
+            (current, current >= 0)
+        }
+    }
+}
+for x in Range2(2) { print(x) }
+print(str(1), repr("x"))
+"""
+    ).stdout
+    assert out == "2\n1\n0\n1 'x'\n"
