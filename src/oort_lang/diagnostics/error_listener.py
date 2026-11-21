@@ -8,6 +8,9 @@ from ..source.source_position import SourcePosition
 from . import OortSyntaxError
 from .error_handler import CompilerErrorHandler
 
+# ANTLR wraps the text a failed lexer rule tried to match in this prefix.
+_LEXER_ERROR_PREFIX = "token recognition error at: '"
+
 
 class OortErrorListener(ErrorListener):
     """ErrorListener class integrated into ANTLR lexer and parser."""
@@ -27,25 +30,57 @@ class OortErrorListener(ErrorListener):
     ):
         if offendingSymbol is not None:
             position = SourcePosition.from_token(offendingSymbol)
+            if msg.startswith("no viable alternative at input"):
+                # Replace useless error message.
+                msg = "Invalid syntax"
         else:
-            # Lexer errors carry no token; point at the offending character.
-            position = SourcePosition.from_location(
-                line,
-                column,
-                self._offending_text(line, column),
-            )
-        if msg.startswith("no viable alternative at input"):
-            # Replace useless error message.
-            msg = "Invalid syntax"
-        elif msg.startswith("token recognition error"):
-            msg = "Invalid token"
+            # Lexer notifications carry no token; classify them so the
+            # message names the failure instead of a generic "invalid token".
+            text = self._attempted_text(msg, line, column)
+            position = SourcePosition.from_location(line, column, text[:1])
+            msg = self._lexer_message(text, line, column)
         self.error_handler.add(OortSyntaxError(msg, position), self.input_info)
 
-    def _offending_text(self, line: int, column: int) -> str:
-        """Return the source character a lexer error points at, if any."""
+    def _lexer_message(self, text: str, line: int, column: int) -> str:
+        """Classify a lexer failure by the text the failing rule tried to match.
+
+        Follows the mainstream convention of naming the category (Python's
+        "unterminated string literal", javac's "unclosed string literal",
+        Python's "invalid character '…' (U+…)") rather than a generic
+        "invalid token" (the V8 style).
+        """
+        if text.startswith(("'", '"')):
+            quote = text[0]
+            prefix = self._line_prefix(line, column, 2)
+            # A failing triple quote is reported at its third quote: the
+            # first two already matched as an empty short string.
+            if prefix == quote * 2:
+                return "Unterminated triple-quoted string literal"
+            return "Unterminated string literal"
+        if text:
+            return f"Invalid character {text[0]!r} (U+{ord(text[0]):04X})"
+        return "Invalid token"
+
+    def _attempted_text(self, msg: str, line: int, column: int) -> str:
+        """Extract the text the failing lexer rule tried to match."""
+        if (
+            msg.startswith(_LEXER_ERROR_PREFIX)
+            and msg.endswith("'")
+            and len(msg) > len(_LEXER_ERROR_PREFIX)
+        ):
+            return msg[len(_LEXER_ERROR_PREFIX) : -1]
+        # Older ANTLR wording or unexpected shapes: fall back to the source
+        # character at the reported position.
         lines = self.input_info.get_lines()
         if 0 < line <= len(lines):
-            text = lines[line - 1]
-            if column < len(text):
-                return text[column]
+            line_text = lines[line - 1]
+            if column < len(line_text):
+                return line_text[column]
+        return ""
+
+    def _line_prefix(self, line: int, column: int, length: int) -> str:
+        """Return up to `length` characters before (line, column)."""
+        lines = self.input_info.get_lines()
+        if 0 < line <= len(lines):
+            return lines[line - 1][max(0, column - length) : column]
         return ""

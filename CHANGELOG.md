@@ -9,8 +9,10 @@
 ### 修复
 
 - 词法错误（如未闭合的字符串 `'1`）现在转换为带位置与源码行的 Oort 诊断
-  （`Invalid token`）并以非零码退出；此前 ANTLR 词法错误直接透出到 stderr，
-  且程序可能以退出码 0 静默"成功"。
+  并以非零码退出；此前 ANTLR 词法错误直接透出到 stderr，且程序可能以
+  退出码 0 静默"成功"。消息按类别命名（对齐 Python/javac 惯例）：
+  `Unterminated string literal`、`Unterminated triple-quoted string
+  literal`、`Invalid character '\\` (U+005C)`；兜底仍为 `Invalid token`。
 
 ### 工程化
 
