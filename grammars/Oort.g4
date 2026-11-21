@@ -562,8 +562,10 @@ FLOAT_LITERAL
     ;
 
 fragment PointFloat
-    : Digit* '.' Digit+
+    : Digit+ '.' Digit+
 //    | Digit+ '.'          // Does not support '1.' to avoid ambiguity with '1.method'.
+//    | Digit* '.' Digit+   // Does not support '.5': no leading-dot floats, symmetric
+//                          // with the '1.' ban above and avoids '{.5}' set-literal confusion.
     ;
 
 fragment ExponentFloat

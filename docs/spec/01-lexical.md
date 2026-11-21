@@ -91,7 +91,8 @@ true false null
 1.5e-2
 ```
 
-不支持 `1.`（避免与 `1.method` 混淆）。
+不支持 `1.`（避免与 `1.method` 混淆）；同样不支持 `.5`——小数点前后都
+必须有数字，写作 `0.5`（[OP 0021](../proposals/0021-float-integer-part.md)）。
 
 ### 字符串
 

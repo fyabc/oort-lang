@@ -579,6 +579,21 @@ class Compiler:
                     input_info,
                 )
                 return True
+            elif (
+                failed
+                and token_type == OortLexer.DOT
+                and index + 1 < len(tokens)
+                and tokens[index + 1].type == OortLexer.DEC_INT
+                # Adjacent (no space) rules out member-access typos like `a . 5`.
+                and tokens[index + 1].column == token.column + 1
+            ):
+                self._add_habit_hint(
+                    f"Leading-dot floats are not supported; "
+                    f"did you mean '0.{tokens[index + 1].text}'?",
+                    token,
+                    input_info,
+                )
+                return True
             elif failed and token_type in (OortLexer.IF, OortLexer.WHILE):
                 hint = self._condition_assignment_hint(tokens[index + 1 :], token)
                 if hint is not None:

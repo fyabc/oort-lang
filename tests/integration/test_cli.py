@@ -438,3 +438,18 @@ def test_mismatched_delimiter_pairs(monkeypatch, caplog, source, message):
     # opener expects (Python 3.12 pairs closing/opening objects the same way).
     assert _run_cli(monkeypatch, ["-c", source]) != 0
     assert message in caplog.text
+
+
+def test_leading_dot_float_is_rejected(monkeypatch, caplog):
+    # PointFloat requires a digit before the point (OP 0021): `.5` is a
+    # parse error with a did-you-mean hint; `0.5`/`1.5e3` stay valid.
+    assert _run_cli(monkeypatch, ["-c", "val x = .5"]) != 0
+    assert "Leading-dot floats are not supported; did you mean '0.5'?" in caplog.text
+
+
+def test_float_literals_with_integer_part_stay_valid(monkeypatch, caplog):
+    assert (
+        _run_cli(monkeypatch, ["-c", "val a = 0.5\nval b = 1.5e3\nval c = 2e3\nprint(a, b, c)"])
+        == 0
+    )
+    assert "OortSyntaxWarning" not in caplog.text

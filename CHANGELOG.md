@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+### 变更
+
+- 浮点字面量要求整数部分（OP 0021）：`PointFloat` 收紧为
+  `Digit+ '.' Digit+`，`.5` 不再合法（写作 `0.5`）；与既有 `1.` 禁用
+  对称。解析失败时附带 `Leading-dot floats are not supported; did you
+  mean '0.5'?` 提示。`0.5`/`1.5e3`/`2e3` 不受影响。
+
 ### 修复
 
 - 诊断消息分类与定位（OP 0020，方法论对齐 Python 3.10+）：

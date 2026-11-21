@@ -42,6 +42,7 @@
 | [0018](0018-subscript-and-missing-attribute-protocol.md) | 下标与缺失属性协议（`operator "[]"`/`"[]="`、`on_missing`） | Implemented |
 | [0019](0019-hir-vm-parameter-binding.md) | 参数绑定进入 HIR/VM（默认值、关键字、变长、块参数） | Implemented |
 | [0020](0020-diagnostic-quality.md) | 诊断消息质量（词法分类、定界符诊断，效仿 Python） | Implemented |
+| [0021](0021-float-integer-part.md) | 浮点字面量要求整数部分（禁止 `.5`） | Implemented |
 
 ## 流程
 
@@ -96,3 +97,4 @@
 | 2026-11-21 | 下标协议 `operator "[]"`/`"[]="`；缺失属性只读 fallback `on_missing`；不引入 dunder 魔术名与写钩子 | [OP 0018](0018-subscript-and-missing-attribute-protocol.md)（Implemented） |
 | 2026-11-21 | 参数绑定进入 HIR/VM：共享绑定核心、默认值 proto（按闭包缓存）、`CALL_KW`、`SignatureSpec`；移除运行时 arity | [OP 0019](0019-hir-vm-parameter-binding.md)（Implemented） |
 | 2026-11-22 | 诊断消息分类：词法错误（未终止字符串/非法字符带码点）与定界符错误（`'(' was never closed` / `Unmatched ']'`）指向根因；方法论对齐 Python 3.10+ | [OP 0020](0020-diagnostic-quality.md)（Implemented） |
+| 2026-11-22 | `PointFloat` 收紧为 `Digit+ '.' Digit+`：禁止前导点浮点 `.5`（与既有 `1.` 禁用对称），解析期附 did-you-mean 提示 | [OP 0021](0021-float-integer-part.md)（Implemented） |
