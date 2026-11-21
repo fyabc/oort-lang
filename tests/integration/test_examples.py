@@ -47,6 +47,7 @@ EXPECTED_OUTPUTS = {
     "08_core/08_07_collections_loops.ort": (
         "3 3 0\n7 true 2\n2 2 2\n6\na 1\nb 2\no\no\nr\nt\n1\n3\n"
     ),
+    "08_core/08_08_slots.ort": "slot\nctor\n3\norigin\n",
 }
 
 # The JSON showcase is covered by `test_json_example.py`, which compiles it

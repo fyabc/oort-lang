@@ -1,0 +1,31 @@
+#lang oort-core
+
+# 静态类：固定槽、执行顺序（槽初始化器先于 __init__）、确定赋值与 val 只读。
+
+def mark(label: String) -> String {
+    print(label)
+    label
+}
+
+class Point {
+    val x: Int
+    val y: Int
+    var label: String = mark("slot")
+
+    def __init__(x: Int, y: Int) {
+        print("ctor")
+        this.x = x
+        this.y = y
+    }
+
+    def sum() -> Int { this.x + this.y }
+
+    def rename(label: String) -> Unit {
+        this.label = label
+    }
+}
+
+val p = Point(1, 2)
+print(p.sum())
+p.rename("origin")
+print(p.label)

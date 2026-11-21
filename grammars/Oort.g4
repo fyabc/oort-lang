@@ -29,7 +29,7 @@ compilerAttribute
     TODO: Support muliple variable declaration (`var a, b = Pair(4, 8), c = 10`)
 */
 variableDecl
-    : kind=(VAR | VAL) declTarget ASSIGN expressionList
+    : kind=(VAR | VAL) declTarget (ASSIGN expressionList)?
     ;
 
 // TODO: Support *-based iterable unpacking (from Python)

@@ -2,8 +2,24 @@
 
 import pytest
 
-from oort_lang.ast.nodes import ClassDef, FunctionDef, ModuleNode
+from oort_lang.ast.nodes import ClassDef, FunctionDef, ModuleNode, VarDecl
 from tests.helpers import TEST_ASSETS_DIR, build_ast, get_compiler
+
+
+def test_slot_declaration_without_initializer_parses():
+    ast = build_ast(
+        """\
+#lang oort-core
+class C {
+    val x: Int
+    def __init__() { this.x = 1 }
+}
+"""
+    )
+    class_def = next(stmt for stmt in ast.body.statements if isinstance(stmt, ClassDef))
+    slot = next(stmt for stmt in class_def.body.statements if isinstance(stmt, VarDecl))
+    assert slot.init_value is None
+    assert slot.decl_targets[0].name == "x"
 
 
 def test_ast_string(capsys: pytest.CaptureFixture):

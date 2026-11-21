@@ -2,9 +2,11 @@
 
 """Per-runtime type system and built-in operators."""
 
+import dataclasses
 import operator
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from typing import TYPE_CHECKING
 
 from .call_args import ArgumentBindingError
 from .context import activate_runtime
@@ -19,6 +21,12 @@ from .functions import (
 )
 from .host import HostBridge, PythonHost
 from .native import NativeMode
+
+if TYPE_CHECKING:
+    from ..ast import nodes
+    from ..source.source_position import SourcePosition
+    from .environment import Environment
+
 from .objects import (
     OortBool,
     OortDict,
@@ -35,6 +43,17 @@ from .objects import (
     OortSuperProxy,
     OortTuple,
 )
+
+
+@dataclasses.dataclass(slots=True)
+class SlotDefinition:
+    """One declared instance slot on a static (`oort-core`) class."""
+
+    name: str
+    mutable: bool
+    initializer: "nodes.ASTNode | None"
+    closure: "Environment"
+    position: "SourcePosition"
 
 
 class OortType(OortInstance, OortCallableMixin):
@@ -55,6 +74,9 @@ class OortType(OortInstance, OortCallableMixin):
         self.adt_variants: dict[str, int] | None = None
         # Operator methods, keyed by (symbol, operand count).
         self.operators: dict[tuple[str, int], OortObject] = {}
+        # Declared slots for static classes; empty for open field-bag classes.
+        self.slots: dict[str, SlotDefinition] = {}
+        self.static_layout = False
 
     def __repr__(self):
         return f"<Type {self.name!r}>"
@@ -134,11 +156,16 @@ class OortType(OortInstance, OortCallableMixin):
 
         # Call initializer.
         init_func = self.get("__init__")
+        if init_func is None and args:
+            raise ArgumentBindingError(
+                f"{self.name}() takes 0 arguments but {len(args)} were given"
+            )
+
+        # Slot initializers run in base-to-derived, declaration order, before
+        # the constructor body (OP 0007 §6).
+        interpreter.initialize_instance_slots(instance, self)
         if init_func is None:
-            if args:
-                raise ArgumentBindingError(
-                    f"{self.name}() takes 0 arguments but {len(args)} were given"
-                )
+            interpreter.check_instance_slots(instance, self)
             return instance
 
         assert isinstance(init_func, OortFunction)
@@ -149,7 +176,24 @@ class OortType(OortInstance, OortCallableMixin):
             defining_type=self._find_defining_type("__init__"),
         )
         init_method(interpreter, args)
+        interpreter.check_instance_slots(instance, self)
         return instance
+
+    def find_slot(self, name: str) -> SlotDefinition | None:
+        for mro_type in self.mro():
+            slot = mro_type.slots.get(name)
+            if slot is not None:
+                return slot
+        return None
+
+    def slot_definitions(self):
+        """Yield inherited slots once, base classes first."""
+        seen: set[str] = set()
+        for mro_type in reversed(self.mro()):
+            for slot in mro_type.slots.values():
+                if slot.name not in seen:
+                    seen.add(slot.name)
+                    yield slot
 
     def mro(self) -> list["OortType"]:
         if not self._mro_cache:

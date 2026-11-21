@@ -94,16 +94,18 @@ class ASTBuilder(ExpressionParsingMixin, ParameterParsingMixin, OortVisitor):
         return CompilerAttribute(ctx)
 
     def visitVariableDecl(self, ctx: OortParser.VariableDeclContext):
-        init_exprs = ctx.expressionList().expression()
+        expression_list = ctx.expressionList()
+        init_value = None
+        if expression_list is not None:
+            init_exprs = expression_list.expression()
+            if len(init_exprs) == 1:
+                init_value = self.visit(init_exprs[0])
+            else:
+                init_value = TupleLiteral(
+                    expression_list, [self.visit(expr) for expr in init_exprs]
+                )
         mutable = ctx.VAR() is not None
         decl_targets = self.parseDeclTarget(ctx.declTarget())
-
-        if len(init_exprs) == 1:
-            init_value = self.visit(init_exprs[0])
-        else:
-            init_value = TupleLiteral(
-                ctx.expressionList(), [self.visit(expr) for expr in init_exprs]
-            )
 
         return VarDecl(
             ctx,

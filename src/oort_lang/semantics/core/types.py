@@ -79,6 +79,53 @@ class ConstructorInfo:
     payload: tuple[Type, ...]
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class SlotInfo:
+    """One declared instance slot in a static class."""
+
+    name: str
+    slot_type: Type
+    mutable: bool
+    has_initializer: bool
+
+
+@dataclasses.dataclass(eq=False, slots=True)
+class ClassType(Type):
+    """A nominal static class with fixed slots and methods.
+
+    Equality and hashing use `(origin, name)` only; slots and methods are
+    filled after the declaration is registered so recursive types work.
+    """
+
+    origin: str
+    name: str
+    slots: tuple[SlotInfo, ...] = ()
+    methods: tuple[tuple[str, FunctionType], ...] = ()
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, ClassType) and self.origin == other.origin and self.name == other.name
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.origin, self.name))
+
+    def __repr__(self) -> str:
+        return f"<ClassType {self.name!r} @ {self.origin!r}>"
+
+    def slot(self, name: str) -> SlotInfo | None:
+        for slot in self.slots:
+            if slot.name == name:
+                return slot
+        return None
+
+    def method(self, name: str) -> FunctionType | None:
+        for method_name, method_type in self.methods:
+            if method_name == name:
+                return method_type
+        return None
+
+
 @dataclasses.dataclass(eq=False, slots=True)
 class AdtType(Type):
     """A nominal tagged-union type.
@@ -148,6 +195,8 @@ def describe_type(type_: Type) -> str:
         return f"<module {type_.name}>"
     if isinstance(type_, AdtType):
         return type_.name
+    if isinstance(type_, ClassType):
+        return type_.name
     if isinstance(type_, UnknownType):
         return "Unknown"
     if isinstance(type_, NeverType):
@@ -190,6 +239,8 @@ def is_assignable(expected: Type, actual: Type) -> bool:
     if isinstance(expected, ModuleType) and isinstance(actual, ModuleType):
         return expected == actual
     if isinstance(expected, AdtType) and isinstance(actual, AdtType):
+        return expected == actual
+    if isinstance(expected, ClassType) and isinstance(actual, ClassType):
         return expected == actual
     return False
 

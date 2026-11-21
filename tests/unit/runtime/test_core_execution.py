@@ -59,3 +59,44 @@ def test_core_loops_execute(run_source):
         core("var total = 0\nfor x in [1, 2, 3] { total = total + x }\nprint(total)\n")
     )
     assert result.stdout == "6\n"
+
+
+def test_core_class_slots_execute(run_source):
+    result = run_source(
+        core(
+            "class Counter {\n"
+            "    var count: Int\n"
+            "    def __init__(start: Int) { this.count = start }\n"
+            "    def bump() -> Unit { this.count = this.count + 1 }\n"
+            "    def get() -> Int { this.count }\n"
+            "}\n"
+            "val c = Counter(3)\n"
+            "c.bump()\n"
+            "print(c.get())\n"
+        )
+    )
+    assert result.stdout == "4\n"
+
+
+def test_core_slot_initializers_run_before_constructor(run_source):
+    result = run_source(
+        core(
+            "def mark(n: Int) -> Int { print(n)\n    n }\n"
+            "class C {\n"
+            "    val a: Int = mark(1)\n"
+            "    val b: Int = mark(2)\n"
+            "    def __init__() { print(3) }\n"
+            "}\n"
+            "C()\n"
+        )
+    )
+    assert result.stdout == "1\n2\n3\n"
+
+
+def test_core_slot_initializers_are_per_instance(run_source):
+    result = run_source(
+        core(
+            "class C {\n    var n: Int = 0\n}\nval a = C()\nval b = C()\na.n = 1\nprint(a.n, b.n)\n"
+        )
+    )
+    assert result.stdout == "1 0\n"

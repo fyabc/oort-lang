@@ -358,7 +358,6 @@ class TestCoreRejections:
     @pytest.mark.parametrize(
         ("source", "message"),
         [
-            ("class A {}\n", "Classes are not supported"),
             ("print(null)\n", "null is not supported"),
             (
                 "val f = do: 1\n",
@@ -1082,3 +1081,346 @@ def test_collection_equality_rejects_enum_elements(caplog):
         "enum E { A }\nval xs = [A]\nprint(xs == xs)\n",
         "Equality is not supported for collections containing enums or functions",
     )
+
+
+class TestCoreClasses:
+    def test_slots_constructor_and_methods(self, run_source):
+        result = run_source(
+            core(
+                "class Counter {\n"
+                "    val start: Int = 10\n"
+                "    var count: Int\n"
+                "    def __init__(step: Int) {\n"
+                "        this.count = this.start\n"
+                "        this.count = this.count + step\n"
+                "    }\n"
+                "    def get() -> Int { this.count }\n"
+                "    def bump() -> Unit { this.count = this.count + 1 }\n"
+                "}\n"
+                "val c = Counter(5)\n"
+                "print(c.get())\n"
+                "c.bump()\n"
+                "print(c.get(), c.start)\n"
+            )
+        )
+        assert result.stdout == "15\n16 10\n"
+
+    def test_val_slots_assigned_from_parameters(self, run_source):
+        result = run_source(
+            core(
+                "class Point {\n"
+                "    val x: Int\n"
+                "    val y: Int\n"
+                "    def __init__(x: Int, y: Int) {\n"
+                "        this.x = x\n"
+                "        this.y = y\n"
+                "    }\n"
+                "    def sum() -> Int { this.x + this.y }\n"
+                "}\n"
+                "print(Point(2, 3).sum())\n"
+            )
+        )
+        assert result.stdout == "5\n"
+
+    def test_slot_initializers_run_before_constructor(self, run_source):
+        result = run_source(
+            core(
+                "def mark(n: Int) -> Int {\n"
+                "    print(n)\n"
+                "    n\n"
+                "}\n"
+                "class C {\n"
+                "    val a: Int = mark(1)\n"
+                "    val b: Int = mark(2)\n"
+                "    def __init__() { print(3) }\n"
+                "}\n"
+                "C()\n"
+            )
+        )
+        assert result.stdout == "1\n2\n3\n"
+
+    def test_class_types_in_annotations_and_methods(self, run_source):
+        result = run_source(
+            core(
+                "class Box {\n"
+                "    val value: Int\n"
+                "    def __init__(value: Int) { this.value = value }\n"
+                "    def next() -> Box { Box(this.value + 1) }\n"
+                "    def me() -> Box { this }\n"
+                "}\n"
+                "def unwrap(box: Box) -> Int { box.value }\n"
+                "val b = Box(1).next().next().me()\n"
+                "print(unwrap(b))\n"
+            )
+        )
+        assert result.stdout == "3\n"
+
+    def test_empty_class_and_method_reference(self, run_source):
+        result = run_source(
+            core(
+                "class Empty {\n"
+                "    def answer() -> Int { 42 }\n"
+                "}\n"
+                "val e = Empty()\n"
+                "val f = e.answer\n"
+                "print(f())\n"
+            )
+        )
+        assert result.stdout == "42\n"
+
+    def test_class_without_constructor_and_initialized_slots(self, run_source):
+        result = run_source(
+            core(
+                "class Defaults {\n"
+                "    val answer: Int = 7\n"
+                '    var name: String = "oort"\n'
+                "}\n"
+                "val d = Defaults()\n"
+                "print(d.answer, d.name)\n"
+            )
+        )
+        assert result.stdout == "7 oort\n"
+
+    def test_slot_initializer_uses_expected_collection_type(self, run_source):
+        result = run_source(
+            core(
+                "class Bag {\n"
+                "    val xs: List[Int] = []\n"
+                "    def size() -> Int { len(this.xs) }\n"
+                "}\n"
+                "print(Bag().size())\n"
+            )
+        )
+        assert result.stdout == "0\n"
+
+    def test_definite_assignment_accepts_both_branches(self, run_source):
+        result = run_source(
+            core(
+                "class C {\n"
+                "    val x: Int\n"
+                "    def __init__(flag: Bool) {\n"
+                "        if flag { this.x = 1 } else { this.x = 2 }\n"
+                "    }\n"
+                "}\n"
+                "print(C(true).x, C(false).x)\n"
+            )
+        )
+        assert result.stdout == "1 2\n"
+
+    def test_inheritance_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "class A {}\nclass B < A {}\n",
+            "Class inheritance is not supported",
+        )
+
+    def test_metaclass_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "class A {}\nclass B :: A {}\n",
+            "Metaclasses are not supported",
+        )
+
+    def test_generic_class_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "class Box[T] {}\n",
+            "Generic classes are not implemented yet.",
+        )
+
+    def test_class_method_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "class C { def class.f() -> Int { 1 } }\n",
+            "Only plain instance methods are supported",
+        )
+
+    def test_operator_method_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            'class C { def operator "+"(x: Int) -> Int { x } }\n',
+            "Only plain instance methods are supported",
+        )
+
+    def test_other_special_method_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            'class C { def __str__() -> String { "x" } }\n',
+            "Special method '__str__' is not supported",
+        )
+
+    def test_class_body_statement_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n    print(1)\n}\n",
+            "Only slot and method declarations are allowed",
+        )
+
+    def test_slot_requires_annotation(self, caplog):
+        check_error(
+            caplog,
+            "class C { val x = 1 }\n",
+            "Slot 'x' requires a type annotation",
+        )
+
+    def test_slot_rejects_unit(self, caplog):
+        check_error(
+            caplog,
+            "class C { val x: Unit = print(1) }\n",
+            "Unit is only allowed as a function return type",
+        )
+
+    def test_slot_rejects_special_name(self, caplog):
+        check_error(
+            caplog,
+            "class C { val __x__: Int = 1 }\n",
+            "Slot name '__x__' is reserved",
+        )
+
+    def test_missing_constructor_for_uninitialized_slots(self, caplog):
+        check_error(
+            caplog,
+            "class C { val x: Int }\n",
+            "has slots without initializers but no __init__: x",
+        )
+
+    def test_definite_assignment_requires_all_branches(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n"
+            "    val x: Int\n"
+            "    def __init__(flag: Bool) {\n"
+            "        if flag { this.x = 1 }\n"
+            "    }\n"
+            "}\n",
+            "Constructor must initialize slot(s): x.",
+        )
+
+    def test_read_before_assignment(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n"
+            "    val x: Int\n"
+            "    def __init__() {\n"
+            "        print(this.x)\n"
+            "        this.x = 1\n"
+            "    }\n"
+            "}\n",
+            "Slot 'x' is read before it is definitely assigned.",
+        )
+
+    def test_early_return_before_assignment(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n    var x: Int\n    def __init__() { return }\n}\n",
+            "Constructor returns before initializing slot(s): x.",
+        )
+
+    def test_val_with_initializer_is_not_reassignable(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n    val x: Int = 0\n    def __init__() { this.x = 1 }\n}\n",
+            "Cannot assign to read-only slot 'x'; it has an initializer.",
+        )
+
+    def test_val_is_read_only_in_methods(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n"
+            "    val x: Int\n"
+            "    def __init__() { this.x = 1 }\n"
+            "    def set() -> Unit { this.x = 2 }\n"
+            "}\n",
+            "Cannot assign to read-only slot 'x'",
+        )
+
+    def test_val_cannot_be_assigned_in_a_loop(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n"
+            "    val x: Int\n"
+            "    def __init__() {\n"
+            "        for i in [1, 2] { this.x = i }\n"
+            "    }\n"
+            "}\n",
+            "Read-only slot 'x' cannot be assigned inside a loop.",
+        )
+
+    def test_undeclared_slot_assignment(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n    val x: Int = 1\n    def set() -> Unit { this.y = 2 }\n}\n",
+            "Class 'C' has no slot 'y'.",
+        )
+
+    def test_method_assignment_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n    def f() -> Int { 1 }\n    def set() -> Unit { this.f = 2 }\n}\n",
+            "Cannot assign to method 'f'.",
+        )
+
+    def test_unknown_member_read(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n    val x: Int = 1\n    def f() -> Int { this.missing }\n}\n",
+            "Class 'C' has no member 'missing'.",
+        )
+
+    def test_constructor_argument_types(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n    val x: Int\n    def __init__(x: Int) { this.x = x }\n}\nC(true)\n",
+            "Expected Int, got Bool.",
+        )
+
+    def test_method_argument_types(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n"
+            "    val x: Int = 1\n"
+            "    def add(n: Int) -> Int { this.x + n }\n"
+            "}\n"
+            "C().add(true)\n",
+            "Expected Int, got Bool.",
+        )
+
+    def test_class_equality_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "class C { val x: Int = 1 }\nval c = C()\nprint(c == c)\n",
+            "Class equality is not supported",
+        )
+
+    def test_class_instances_are_not_printable(self, caplog):
+        check_error(
+            caplog,
+            "class C { val x: Int = 1 }\nprint(C())\n",
+            "got C.",
+        )
+
+    def test_type_name_collision_with_enum_or_class(self, caplog):
+        check_error(
+            caplog,
+            "enum Foo { A }\nclass Foo {}\n",
+            "Type name 'Foo' is already declared or reserved",
+        )
+        check_error(
+            caplog,
+            "class Foo {}\nenum Foo { A }\n",
+            "Type name 'Foo' is already declared.",
+        )
+
+    def test_class_must_be_top_level(self, caplog):
+        check_error(
+            caplog,
+            "def f() -> Unit {\n    class C {}\n    print(1)\n}\n",
+            "Class declarations are only allowed at module top level",
+        )
+
+    def test_constructor_return_type_must_be_unit(self, caplog):
+        check_error(
+            caplog,
+            "class C {\n    val x: Int = 1\n    def __init__() -> Int { this.x }\n}\n",
+            "must return Unit",
+        )

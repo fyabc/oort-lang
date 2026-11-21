@@ -79,6 +79,19 @@ def test_core_astm_shows_types(monkeypatch, capsys):
     assert "type='Int'" in capsys.readouterr().out
 
 
+def test_core_astm_shows_class_types(monkeypatch, capsys):
+    source = """#lang oort-core
+class C {
+    val x: Int = 1
+}
+val c = C()
+"""
+    assert _run_cli(monkeypatch, ["-t", "astm", "-c", source]) == 0
+    out = capsys.readouterr().out
+    assert "ClassDef" in out
+    assert "type='C'" in out
+
+
 def test_core_astm_shows_collection_types(monkeypatch, capsys):
     source = """#lang oort-core
 val xs = [1, 2]

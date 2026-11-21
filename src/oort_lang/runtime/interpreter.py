@@ -58,7 +58,7 @@ from .objects import (
     OortSuperProxy,
     OortTuple,
 )
-from .type_system import OortType, Runtime
+from .type_system import OortType, Runtime, SlotDefinition
 
 if TYPE_CHECKING:
     from .modules import ModuleLoader
@@ -528,6 +528,22 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                     f"Cannot shadow method {lhs.attribute!r} with an instance field",
                     lhs.position,
                 )
+
+            if value.type.static_layout and not isinstance(value, OortType):
+                slot = value.type.find_slot(lhs.attribute)
+                if slot is None:
+                    raise OortAttributeError(
+                        f"Class {value.type.name!r} has no slot {lhs.attribute!r}",
+                        lhs.position,
+                    )
+                if not slot.mutable:
+                    current_method = self._current_method
+                    is_initializer = getattr(current_method, "is_initializer", False)
+                    if not (is_initializer and lhs.attribute not in value.fields):
+                        raise OortAttributeError(
+                            f"Cannot assign to read-only slot {lhs.attribute!r}",
+                            lhs.position,
+                        )
             value.set(lhs.attribute, rhs)
 
     def visit_attribute(self, node: nodes.Attribute) -> OortObject:
@@ -543,6 +559,17 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                 f"Type {value.receiver.type.name!r} has no super attribute {node.attribute!r}",
                 node.position,
             )
+
+        if (
+            isinstance(value, OortInstance)
+            and not isinstance(value, OortType)
+            and value.type.static_layout
+        ):
+            slot = value.type.find_slot(node.attribute)
+            if slot is not None and node.attribute not in value.fields:
+                raise OortAttributeError(
+                    f"Slot {node.attribute!r} is not initialized", node.position
+                )
 
         lookup = self.env.lookup_extension(value.type, node.attribute)
         if lookup.ambiguous:
@@ -758,6 +785,33 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         """Dunder-style names the runtime does not dispatch to user code."""
         return len(name) > 4 and name.startswith("__") and name.endswith("__")
 
+    def initialize_instance_slots(self, instance: "OortInstance", class_type: "OortType"):
+        """Evaluate declared slot initializers for a fresh instance."""
+        for slot in class_type.slot_definitions():
+            if slot.initializer is None:
+                continue
+            previous_env = self.env
+            self.env = slot.closure
+            try:
+                value = slot.initializer.accept(self)
+            finally:
+                self.env = previous_env
+            instance.fields[slot.name] = value
+
+    def check_instance_slots(self, instance: "OortInstance", class_type: "OortType"):
+        """Fail if the constructor left any declared slot uninitialized."""
+        missing = [
+            slot
+            for slot in class_type.slot_definitions()
+            if slot.initializer is None and slot.name not in instance.fields
+        ]
+        if missing:
+            names = ", ".join(slot.name for slot in missing)
+            raise OortTypeError(
+                f"Class {class_type.name!r} did not initialize slot(s): {names}.",
+                missing[0].position,
+            )
+
     def visit_class_def(self, node: nodes.ClassDef) -> OortType:
         # Visit base classes and metaclasses.
         bases = []
@@ -794,6 +848,10 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         try:
             self.env = class_env
             for stmt in node.body.statements:
+                if isinstance(stmt, nodes.VarDecl):
+                    self._define_slot(cls, stmt, class_env)
+                    continue
+
                 result = stmt.accept(self)
 
                 if isinstance(stmt, nodes.FunctionDef) and not stmt.is_lambda:
@@ -814,9 +872,6 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                         cls.set_class_field(stmt.name, result)
                     else:
                         cls.set(stmt.name, result)
-                elif isinstance(stmt, nodes.VarDecl):
-                    # TODO: Add "Slot" field definition.
-                    pass
                 else:
                     # Allow any type of statement in class body.
                     # TODO: Add compiler options to control this.
@@ -824,6 +879,23 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         finally:
             self.env = prev
         return cls
+
+    def _define_slot(self, cls: OortType, node: nodes.VarDecl, class_env: Environment):
+        if len(node.decl_targets) != 1:
+            raise OortSyntaxError(
+                "Class-body slot declarations require a single target.", node.position
+            )
+        target = node.decl_targets[0]
+        if target.name in cls.slots:
+            raise OortSyntaxError(f"Slot {target.name!r} is already declared.", target.position)
+        cls.slots[target.name] = SlotDefinition(
+            name=target.name,
+            mutable=node.mutable,
+            initializer=node.init_value,
+            closure=class_env,
+            position=target.position,
+        )
+        cls.static_layout = True
 
     def visit_enum_def(self, node: nodes.EnumDef) -> OortType:
         enum_type = OortType.create_type_object(node.name, bases=[self.runtime.types.object_type])

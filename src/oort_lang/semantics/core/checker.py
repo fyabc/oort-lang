@@ -3,7 +3,7 @@
 """Independent static checker for the `oort-core` thin probe.
 
 The checker is intentionally small: `Int`, `Float`, `Bool`, `String`, `Unit`,
-functions and monomorphic enums.
+collections, functions, monomorphic enums and static classes with fixed slots.
 It runs after pass 1 (name resolution / unsupported-feature checks) and only
 when pass 1 succeeded, so it can assume bindings exist and focus on types.
 """
@@ -19,6 +19,7 @@ from ...diagnostics.error_handler import CompilerErrorHandler
 from ...parser.dialect import DialectConfig
 from ...source.input_info import InputInfo
 from ...source.source_position import SourcePosition
+from .definite_assignment import DefiniteAssignmentAnalyzer, SlotFact
 from .types import (
     BOOL,
     FLOAT,
@@ -28,6 +29,7 @@ from .types import (
     UNIT,
     UNKNOWN,
     AdtType,
+    ClassType,
     ConstructorInfo,
     CoreModuleInfo,
     DictType,
@@ -36,6 +38,7 @@ from .types import (
     ModuleType,
     NeverType,
     SetType,
+    SlotInfo,
     TupleType,
     Type,
     UnknownType,
@@ -49,10 +52,17 @@ ModuleResolver = Callable[[str, Path, SourcePosition], CoreModuleInfo | None]
 _ARITHMETIC = frozenset({"+", "-", "*", "//", "%"})
 _ORDERING = frozenset({"<", "<=", ">", ">="})
 _EQUALITY = frozenset({"==", "!="})
+_RESERVED_TYPE_NAMES = frozenset(
+    {"Int", "Float", "Bool", "String", "Unit", "List", "Set", "Dict", "Tuple", "_"}
+)
 
 
 def _is_numeric(type_: Type) -> bool:
     return type_ in (INT, FLOAT)
+
+
+def _is_special_name(name: str) -> bool:
+    return len(name) > 4 and name.startswith("__") and name.endswith("__")
 
 
 def _is_container(type_: Type) -> bool:
@@ -124,6 +134,9 @@ class CoreTypeChecker(ASTVisitor[Type]):
         self.module_exports: tuple[tuple[str, Type], ...] = ()
         self.enums: dict[str, AdtType] = {}
         self.constructor_names: dict[str, AdtType] = {}
+        self.classes: dict[str, ClassType] = {}
+        self.current_class: ClassType | None = None
+        self._in_initializer = False
         self._loop_depth = 0
 
     # ------------------------------------------------------------------
@@ -334,8 +347,14 @@ class CoreTypeChecker(ASTVisitor[Type]):
             return self._unsupported(
                 node, "Augmented assignment is not supported in oort-core yet."
             )
+        if isinstance(node.lhs, nodes.Attribute):
+            self._check_slot_assignment(node)
+            return UNIT
         if not isinstance(node.lhs, nodes.Name):
-            return self._unsupported(node, "Only plain name assignment is supported in oort-core.")
+            return self._unsupported(
+                node,
+                "Only plain names and class slots can be assigned in oort-core.",
+            )
 
         info = self.lookup(node.lhs.id)
         if info is None:
@@ -354,6 +373,233 @@ class CoreTypeChecker(ASTVisitor[Type]):
         node.lhs.metadata["type"] = describe_type(info.type)
         return UNIT
 
+    def _check_slot_assignment(self, node: nodes.Assignment) -> None:
+        assert isinstance(node.lhs, nodes.Attribute)
+        receiver_type = node.lhs.value.accept(self) or UNKNOWN
+        if isinstance(receiver_type, UnknownType):
+            node.rhs.accept(self)
+            return
+        if not isinstance(receiver_type, ClassType):
+            self._error(
+                "Only slots of class instances can be assigned in oort-core.",
+                node.lhs.position,
+            )
+            node.rhs.accept(self)
+            return
+        slot = receiver_type.slot(node.lhs.attribute)
+        if slot is None:
+            if receiver_type.method(node.lhs.attribute) is not None:
+                self._error(
+                    f"Cannot assign to method '{node.lhs.attribute}'.",
+                    node.lhs.position,
+                )
+            else:
+                self._error(
+                    f"Class '{receiver_type.name}' has no slot '{node.lhs.attribute}'.",
+                    node.lhs.position,
+                )
+            node.rhs.accept(self)
+            return
+        if not slot.mutable and not (self._in_initializer and not slot.has_initializer):
+            self._error(
+                f"Cannot assign to read-only slot '{slot.name}' (declared with `val`).",
+                node.lhs.position,
+            )
+        self._check_expr(node.rhs, slot.slot_type)
+        node.lhs.metadata["type"] = describe_type(slot.slot_type)
+        return
+
+    def visit_class_def(self, node: nodes.ClassDef) -> Type:
+        if not self.module_level:
+            return self._unsupported(
+                node, "Class declarations are only allowed at module top level in oort-core."
+            )
+        if node.type_params:
+            return self._unsupported(node, "Generic classes are not supported in oort-core yet.")
+        if node.bases:
+            return self._unsupported(node, "Class inheritance is not supported in oort-core yet.")
+        if node.meta is not None:
+            return self._unsupported(node, "Metaclasses are not supported in oort-core yet.")
+        if len(node.names) != 1:
+            return self._unsupported(node, "Namespaced classes are not supported in oort-core yet.")
+
+        name = node.name
+        if name in _RESERVED_TYPE_NAMES or name in self.classes or name in self.enums:
+            self._error(f"Type name '{name}' is already declared or reserved.", node.name_position)
+            return UNIT
+
+        class_type = ClassType(self._module_origin(), name)
+        self.classes[name] = class_type
+
+        slot_infos: list[SlotInfo] = []
+        slot_decls: list[tuple[SlotInfo, nodes.VarDecl, nodes.SingleDeclTarget]] = []
+        methods: list[tuple[str, FunctionType, nodes.FunctionDef]] = []
+        slot_names: set[str] = set()
+        method_names: set[str] = set()
+        init_method: tuple[FunctionType, nodes.FunctionDef] | None = None
+
+        for stmt in node.body.statements:
+            if isinstance(stmt, nodes.VarDecl):
+                if len(stmt.decl_targets) != 1:
+                    self._unsupported(
+                        stmt, "Multi-target slot declarations are not supported in oort-core yet."
+                    )
+                    continue
+                target = stmt.decl_targets[0]
+                if _is_special_name(target.name):
+                    self._error(
+                        f"Slot name '{target.name}' is reserved in oort-core.",
+                        target.position,
+                    )
+                    continue
+                if target.name in slot_names or target.name in method_names:
+                    self._error(
+                        f"Duplicate member '{target.name}' in class '{name}'.",
+                        target.position,
+                    )
+                    continue
+                if target.type_expr is None:
+                    self._error(
+                        f"Slot '{target.name}' requires a type annotation in oort-core.",
+                        target.position,
+                    )
+                    slot_type: Type = UNKNOWN
+                else:
+                    slot_type = self.resolve_annotation(target.type_expr, allow_unit=False)
+                info = SlotInfo(
+                    target.name,
+                    slot_type,
+                    stmt.mutable,
+                    stmt.init_value is not None,
+                )
+                slot_names.add(target.name)
+                slot_infos.append(info)
+                slot_decls.append((info, stmt, target))
+                target.metadata["type"] = describe_type(slot_type)
+                continue
+
+            if isinstance(stmt, nodes.FunctionDef) and not stmt.is_lambda:
+                if (
+                    stmt.is_extension
+                    or stmt.is_class_method
+                    or stmt.operator_symbol is not None
+                    or stmt.type_params
+                ):
+                    self._unsupported(
+                        stmt,
+                        "Only plain instance methods are supported in oort-core classes yet.",
+                    )
+                    continue
+                method_name = stmt.name
+                if _is_special_name(method_name) and method_name != "__init__":
+                    self._error(
+                        f"Special method '{method_name}' is not supported in oort-core.",
+                        stmt.name_position,
+                    )
+                    continue
+                if method_name in method_names or method_name in slot_names:
+                    self._error(
+                        f"Duplicate member '{method_name}' in class '{name}'.",
+                        stmt.name_position,
+                    )
+                    continue
+                display_name = f"{name}.{method_name}"
+                if method_name == "__init__":
+                    signature = self._check_init_signature(stmt, display_name)
+                else:
+                    signature = self._build_signature(stmt, display_name)
+                stmt.metadata["type"] = describe_type(signature)
+                method_names.add(method_name)
+                methods.append((method_name, signature, stmt))
+                if method_name == "__init__":
+                    init_method = (signature, stmt)
+                continue
+
+            self._unsupported(
+                stmt,
+                "Only slot and method declarations are allowed in oort-core class bodies.",
+            )
+
+        class_type.slots = tuple(slot_infos)
+        class_type.methods = tuple(
+            (method_name, signature) for method_name, signature, _ in methods
+        )
+
+        constructor = FunctionType(
+            init_method[0].params if init_method is not None else (), class_type
+        )
+        self.declare(
+            name,
+            constructor,
+            mutable=False,
+            position=node.name_position,
+            is_function=True,
+        )
+        node.metadata["type"] = describe_type(class_type)
+
+        for info, declaration, _ in slot_decls:
+            if declaration.init_value is not None and not isinstance(info.slot_type, UnknownType):
+                self._check_expr(declaration.init_value, info.slot_type)
+
+        for method_name, signature, function in methods:
+            self._check_method_body(
+                function,
+                signature,
+                f"{name}.{method_name}",
+                class_type,
+                is_initializer=method_name == "__init__",
+            )
+
+        slot_facts = [
+            SlotFact(info.name, info.mutable, info.has_initializer, target.position)
+            for info, _, target in slot_decls
+        ]
+        uninitialized = [info.name for info in slot_infos if not info.has_initializer]
+        if init_method is None:
+            if uninitialized:
+                self._error(
+                    f"Class '{name}' has slots without initializers but no "
+                    f"__init__: {', '.join(uninitialized)}.",
+                    node.name_position,
+                )
+        else:
+            DefiniteAssignmentAnalyzer(slot_facts, self._error).check(init_method[1])
+        return UNIT
+
+    def _check_init_signature(self, node: nodes.FunctionDef, display_name: str) -> FunctionType:
+        if node.ret_type is not None:
+            return_type = self.resolve_annotation(node.ret_type, allow_unit=True)
+            if not (return_type == UNIT or isinstance(return_type, UnknownType)):
+                self._error(
+                    f"Constructor '{display_name}' must return Unit.",
+                    node.ret_type.position,
+                )
+        return self._build_signature(node, display_name, forced_return=UNIT)
+
+    def _check_method_body(
+        self,
+        node: nodes.FunctionDef,
+        signature: FunctionType,
+        display_name: str,
+        class_type: ClassType,
+        *,
+        is_initializer: bool,
+    ) -> None:
+        previous_class = self.current_class
+        previous_initializer = self._in_initializer
+        self.current_class = class_type
+        self._in_initializer = is_initializer
+        try:
+            self._check_function_body(
+                node,
+                signature,
+                display_name,
+                this_type=class_type,
+            )
+        finally:
+            self.current_class = previous_class
+            self._in_initializer = previous_initializer
+
     def visit_enum_def(self, node: nodes.EnumDef) -> Type:
         if not self.module_level:
             return self._unsupported(
@@ -361,11 +607,14 @@ class CoreTypeChecker(ASTVisitor[Type]):
             )
         if node.type_params:
             return self._unsupported(node, "Generic enums are not supported in oort-core yet.")
-        if node.name in {"Int", "Float", "Bool", "String", "Unit", "_"}:
+        if node.name in _RESERVED_TYPE_NAMES:
             self._error(
                 f"Enum name '{node.name}' is reserved in oort-core.",
                 node.name_position,
             )
+            return UNIT
+        if node.name in self.classes:
+            self._error(f"Type name '{node.name}' is already declared.", node.name_position)
             return UNIT
         if node.name in self.enums:
             self._error(f"Enum '{node.name}' is already declared.", node.name_position)
@@ -481,7 +730,14 @@ class CoreTypeChecker(ASTVisitor[Type]):
         self._check_function_body(node, signature, "<lambda>")
         return signature
 
-    def _build_signature(self, node: nodes.FunctionDef, display_name: str) -> FunctionType:
+    def _build_signature(
+        self,
+        node: nodes.FunctionDef,
+        display_name: str,
+        *,
+        default_return: Type | None = None,
+        forced_return: Type | None = None,
+    ) -> FunctionType:
         param_types: list[Type] = []
         for param in node.params:
             if param.kind != nodes.ParameterKind.DEFAULT or param.default_value is not None:
@@ -502,18 +758,28 @@ class CoreTypeChecker(ASTVisitor[Type]):
             param_types.append(self.resolve_annotation(param.type_expr, allow_unit=False))
 
         return_type: Type
-        if node.ret_type is None:
-            self._error(
-                f"Function '{display_name}' requires a return type annotation in oort-core.",
-                node.name_position,
-            )
-            return_type = UNKNOWN
+        if forced_return is not None:
+            return_type = forced_return
+        elif node.ret_type is None:
+            if default_return is not None:
+                return_type = default_return
+            else:
+                self._error(
+                    f"Function '{display_name}' requires a return type annotation in oort-core.",
+                    node.name_position,
+                )
+                return_type = UNKNOWN
         else:
             return_type = self.resolve_annotation(node.ret_type, allow_unit=True)
         return FunctionType(tuple(param_types), return_type)
 
     def _check_function_body(
-        self, node: nodes.FunctionDef, signature: FunctionType, display_name: str
+        self,
+        node: nodes.FunctionDef,
+        signature: FunctionType,
+        display_name: str,
+        *,
+        this_type: ClassType | None = None,
     ) -> None:
         previous_function = self.current_function
         previous_name = self.current_function_name
@@ -523,6 +789,13 @@ class CoreTypeChecker(ASTVisitor[Type]):
         self.module_level = False
         self.scopes.append({})
         try:
+            if this_type is not None:
+                self.declare(
+                    "this",
+                    this_type,
+                    mutable=False,
+                    position=node.name_position,
+                )
             for param, param_type in zip(node.params, signature.params):
                 self.declare(
                     param.name,
@@ -587,6 +860,11 @@ class CoreTypeChecker(ASTVisitor[Type]):
         return self._record(node, BOOL)
 
     def visit_name(self, node: nodes.Name) -> Type:
+        if node.id == "this":
+            if self.current_class is None:
+                self._error("'this' is only available inside methods.", node.position)
+                return self._record(node, UNKNOWN)
+            return self._record(node, self.current_class)
         info = self.lookup(node.id)
         if info is None:
             if node.id == "print":
@@ -806,6 +1084,12 @@ class CoreTypeChecker(ASTVisitor[Type]):
         if isinstance(left, AdtType) or isinstance(right, AdtType):
             self._error(
                 "Enum equality is not supported in oort-core yet; use match.",
+                node.position,
+            )
+            return self._record(node, UNKNOWN)
+        if isinstance(left, ClassType) or isinstance(right, ClassType):
+            self._error(
+                "Class equality is not supported in oort-core yet.",
                 node.position,
             )
             return self._record(node, UNKNOWN)
@@ -1086,10 +1370,13 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 node.position,
             )
             return UNKNOWN
+        class_type = self.classes.get(node.id)
+        if class_type is not None:
+            return class_type
         enum_type = self.enums.get(node.id)
         if enum_type is not None:
             return enum_type
-        known = ", ".join(["Int", "Float", "Bool", "String", "Unit", *self.enums])
+        known = ", ".join(["Int", "Float", "Bool", "String", "Unit", *self.classes, *self.enums])
         self._error(
             f"Unknown type '{node.id}' in oort-core. Known types: {known}.",
             node.position,
@@ -1142,9 +1429,6 @@ class CoreTypeChecker(ASTVisitor[Type]):
         if node is None:
             return UNIT
         return self._unsupported(node)
-
-    def visit_class_def(self, node: nodes.ClassDef) -> Type:
-        return self._unsupported(node, "Classes are not supported in oort-core yet.")
 
     def visit_while_expr(self, node: nodes.WhileExpr) -> Type:
         condition = node.condition.accept(self) or UNKNOWN
@@ -1321,9 +1605,22 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 )
                 return self._record(node, UNKNOWN)
             return self._record(node, export_type)
+        if isinstance(value_type, ClassType):
+            slot = value_type.slot(node.attribute)
+            if slot is not None:
+                return self._record(node, slot.slot_type)
+            method = value_type.method(node.attribute)
+            if method is not None:
+                return self._record(node, method)
+            self._error(
+                f"Class '{value_type.name}' has no member '{node.attribute}'.",
+                node.position,
+            )
+            return self._record(node, UNKNOWN)
         return self._unsupported(
             node,
-            "Attribute access is only supported on imported modules in oort-core yet.",
+            "Attribute access is only supported on imported modules and "
+            "static class members in oort-core yet.",
         )
 
     def visit_subscript(self, node: nodes.Subscript) -> Type:
