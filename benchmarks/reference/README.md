@@ -55,6 +55,9 @@ cargo build --release --manifest-path rust/Cargo.toml
 纯 Rust VM 启动（后者仅几 ms），不能与原生运行时的 startup 直接比。spike 未优化
 （无内联缓存、`Rc<RefCell>` 开销、range 物化 list），exec 仍有提升空间。
 
+本表的 `oort-rust` 行是**动态 kind=0 路径**；typed kind=1 标量子集（Rust/Python）
+的性能单独记录在 `RESULTS.md` 第 6 节，工作负载与执行路径不同，不作直接对比。
+
 ## 工作负载
 
 | 工作负载 | 程序 | 期望结果 |

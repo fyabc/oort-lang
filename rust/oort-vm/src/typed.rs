@@ -6,6 +6,7 @@
 //! Semantics mirror the Python typed VM; see docs/design/16-numeric-semantics.md
 //! for the Int/Float contract (i64 is a spike representation).
 
+use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -302,35 +303,185 @@ const GT_MIXED: u32 = 50;
 const GE_MIXED: u32 = 51;
 
 pub struct TypedVm {
-    module: TypedModule,
-    functions: HashMap<String, usize>,
+    functions: Vec<ResolvedProto>,
+    main: ResolvedProto,
+    pool: FramePool,
+    globals: GlobalTable,
+}
+
+/// Reusable register frames; LIFO reuse matches recursive call unwinding.
+struct FramePool {
+    frames: Vec<Vec<TypedValue>>,
+}
+
+impl FramePool {
+    fn new() -> Self {
+        FramePool {
+            frames: Vec::with_capacity(16),
+        }
+    }
+
+    fn acquire(&mut self, len: usize) -> Vec<TypedValue> {
+        let mut frame = self.frames.pop().unwrap_or_default();
+        frame.clear();
+        frame.reserve(len.saturating_sub(frame.capacity()));
+        frame.resize(len, TypedValue::Unit);
+        frame
+    }
+
+    fn release(&mut self, frame: Vec<TypedValue>) {
+        self.frames.push(frame);
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TypedGlobal {
+    Function(usize),
+    Native(NativeFn),
+}
+
+/// A cached `LOAD_G` target. The version makes invalidation lazy: a globals
+/// write bumps `GlobalTable::version`, and the next load refreshes the entry.
+#[derive(Clone, Copy)]
+struct CachedGlobal {
+    version: u64,
+    target: TypedGlobal,
+}
+
+/// Runtime global bindings. kind=1 currently has no writes (top-level
+/// functions and `print` only), but the version hook lets a future `STORE_G`
+/// invalidate caches without changing `.obc` or the resolver.
+struct GlobalTable {
+    version: u64,
+    bindings: HashMap<String, TypedGlobal>,
+}
+
+impl GlobalTable {
+    fn from_module(module: &TypedModule) -> Self {
+        let mut bindings: HashMap<String, TypedGlobal> = module
+            .functions
+            .iter()
+            .enumerate()
+            .map(|(index, proto)| (proto.name.clone(), TypedGlobal::Function(index)))
+            .collect();
+        // A user function named `print` keeps precedence over the native.
+        bindings
+            .entry("print".to_string())
+            .or_insert(TypedGlobal::Native(NativeFn::Print));
+        GlobalTable {
+            version: 0,
+            bindings,
+        }
+    }
+
+    fn lookup(&self, name: &str) -> Option<TypedGlobal> {
+        self.bindings.get(name).copied()
+    }
+
+    fn invalidate(&mut self) {
+        self.version = self.version.wrapping_add(1);
+    }
+}
+
+/// A proto plus its `LOAD_G` cache, keyed by constant-pool index.
+struct ResolvedProto {
+    proto: Rc<TypedProto>,
+    globals: Vec<Cell<Option<CachedGlobal>>>,
+}
+
+fn resolve_globals(proto: &TypedProto, globals: &GlobalTable) -> Vec<Cell<Option<CachedGlobal>>> {
+    proto
+        .constants
+        .iter()
+        .map(|constant| match constant {
+            Constant::Str(name) => match globals.lookup(name) {
+                Some(target) => Cell::new(Some(CachedGlobal {
+                    version: globals.version,
+                    target,
+                })),
+                None => Cell::new(None),
+            },
+            _ => Cell::new(None),
+        })
+        .collect()
+}
+
+fn resolve_global(
+    resolved: &ResolvedProto,
+    globals: &GlobalTable,
+    index: usize,
+) -> TResult<TypedGlobal> {
+    let entry = resolved
+        .globals
+        .get(index)
+        .ok_or("invalid global constant index")?;
+    if let Some(cached) = entry.get() {
+        if cached.version == globals.version {
+            return Ok(cached.target);
+        }
+    }
+    let name = match resolved.proto.constants.get(index) {
+        Some(Constant::Str(name)) => name.as_ref(),
+        _ => return Err("invalid global name constant".into()),
+    };
+    let target = globals
+        .lookup(name)
+        .ok_or_else(|| format!("unknown name '{name}'"))?;
+    entry.set(Some(CachedGlobal {
+        version: globals.version,
+        target,
+    }));
+    Ok(target)
 }
 
 impl TypedVm {
     pub fn new(module: TypedModule) -> Self {
+        let globals = GlobalTable::from_module(&module);
         let functions = module
             .functions
             .iter()
-            .enumerate()
-            .map(|(index, proto)| (proto.name.clone(), index))
+            .map(|proto| ResolvedProto {
+                proto: Rc::clone(proto),
+                globals: resolve_globals(proto, &globals),
+            })
             .collect();
-        TypedVm { module, functions }
+        let main = ResolvedProto {
+            proto: Rc::clone(&module.main),
+            globals: resolve_globals(&module.main, &globals),
+        };
+        TypedVm {
+            functions,
+            main,
+            pool: FramePool::new(),
+            globals,
+        }
+    }
+
+    /// Bump the globals version; cached `LOAD_G` targets refresh lazily.
+    pub fn invalidate_globals(&mut self) {
+        self.globals.invalidate();
     }
 
     pub fn run_main(&mut self) -> TResult<Value> {
-        let main = Rc::clone(&self.module.main);
-        let registers = vec![TypedValue::Unit; main.register_count as usize];
-        let result = execute(&self.module, &self.functions, &main, registers)?;
-        to_value(result)
+        let functions = &self.functions;
+        let main = &self.main;
+        let globals = &self.globals;
+        let pool = &mut self.pool;
+        let mut frame = pool.acquire(main.proto.register_count as usize);
+        let result = execute(main, functions, globals, pool, &mut frame);
+        pool.release(frame);
+        result.and_then(to_value)
     }
 }
 
 fn execute(
-    module: &TypedModule,
-    functions: &HashMap<String, usize>,
-    proto: &TypedProto,
-    mut registers: Vec<TypedValue>,
+    resolved: &ResolvedProto,
+    functions: &[ResolvedProto],
+    globals: &GlobalTable,
+    pool: &mut FramePool,
+    registers: &mut [TypedValue],
 ) -> TResult<TypedValue> {
+    let proto = &resolved.proto;
     let mut pc = 0usize;
     while pc < proto.code.len() {
         let word = proto.code[pc];
@@ -348,14 +499,9 @@ fn execute(
                 registers[a] = registers[b];
             }
             LOAD_G => {
-                let name = match &proto.constants[bx] {
-                    Constant::Str(s) => s.to_string(),
-                    _ => return Err("invalid global name constant".into()),
-                };
-                registers[a] = match functions.get(&name) {
-                    Some(index) => TypedValue::Function(*index),
-                    None if name == "print" => TypedValue::Native(NativeFn::Print),
-                    None => return Err(format!("unknown name '{name}'")),
+                registers[a] = match resolve_global(resolved, globals, bx)? {
+                    TypedGlobal::Function(index) => TypedValue::Function(index),
+                    TypedGlobal::Native(native) => TypedValue::Native(native),
                 };
             }
             DEF_FUN => {}
@@ -498,8 +644,14 @@ fn execute(
             }
             CALL => {
                 let callee = registers[a];
-                let arguments = registers[a + 1..a + 1 + b].to_vec();
-                registers[c] = call(module, functions, callee, arguments)?;
+                let result = call(
+                    functions,
+                    globals,
+                    pool,
+                    callee,
+                    &registers[a + 1..a + 1 + b],
+                )?;
+                registers[c] = result;
             }
             RET => {
                 return Ok(registers[a]);
@@ -512,14 +664,16 @@ fn execute(
 }
 
 fn call(
-    module: &TypedModule,
-    functions: &HashMap<String, usize>,
+    functions: &[ResolvedProto],
+    globals: &GlobalTable,
+    pool: &mut FramePool,
     callee: TypedValue,
-    arguments: Vec<TypedValue>,
+    arguments: &[TypedValue],
 ) -> TResult<TypedValue> {
     match callee {
         TypedValue::Function(index) => {
-            let proto = &module.functions[index];
+            let resolved = functions.get(index).ok_or("invalid typed function index")?;
+            let proto = &resolved.proto;
             if arguments.len() != proto.param_types.len() {
                 return Err(format!(
                     "typed function '{}' expects {} arguments, got {}",
@@ -528,13 +682,17 @@ fn call(
                     arguments.len()
                 ));
             }
-            let mut registers = vec![TypedValue::Unit; proto.register_count as usize];
-            for (index, (expected, value)) in proto.param_types.iter().zip(&arguments).enumerate() {
+            for (index, (expected, value)) in proto.param_types.iter().zip(arguments).enumerate() {
                 guard(*expected, *value)
                     .map_err(|e| format!("argument {index} of '{}': {e}", proto.name))?;
-                registers[index] = *value;
             }
-            execute(module, functions, proto, registers)
+            let mut frame = pool.acquire(proto.register_count as usize);
+            for (slot, value) in frame.iter_mut().zip(arguments) {
+                *slot = *value;
+            }
+            let result = execute(resolved, functions, globals, pool, &mut frame);
+            pool.release(frame);
+            result
         }
         TypedValue::Native(NativeFn::Print) => {
             let parts: Vec<String> = arguments
@@ -551,6 +709,95 @@ fn call(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolves_globals_once_per_proto() {
+        let proto = TypedProto {
+            name: "test".into(),
+            is_main: false,
+            register_count: 0,
+            register_types: vec![],
+            param_types: vec![],
+            ret_type: TypedType::Unit,
+            code: vec![],
+            constants: vec![
+                Constant::Str(Rc::from("f")),
+                Constant::Str(Rc::from("print")),
+                Constant::Str(Rc::from("missing")),
+            ],
+        };
+        let globals = GlobalTable {
+            version: 0,
+            bindings: HashMap::from([
+                ("f".to_string(), TypedGlobal::Function(0)),
+                ("print".to_string(), TypedGlobal::Native(NativeFn::Print)),
+            ]),
+        };
+
+        let cells = resolve_globals(&proto, &globals);
+        assert!(matches!(
+            cells[0].get().unwrap().target,
+            TypedGlobal::Function(0)
+        ));
+        assert!(matches!(
+            cells[1].get().unwrap().target,
+            TypedGlobal::Native(NativeFn::Print)
+        ));
+        assert!(cells[2].get().is_none());
+    }
+
+    #[test]
+    fn cached_globals_refresh_after_version_bump() {
+        let proto = TypedProto {
+            name: "g".into(),
+            is_main: false,
+            register_count: 0,
+            register_types: vec![],
+            param_types: vec![],
+            ret_type: TypedType::Unit,
+            code: vec![],
+            constants: vec![Constant::Str(Rc::from("f"))],
+        };
+        let resolved = ResolvedProto {
+            proto: Rc::new(proto),
+            globals: vec![std::cell::Cell::new(None)],
+        };
+        let mut globals = GlobalTable {
+            version: 0,
+            bindings: HashMap::from([("f".to_string(), TypedGlobal::Function(0))]),
+        };
+
+        assert!(matches!(
+            resolve_global(&resolved, &globals, 0).unwrap(),
+            TypedGlobal::Function(0)
+        ));
+
+        globals.invalidate();
+        globals
+            .bindings
+            .insert("f".to_string(), TypedGlobal::Native(NativeFn::Print));
+        assert!(matches!(
+            resolve_global(&resolved, &globals, 0).unwrap(),
+            TypedGlobal::Native(NativeFn::Print)
+        ));
+        let cached = resolved.globals[0].get().unwrap();
+        assert_eq!(cached.version, 1);
+    }
+
+    #[test]
+    fn frame_pool_reuses_and_resets_frames() {
+        let mut pool = FramePool::new();
+        let mut first = pool.acquire(4);
+        first[0] = TypedValue::Int(7);
+        pool.release(first);
+
+        let reused = pool.acquire(4);
+        assert_eq!(reused.len(), 4);
+        assert!(matches!(reused[0], TypedValue::Unit));
+
+        let larger = pool.acquire(8);
+        assert_eq!(larger.len(), 8);
+    }
 
     #[test]
     fn mixed_comparison_is_exact_at_2_pow_53() {

@@ -486,6 +486,51 @@ TypedFunction
   （5.8 / 1.2 ms）有改善，loop 更明显。fib 仍受每次调用的帧分配与全局名查找
   限制，留作 U2 优化输入（不是 U1 的范围）。
 
+### M4-U2 计划：调用路径（2026-11-23）
+
+目标：在**不改 `.obc` 格式、不改语义、不引入 unsafe/第三方依赖**的前提下，
+降低 typed VM 的调用开销。fib 是主要受益者；loop 的调用少，预期变化小。
+
+| 步骤 | 内容 | 解决的热点 |
+|---|---|---|
+| **U2a 全局预解析** | VM 加载时为每个 proto 建 `globals: Vec<Option<TypedGlobal>>`（Function/Native）；`LOAD_G Bx` 变成数组索引 | 当前每次 `LOAD_G` 都 `String` 分配 + `HashMap` 哈希查找 |
+| **U2b 参数直拷 + 帧池** | `CALL` 不再 `to_vec()`；`call` 直接读调用者寄存器切片，复制到复用的 frame；frame 池 warmup 后零分配 | 每个调用两次 `Vec` 分配（参数 + callee 帧） |
+| **U2c（可选）** | 连续寄存器栈 / 预解码指令 | 进一步降低分配与解码开销；B 方案安全版先用帧池验证 |
+
+非目标：不改 `TypedValue` 表示、不优化 `print`/错误路径、不把 checked 算术换成
+wrapping、不引入 `unsafe` 或外部 crate。
+
+验收：typed differential 六例不变；`fib` 的 exec_ms 明显下降；RESULTS §6
+重新生成；Rust 单测覆盖全局解析/帧复用（错误路径仍显式报错）。
+
+### M4-U2 实现状态（2026-11-23）
+
+- **U2a 全局预解析（带版本化失效）**：`ResolvedProto` 为每个常量下标保存
+  `Cell<Option<CachedGlobal>>`；`LOAD_G` 命中当前 `GlobalTable.version` 时
+  直接取缓存，失效时按名字重新解析并写回。`TypedVm::invalidate_globals()`
+  供未来的 `STORE_G` 调用；当前 typed 子集无全局写，版本保持 0；
+  - `LOAD_G` 热路径仍是数组访问 + 一次版本比较；缓存条目是 `Copy` 小结构，
+    不使用 `RefCell`/`unsafe`；
+- **U2b 调用帧复用**：`CALL` 直接传调用者寄存器切片，不再 `to_vec()`；
+  `FramePool` 以 LIFO 复用帧，`acquire` 时 `clear` + `resize` 重置；
+  参数守卫在取帧前完成，执行后用 `release` 归还（错误路径帧被 drop，
+  不泄漏但不复用）；
+- 未做 U2c（连续寄存器栈/预解码）；未改 `.obc`、`TypedValue` 与语义；
+- 验证：Rust 单测 13 passed（新增全局解析、帧池复用）；typed differential
+  六例全过；
+- 测量（exec 口径，同一轮）：Rust **fib(20) 1.4 ms / loop 20000 0.4 ms**；
+  U1 为 4.7 / 0.9 ms，kind=0 VM 为 400.3 / 251.5 ms。fib 约 3× 改善，
+  符合“调用路径”预期；loop 变化小（调用少）。
+- **U2a/U2b 分离 A/B**（40 次交错，exec 中位数）：fib(20) U1 **5.28**、
+  U2a **2.60**、U2b-only **3.44**、U2a+U2b **1.47 ms**；loop 差异在噪声内。
+  结论：U2a 单独约 2×，U2b 单独约 1.5×，组合约 3.6×。
+- **版本化缓存开销**（80 次交错，fib20）：U2a+U2b **1.605 ms** vs 加版本检查
+  **1.655 ms**，约 3%，在噪声范围内；保留版本化失效机制。
+- **U2a 不限制 `.obc` 格式**：预解析发生在 VM 加载阶段，文件仍携带名字常量；
+  若未来 kind=1 加入可变全局/`STORE_G`，应由 VM 失效缓存或改用版本化查找，
+  而不是修改格式。当前 typed 子集无全局写，因此预解析是安全且可逆的实现
+  选择。
+
 ## 9. 风险与开放问题
 
 1. **类型来源漂移**：若 lowering 重新推断或解析字符串，规则必然与检查器分叉。

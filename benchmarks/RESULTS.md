@@ -114,13 +114,14 @@ uv run --frozen python benchmarks/report.py --benchmark benchmark-050-clean.json
 |---|---:|---:|---:|---:|
 | Oort 树遍历 0.5.0 | 935.1 ms | 300.4 ms | 165.7 ms | 459.9 ms |
 | Oort VM 0.5.0 | 331.1 ms | 128.6 ms | 121.1 ms | 503.4 ms |
-| Oort Rust VM (spike) | 5.23 ms | 1.08 ms | 1.85 ms | 86.32 ms |
+| Oort Rust VM (spike, kind=0) | 5.23 ms | 1.08 ms | 1.85 ms | 86.32 ms |
 | Python 3.12.12 | 1.29 ms | 1.29 ms | 0.569 ms | 40.08 ms |
 | Node 24.15.0 | 0.064 ms | 0.007 ms | 0.002 ms | 48.82 ms |
 | Ruby 4.0.10 | 0.549 ms | 0.343 ms | 0.261 ms | 139.2 ms |
 | Lua 5.4.8 | 0.378 ms | 0.073 ms | 0.154 ms | 6.46 ms |
 
 当前 Oort（解释器及 VM）约为 CPython 的 **100–727 倍**耗时。Node 的优化 JIT 可能折叠简单循环/字段更新，其数字只作下限；Ruby/Lua 作语境参考。
+本表是动态 kind=0 路径；typed kind=1 标量子集的 Rust/Python 结果见第 6 节，工作负载与执行路径不同，不作直接对比。
 
 详细运行方式与 Node/JIT、Ruby/Lua 的 caveat 见
 [reference/README.md](reference/README.md)。
@@ -151,20 +152,20 @@ uv run --frozen python benchmarks/report.py --benchmark benchmark-050-clean.json
 <!-- TYPED-BENCH-START -->
 ## 6. 类型化路径（研究快照）
 
-> 快照日期：2026-11-22；提交：`51c8782`；重复 5 次取中位数。
+> 快照日期：2026-11-23；提交：`5b627da`；重复 5 次取中位数。
 > 仅标量子集（fib20 / loop 20000）；Python 运行时为进程内计时，Rust 为
 > 子进程 wall time 扣除空 typed 程序启动。该节不进入门禁，由
 > `benchmarks/typed_run.py` + `typed_report.py` 生成。
 
 | 运行时 | fib(20) | loop 20000 | 说明 |
 |---|---:|---:|---|
-| Oort VM (kind=0) | 467.7 ms | 196.2 ms | 基线 |
-| Typed HIR 解释器 (M2) | 651.6 ms | 452.2 ms | Python，in-process |
-| Typed 字节码 VM (M3) | 720.2 ms | 521.6 ms | Python，in-process |
-| Rust typed VM (M4) | 4.7 ms | 0.9 ms | kind=1，exec 扣启动 |
+| Oort VM (kind=0) | 421.2 ms | 179.6 ms | 基线 |
+| Typed HIR 解释器 (M2) | 506.3 ms | 383.1 ms | Python，in-process |
+| Typed 字节码 VM (M3) | 654.1 ms | 498.5 ms | Python，in-process |
+| Rust typed VM (M4) | 1.8 ms | 1.2 ms | kind=1，exec 扣启动 |
 
-Python typed 字节码相对 kind=0 VM：**1.54–2.66×**（仍更慢，类型断言与解码开销；M3 只验证 ABI）。
-Rust typed 字节码比 kind=0 VM 快 **99.75–209.05×**（exec 口径；标量已未装箱，函数边界仍用 boxed 值）。
+Python typed 字节码相对 kind=0 VM：**1.55–2.78×**（仍更慢，类型断言与解码开销；M3 只验证 ABI）。
+Rust typed 字节码比 kind=0 VM 快 **150.04–232.47×**（exec 口径；标量已未装箱，函数边界仍用 boxed 值）。
 
 生成命令：
 

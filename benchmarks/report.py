@@ -229,7 +229,7 @@ def _reference_section(reference: dict[str, Any]) -> list[str]:
         name = {
             "oort": "Oort 树遍历",
             "oort-vm": "Oort VM",
-            "oort-rust": "Oort Rust VM (spike)",
+            "oort-rust": "Oort Rust VM (spike, kind=0)",
             "python": "Python",
             "node": "Node",
             "ruby": "Ruby",
@@ -261,6 +261,10 @@ def _reference_section(reference: dict[str, Any]) -> list[str]:
             f"当前 Oort（解释器及 VM）约为 CPython 的 **{low:.0f}–{high:.0f} 倍**耗时。"
             "Node 的优化 JIT 可能折叠简单循环/字段更新，其数字只作下限；"
             "Ruby/Lua 作语境参考。"
+        )
+        lines.append(
+            "本表是动态 kind=0 路径；typed kind=1 标量子集的 Rust/Python 结果见"
+            "第 6 节，工作负载与执行路径不同，不作直接对比。"
         )
     return lines
 
