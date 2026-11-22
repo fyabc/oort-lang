@@ -124,8 +124,13 @@ match opt {
 未绑定报硬错误）、match 载荷代换、自递归泛型载荷、声明处 `[out T]`/`[in T]`
 变型的极性检查（`out` 为软关键字），以及内建 `Option[out T]`/`Result[out T, out E]`
 （`Some`/`None`/`Ok`/`Err`，固定名义 origin，模块级保留名）；类型参数在
-HIR/字节码前擦除，后端零改动。字面量/元组/守卫/或模式、嵌套穷尽性、ADT 相等
-与槽对象仍待完成。
+HIR/字节码前擦除，后端零改动。
+
+**完整模式匹配语义切片（2026-11-22，[OP 0023](0023-full-pattern-matching.md)）**：
+已实现字面量/元组/或模式、`if` 守卫与嵌套穷尽性（Maranget witness）；
+`match` 的 scrutinee 扩展到 Bool/Int/Float/String/Tuple。`.obc` 升到 version 2
+（模式字面量值与 guard 字段，仍读 v1）。决策树编译留作性能切片；ADT 相等与
+槽对象仍待完成。
 
 ### 5. 错误处理
 

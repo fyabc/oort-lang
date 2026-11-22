@@ -44,6 +44,8 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 类型参数上界/默认值 | `enum E[T: Int] { A }`、`enum E[T = Int] { A }` | Type parameter bounds/defaults are not supported in oort-core yet. |
 | 变型误用 | `enum E[out T] { A(f: (T) -> Int) }` | Type parameter 'T' is declared covariant ('out') but appears in a contravariant position... |
 | 重定义预置 | `enum Option[T]`、`class Result`、`val Some = 1` | Type/Constructor/Name ... is declared in the core prelude. |
+| 模式错误 | 字面量类型不符、元组元数不符、或模式绑定不一致 | Literal pattern ... / Tuple pattern ... / All alternatives ... |
+| 非穷尽 | 缺少嵌套构造器/字面量/元组组合 | Match is not exhaustive; missing: <witness>. |
 | 非 core 的 enum/match | `oort-object` 中的 `enum` / `match` | Enums are only supported in oort-core yet. / match is only supported in oort-core yet. |
 | 编译器属性 | `@[]` | Compiler attributes are not implemented yet. |
 | 格式化字符串 | `f"..."` | Formatted string literals are not implemented yet. |
@@ -75,8 +77,8 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 类型 | `Int`、`Float`、`Bool`、`String`、`Unit`（仅函数返回）、单态与泛型 `enum`（`Option[Int]`）、内建 `Option[T]`/`Result[T,E]`、`List[T]`/`Set[T]`/`Dict[K, V]`/`Tuple[...]`；内部函数/`Unknown`/`Never` |
 | 声明 | 单目标 `val`/`var`，标注或局部推断；`var` 可赋值；模块顶层 `enum`/`class` |
 | 函数 | 顶层 `def`、参数标注必填、返回可推断（自递归仍需标注）、位置参数、所有路径返回；函数类型、lambda 与函数值 |
-| 表达式 | 字面量、名字、块、`if`/`else`、调用、Int/Float 算术与 `/`、数值/String 比较、Bool 逻辑、集合字面量/下标/`len`、`while`/`for`、`match`、lambda、`print` |
-| ADT | 单态与泛型 `enum`（`[T]`、`[out T]`/`[in T]` 声明处变型、构造器类型实参推断、载荷代换）、内建 `Option`/`Result`、嵌套构造器模式、`_`/绑定、顶层构造器穷尽性 |
+| 表达式 | 字面量、名字、块、`if`/`else`、调用、Int/Float 算术与 `/`、数值/String 比较、Bool 逻辑、集合字面量/下标/`len`、`while`/`for`、`match`（字面量/元组/或/守卫/嵌套穷尽性）、lambda、`print` |
+| ADT | 单态与泛型 `enum`（`[T]`、`[out T]`/`[in T]` 声明处变型、构造器类型实参推断、载荷代换）、内建 `Option`/`Result`、字面量/元组/或/守卫模式、嵌套穷尽性（Maranget witness） |
 | 类 | 顶层 `class`、固定 `val`/`var` 槽、方法（参数标注、返回可推断、递归方法需标注）、`__init__`、`this`、确定赋值与只读槽 |
 | 模块 | core→core `import` / `from`、导出类型与再导出；object↔core 与 native 导入被拒绝 |
 | 调试 | `-t ast` 跳过检查；`-t astm` 显示推断类型 |

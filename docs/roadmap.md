@@ -92,8 +92,10 @@ lambda + 类方法，递归仍需标注，类方法按依赖序推断；算法�
 [design 14](design/14-core-typechecking.md)）。**已完成泛型 ADT 增量 A/B/C**
 （`enum E[T]`、类型应用、构造器实参推断、match 载荷代换、`[out T]`/`[in T]`
 声明处变型、内建 `Option`/`Result`；类型参数擦除，后端零改动；设计与切片见
-[OP 0022](proposals/0022-generic-adts.md)）。后续：字面量/元组/守卫/或模式与
-嵌套穷尽性、静态对象模型与槽变量，以及跨方言 FFI 边界。
+[OP 0022](proposals/0022-generic-adts.md)）。**已完成完整模式匹配语义切片**
+（[OP 0023](proposals/0023-full-pattern-matching.md)：字面量/元组/或/守卫、
+嵌套穷尽性 witness；决策树编译留作性能切片）。后续：ADT 相等、静态对象模型
+与槽变量，以及跨方言 FFI 边界。
 
 ### 阶段 3：共享后端
 

@@ -27,6 +27,13 @@
   （`-t ast` 不注入），`Option`/`Result` 与四个构造器是模块级保留名，
   预置构造器不进入模块导出；固定名义 origin 使 `Option[Int]` 跨模块
   统一。类型参数继续在后端擦除，解释器/VM/`.obc` 无改动。
+- **oort-core 完整模式匹配**（OP 0023）：`match` 支持字面量模式（Int/Float/
+  String/Bool，可带 `-`）、元组模式（`()`、`(p1, p2)`；`(p)` 为分组）、或模式
+  `p1 | p2` 与守卫 `pattern if cond => body`；scrutinee 扩展到
+  Bool/Int/Float/String/Tuple。穷尽性改为 Maranget usefulness 的嵌套检查
+  并报告具体 witness（如 `Some(false)`、`(false, _)`）；守卫 arm 不计入覆盖。
+  解释器与 VM 同步实现，`.obc` 版本升到 2（模式字面量值 + guard 字段，仍兼容
+  读取 v1）。决策树编译留作后续性能切片。
 - **oort-core 函数返回类型推断**（OP 0005）：顶层 `def`、`do` lambda 与**类方法**
   可省略返回标注，从各 `return` 类型与尾表达式类型合并推断；lambda 还可由期望
   函数类型下推返回类型（`val f: (Int) -> Int = do(x: Int) { x }`）。类方法按调用
@@ -44,6 +51,9 @@
   为已知弱项，待调用点缓存继续优化。启动增加约 25 ms 一次性模块 import
   成本。注意：VM 下部分子集外构造在**编译期**拒绝（解释器在运行期），
   诊断措辞/时机略有差异，见 [spec 06](docs/spec/06-conformance.md)。
+- `.obc` 格式 version 升到 **2**（OP 0023）：pattern 字面量值以 tagged 常量
+  追加、MatchArm 增加 `opt<u32>` guard 字段；`read_obc` 仍接受 version 1。
+  Rust spike 同步接受 v2。
 - 浮点字面量要求整数部分（OP 0021）：`PointFloat` 收紧为
   `Digit+ '.' Digit+`，`.5` 不再合法（写作 `0.5`）；与既有 `1.` 禁用
   对称。解析失败时附带 `Leading-dot floats are not supported; did you

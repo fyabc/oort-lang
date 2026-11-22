@@ -269,6 +269,21 @@ class OortVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by OortParser#pattern.
+    def visitPattern(self, ctx:OortParser.PatternContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by OortParser#LiteralPattern.
+    def visitLiteralPattern(self, ctx:OortParser.LiteralPatternContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by OortParser#TuplePattern.
+    def visitTuplePattern(self, ctx:OortParser.TuplePatternContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by OortParser#ConstructorPattern.
     def visitConstructorPattern(self, ctx:OortParser.ConstructorPatternContext):
         return self.visitChildren(ctx)
@@ -276,6 +291,11 @@ class OortVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by OortParser#NamePattern.
     def visitNamePattern(self, ctx:OortParser.NamePatternContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by OortParser#patternLiteral.
+    def visitPatternLiteral(self, ctx:OortParser.PatternLiteralContext):
         return self.visitChildren(ctx)
 
 

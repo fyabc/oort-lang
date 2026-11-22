@@ -173,7 +173,7 @@ HIR 是 AST 与字节码之间的**线性寄存器中间表示**：指令显式�
 | MAKE_CLOSURE | dst | — | Bx=函数索引 |
 | BUILD_CLASS | dst | — | Bx=ClassSpec；bases(+metaclass) 预 MOVE 到 scratch_base |
 | BUILD_ENUM | dst | — | Bx=EnumSpec |
-| MATCH | dst | — | Bx=MatchSpec；scrutinee 预 MOVE 到 scratch_base |
+| MATCH | dst | — | Bx=MatchSpec；scrutinee 预 MOVE 到 scratch_base；逐 arm 匹配，守卫为真才调用 arm 函数 |
 | IMPORT | 0 | — | Bx=ImportSpec |
 | UNPACK | source | base（目标起始） | C=count |
 | FRESH | 0 | — | Bx=slots 元组常量；仅 uses_cells 的 proto 发射 |
@@ -193,7 +193,10 @@ HIR 是 AST 与字节码之间的**线性寄存器中间表示**：指令显式�
   has_metaclass（bases/metaclass 运行时从 scratch 窗口读）。
 - `EnumSpec`：name、constructors（名+元数）。
 - `MatchSpec`/`MatchArmSpec`/`PatternSpec`：arms；pattern kind 为
-  wildcard/name/constructor（递归）。
+  wildcard/name/constructor/literal_int/literal_float/literal_string/
+  literal_bool/tuple/or（递归）；literal kind 带值 `value`，MatchArmSpec 带
+  `guard_index`（守卫函数索引，None 表示无守卫）。守卫函数参数为 pattern 绑定，
+  返回 Bool；守卫为假时继续下一个 arm。
 - `ImportSpec`：module_path、alias、names、is_from（一个 IMPORT 承载两种 import）。
 - `ExtensionSpec`：name、function_index、symbol、operand_count、receiver_name。
 

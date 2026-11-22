@@ -5,10 +5,13 @@ from .adt import (
     EnumConstructor,
     EnumDef,
     EnumField,
+    LiteralPattern,
     MatchArm,
     MatchExpr,
     NamePattern,
+    OrPattern,
     Pattern,
+    TuplePattern,
     WildcardPattern,
 )
 from .argument import Argument, ArgumentKind

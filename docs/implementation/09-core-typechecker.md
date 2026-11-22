@@ -139,6 +139,26 @@ source
   “无法推断类型实参”。
 - `enum ==` 显式拒绝；`print(enum)` 允许。
 
+## 完整模式匹配（OP 0023）
+
+- **前端**：文法 `pattern : patternPrimary (BIT_OR patternPrimary)*`；
+  `patternPrimary` 含 `patternLiteral`（`SUB?` 数字/浮点、字符串、`true`/`false`）、
+  元组/分组 `LPA patternList? RPA`、构造器与裸名。`matchArm` 为
+  `pattern (IF expression)? FATARROW expression`。AST 增加
+  `LiteralPattern`/`TuplePattern`/`OrPattern` 与 `MatchArm.guard`。
+- **Pass1**：`_pattern_bindings` 收集 pattern 内唯一绑定名（或模式分支去重），
+  在 arm 作用域一次 declare/define，再检查 guard 与 body。
+- **检查器**：`_check_pattern` 返回 `PatternResult(bindings, alternatives,
+  failed)`；`_NormPattern`（wild/ctor/literal）供 `_missing_witness` 使用。
+  字面量精确匹配类型；元组按元素递归；或模式校验绑定名/类型一致；守卫按 Bool
+  检查。穷尽性用 Maranget usefulness 的 witness 版；守卫 arm 不入矩阵；矩阵含
+  全 wild 行即覆盖（递归 ADT 终止条件）。
+- **HIR/字节码**：`Pattern` 增加 `value` 与 literal_*/tuple/or kind；
+  `MatchArm`/`MatchArmSpec` 增加 `guard_index`；守卫编译为独立函数（参数为
+  pattern 绑定）。`.obc` 写 v2（字面量值 + guard 字段），读兼容 v1。
+- **运行时**：解释器 `_match_pattern` 与 VM 同步支持 literal/tuple/or；守卫
+  失败继续下一个 arm，不回溯或模式分支。
+
 **内建 `Option`/`Result`（`semantics/core/prelude.py`）**：用 AST 节点构造
 `Option[out T]` / `Result[out T, out E]`，由 `Compiler._run_input` 与
 `compile_unit_details` 在语义分析前注入 core 模块（`-t ast` 不注入）。注入
@@ -206,6 +226,9 @@ Checker.visit_import -> Compiler._resolve_core_module
 - `tests/unit/frontend/test_core_checker.py::TestCorePrelude` 与
   `tests/unit/runtime/test_core_adt_execution.py`：内建 Option/Result 的
   构造/匹配、跨模块、导出过滤与保留名；`test_cli.py` 验证 astm 隐藏预置。
+- `tests/unit/frontend/test_core_checker.py::TestCorePatterns`：字面量/元组/
+  或/守卫正例、绑定一致性、嵌套 witness 与字面量类型错误；
+  `test_serialize.py` 覆盖含模式与守卫的 `.obc` round-trip。
 - `tests/unit/runtime/test_core_function_values.py`：lambda、闭包、高阶函数、
   函数值跨模块与 ADT payload。
 - `tests/unit/runtime/test_core_modules.py`：同方言导入、再导出、类型检查、

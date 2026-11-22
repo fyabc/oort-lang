@@ -104,12 +104,14 @@ class Pattern:
     kind: str
     name: str = ""
     args: tuple[Pattern, ...] = ()
+    value: object = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class MatchArm:
     pattern: Pattern
     function_index: int
+    guard_index: int | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

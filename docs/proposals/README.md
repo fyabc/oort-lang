@@ -44,6 +44,7 @@
 | [0020](0020-diagnostic-quality.md) | 诊断消息质量（词法分类、定界符诊断，效仿 Python） | Implemented |
 | [0021](0021-float-integer-part.md) | 浮点字面量要求整数部分（禁止 `.5`） | Implemented |
 | [0022](0022-generic-adts.md) | 泛型 ADT 与内建 `Option`/`Result` | Implemented |
+| [0023](0023-full-pattern-matching.md) | 完整模式匹配（字面量/元组/或/守卫/嵌套穷尽性） | Accepted（语义切片已实现） |
 
 ## 流程
 

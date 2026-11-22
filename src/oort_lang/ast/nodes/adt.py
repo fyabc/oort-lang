@@ -106,13 +106,21 @@ class MatchExpr(StmtExpr):
 
 
 class MatchArm(ASTNode):
-    def __init__(self, context: ParserRuleContext, pattern: "Pattern", body: ASTNode):
+    def __init__(
+        self,
+        context: NodeContext,
+        pattern: "Pattern",
+        body: ASTNode,
+        guard: ASTNode | None = None,
+    ):
         super().__init__(context)
         self.pattern = pattern
         self.body = body
+        self.guard = guard
 
     def named_children(self) -> Iterable[tuple[str, ASTNode | None]]:
         yield "pattern", self.pattern
+        yield "guard", self.guard
         yield "body", self.body
 
     def _accept(self, visitor: ASTVisitor):
@@ -127,6 +135,50 @@ class Pattern(ASTNode):
 class WildcardPattern(Pattern):
     def _accept(self, visitor: ASTVisitor):
         return visitor.visit_wildcard_pattern(self)
+
+
+class LiteralPattern(Pattern):
+    """A literal value pattern (Int/Float/String/Bool)."""
+
+    def __init__(self, context: NodeContext, value: int | float | str | bool):
+        super().__init__(context)
+        self.value = value
+
+    def _accept(self, visitor: ASTVisitor):
+        return visitor.visit_literal_pattern(self)
+
+    def str_attrs(self) -> str | None:
+        return repr(self.value)
+
+
+class TuplePattern(Pattern):
+    """A tuple pattern; the empty tuple is the zero-element case."""
+
+    def __init__(self, context: NodeContext, patterns: Iterable["Pattern"]):
+        super().__init__(context)
+        self.patterns = list(patterns)
+
+    def named_children(self) -> Iterable[tuple[str, ASTNode | None]]:
+        for index, pattern in enumerate(self.patterns):
+            yield f"item {index}", pattern
+
+    def _accept(self, visitor: ASTVisitor):
+        return visitor.visit_tuple_pattern(self)
+
+
+class OrPattern(Pattern):
+    """Alternatives: the pattern matches when any branch matches."""
+
+    def __init__(self, context: NodeContext, patterns: Iterable["Pattern"]):
+        super().__init__(context)
+        self.patterns = list(patterns)
+
+    def named_children(self) -> Iterable[tuple[str, ASTNode | None]]:
+        for index, pattern in enumerate(self.patterns):
+            yield f"alternative {index}", pattern
+
+    def _accept(self, visitor: ASTVisitor):
+        return visitor.visit_or_pattern(self)
 
 
 class NamePattern(Pattern):

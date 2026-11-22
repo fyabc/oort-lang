@@ -584,15 +584,15 @@ class TestCoreAdtRejections:
     def test_constructor_payload_type(self, caplog):
         check_error(
             caplog,
-            "enum E { A(x: Int) }\nprint(A(true))\n",
+            "enum E { A(x: Int, y: Int) }\nprint(A(true))\n",
             "Expected Int, got Bool.",
         )
 
     def test_duplicate_pattern_binding(self, caplog):
         check_error(
             caplog,
-            "enum E { A(x: Int) }\nprint(match A(1) { A(v, v) => v })\n",
-            "already defined",
+            "enum E { A(x: Int) }\nprint(match A(1, 2) { A(v, v) => v })\n",
+            "Duplicate declaration of 'v' in oort-core.",
         )
 
     def test_incompatible_arm_types(self, caplog):
@@ -633,8 +633,9 @@ class TestCoreAdtRejections:
     def test_match_on_non_enum(self, caplog):
         check_error(
             caplog,
-            "print(match 1 { _ => 1 })\n",
-            "The scrutinee of match must have an enum type in oort-core, got Int.",
+            "print(match [1] { _ => 1 })\n",
+            "The scrutinee of match must have an enum, Bool, Int, Float, String "
+            "or Tuple type in oort-core, got List[Int].",
         )
 
     def test_enum_equality_is_rejected(self, caplog):
@@ -1021,6 +1022,155 @@ class TestCorePrelude:
             caplog,
             "val Some = 1\n",
             "Name 'Some' is declared in the core prelude.",
+        )
+
+
+class TestCorePatterns:
+    def test_literal_patterns(self, run_source):
+        result = run_source(
+            core(
+                "def f(n: Int) -> String {\n"
+                "    match n {\n"
+                '        0 => "zero",\n'
+                '        1 | 2 | 3 => "small",\n'
+                '        -1 => "neg",\n'
+                '        _ => "other"\n'
+                "    }\n"
+                "}\n"
+                "print(f(0), f(2), f(-1), f(9))\n"
+            )
+        )
+        assert result.stdout == "zero small neg other\n"
+
+    def test_bool_and_string_and_float_literals(self, run_source):
+        result = run_source(
+            core(
+                "def b(v: Bool) -> Int { match v { true => 1, false => 0 } }\n"
+                "def s(v: String) -> Int {\n"
+                '    match v { "a" => 1, "b" | "c" => 2, _ => 0 }\n'
+                "}\n"
+                "def f(v: Float) -> Int { match v { 1.5 => 1, -0.5 => 2, _ => 0 } }\n"
+                'print(b(true), b(false), s("b"), s("x"), f(1.5), f(-0.5), f(2.0))\n'
+            )
+        )
+        assert result.stdout == "1 0 2 0 1 2 0\n"
+
+    def test_tuple_patterns(self, run_source):
+        result = run_source(
+            core(
+                "def f(p: Tuple[Int, Bool]) -> String {\n"
+                "    match p {\n"
+                '        (0, true) => "zero-true",\n'
+                '        (0, false) => "zero-false",\n'
+                '        (n, true) => "true-other",\n'
+                '        (n, false) => "false-other"\n'
+                "    }\n"
+                "}\n"
+                "print(f((0, true)), f((0, false)), f((5, true)), f((5, false)))\n"
+            )
+        )
+        assert result.stdout == "zero-true zero-false true-other false-other\n"
+
+    def test_nested_constructor_patterns_are_exhaustive(self, run_source):
+        result = run_source(
+            core(
+                "def f(o: Option[Option[Int]]) -> Int {\n"
+                "    match o {\n"
+                "        Some(Some(v)) => v,\n"
+                "        Some(None) => -1,\n"
+                "        None => -2\n"
+                "    }\n"
+                "}\n"
+                "print(f(Some(Some(7))), f(Some(None)), f(None))\n"
+            )
+        )
+        assert result.stdout == "7 -1 -2\n"
+
+    def test_or_pattern_with_bindings(self, run_source):
+        result = run_source(
+            core(
+                "enum Pair { P(a: Int, b: Int) }\n"
+                "def f(p: Pair) -> Int {\n"
+                "    match p {\n"
+                "        P(x, 0) | P(0, x) => x,\n"
+                "        P(x, y) => x + y\n"
+                "    }\n"
+                "}\n"
+                "print(f(P(5, 0)), f(P(0, 6)), f(P(2, 3)))\n"
+            )
+        )
+        assert result.stdout == "5 6 5\n"
+
+    def test_guard_can_use_bindings(self, run_source):
+        result = run_source(
+            core(
+                "def f(n: Int) -> String {\n"
+                "    match n {\n"
+                '        x if x > 0 => "pos",\n'
+                '        x if x < 0 => "neg",\n'
+                '        _ => "zero"\n'
+                "    }\n"
+                "}\n"
+                "print(f(3), f(-2), f(0))\n"
+            )
+        )
+        assert result.stdout == "pos neg zero\n"
+
+    def test_guards_do_not_establish_coverage(self, caplog):
+        check_error(
+            caplog,
+            "def f(n: Int) -> Int { match n { x if x > 0 => 1 } }\n",
+            "Match is not exhaustive; missing: _.",
+        )
+
+    def test_int_match_requires_wildcard(self, caplog):
+        check_error(
+            caplog,
+            "def f(n: Int) -> Int { match n { 1 => 1, 2 => 2 } }\n",
+            "Match is not exhaustive; missing: _.",
+        )
+
+    def test_nested_exhaustiveness_witness(self, caplog):
+        check_error(
+            caplog,
+            "def f(o: Option[Bool]) -> Int {\n    match o { Some(true) => 1, None => -1 }\n}\n",
+            "Match is not exhaustive; missing: Some(false).",
+        )
+
+    def test_literal_type_mismatch(self, caplog):
+        check_error(
+            caplog,
+            "def f(n: Float) -> Int { match n { 1 => 1, _ => 0 } }\n",
+            "Literal pattern of type Int cannot match Float.",
+        )
+
+    def test_tuple_pattern_requires_tuple_type(self, caplog):
+        check_error(
+            caplog,
+            "def f(n: Int) -> Int { match n { (x, y) => x, _ => 0 } }\n",
+            "Tuple patterns require a tuple type, got Int.",
+        )
+
+    def test_tuple_arity_mismatch(self, caplog):
+        check_error(
+            caplog,
+            "def f(p: Tuple[Int, Bool]) -> Int { match p { (a, b, c) => a, _ => 0 } }\n",
+            "Tuple pattern has 3 element(s), expected 2.",
+        )
+
+    def test_or_pattern_binding_mismatch(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A(x: Int), B(y: Int, z: Int) }\n"
+            "print(match A(1) { A(x) | B(x, z) => x, _ => 0 })\n",
+            "All alternatives of an or-pattern must bind the same names; mismatch: 'z'.",
+        )
+
+    def test_or_pattern_binding_type_mismatch(self, caplog):
+        check_error(
+            caplog,
+            "enum E { A(x: Int), B(x: String) }\nprint(match A(1) { A(x) | B(x) => 0, _ => 1 })\n",
+            "Binding 'x' has incompatible types Int and String in an or-pattern.",
         )
 
 

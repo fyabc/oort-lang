@@ -659,6 +659,22 @@ class BytecodeVM:
                     bindings: dict[str, OortObject] = {}
                     if not self._match_pattern(arm.pattern, scrutinee, bindings, position):
                         continue
+                    if arm.guard_index is not None:
+                        if not 0 <= arm.guard_index < len(module.functions):
+                            raise OortTypeError(
+                                f"Invalid bytecode match guard index {arm.guard_index}.",
+                                position,
+                            )
+                        guard = OortVMClosure(
+                            self,
+                            module,
+                            module.functions[arm.guard_index],
+                            frame,
+                            env,
+                        )
+                        guard_args = [bindings[name] for name in guard.proto.params]
+                        if not self.interpreter.is_truthy(guard.invoke(guard_args, position)):
+                            continue
                     if not 0 <= arm.function_index < len(module.functions):
                         raise OortTypeError(
                             f"Invalid bytecode match arm index {arm.function_index}.",
@@ -1027,6 +1043,33 @@ class BytecodeVM:
     ) -> bool:
         if pattern.kind == "wildcard":
             return True
+        if pattern.kind == "literal_int":
+            return isinstance(value, OortInt) and value.value == pattern.value
+        if pattern.kind == "literal_float":
+            return isinstance(value, OortFloat) and value.value == pattern.value
+        if pattern.kind == "literal_string":
+            return isinstance(value, OortString) and value.value == pattern.value
+        if pattern.kind == "literal_bool":
+            return isinstance(value, OortBool) and value.value == pattern.value
+        if pattern.kind == "tuple":
+            if not isinstance(value, OortTuple):
+                return False
+            if len(value.value) != len(pattern.args):
+                raise OortTypeError(
+                    f"Tuple pattern has {len(pattern.args)} element(s), got {len(value.value)}.",
+                    position,
+                )
+            for subpattern, payload in zip(pattern.args, value.value, strict=True):
+                if not self._match_pattern(subpattern, payload, bindings, position):
+                    return False
+            return True
+        if pattern.kind == "or":
+            for alternative in pattern.args:
+                attempt: dict[str, OortObject] = {}
+                if self._match_pattern(alternative, value, attempt, position):
+                    bindings.update(attempt)
+                    return True
+            return False
         if pattern.kind == "name":
             if isinstance(value, OortADT) and value.type.adt_variants is not None:
                 arity = value.type.adt_variants.get(pattern.name)

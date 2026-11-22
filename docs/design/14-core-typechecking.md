@@ -235,12 +235,39 @@ payload，解释器与 VM 均不读类型参数。
 诊断。运行时照常执行注入的 enum；模块环境仍含这些绑定，但静态导出过滤后
 检查器不允许访问。
 
-**至此 OP 0022 的 A/B/C 全部落地**；后续是完整模式匹配、对象模型与 FFI。
+**至此 OP 0022 的 A/B/C 全部落地**；后续是对象模型与 FFI。
 
-## 8. 边界与后续
+## 8. 完整模式匹配（OP 0023，2026-11-22）
 
-- **完整模式匹配 / 对象模型 / FFI 边界**：OP 0005 后续切片，建立在本文的
-  双向检查 + 局部推断基线上。
+**语法**：字面量（Int/Float/String/Bool，可带 `-`）、元组（`()`、`(p1, p2)`；
+`(p)` 是分组）、或模式 `p1 | p2`、守卫 `pattern if cond => body`。`match` 的
+scrutinee 可为 enum、`Bool`、`Int`、`Float`、`String` 或 `Tuple`。
+
+**检查**。`_check_pattern` 按期望类型递归：字面量要求类型精确一致；元组要求
+`TupleType` 且元数相同；或模式各分支必须绑定相同的名字集合与双向可赋值的
+类型；守卫在 arm 作用域内按 Bool 检查。每个 `PatternResult` 返回绑定、归一化
+alternatives 与 failed。
+
+**嵌套穷尽性**。归一化为 `_NormPattern`（wild / ctor / literal）。
+`_missing_witness` 是 Maranget usefulness 的 witness 版本：
+
+- 完整签名：ADT 构造器集合、`Bool` 的 `{true, false}`、元组的单构造器；
+  Int/Float/String 是无限域，字面量集合永不完整。
+- 或模式在 alternatives 中展开为矩阵多行；**守卫 arm 不入矩阵**（守卫可能为假，
+  与 OCaml/Scala 的保守处理一致）。
+- 矩阵含全 wild 行时直接视为覆盖；这也是递归 ADT 上搜索的终止条件。
+- 缺失时报告 witness：`Some(false)`、`(false, _)`、`_`。
+
+**后端**。HIR `Pattern` 增加 `literal_*`/`tuple`/`or` 与 `value`；`MatchArm` 增加
+`guard_index`（守卫编译为独立函数，参数为 pattern 绑定）。`.obc` 写出 v2
+（字面量值 + guard 字段），读取仍兼容 v1。VM 逐 arm 匹配；守卫失败继续下一个
+arm（不回溯或模式其他分支）；解释器同语义。决策树编译（Maranget 2008）留作
+独立性能切片，当前使用顺序匹配。
+
+## 9. 边界与后续
+
+- **决策树编译 / ADT 相等 / 对象模型 / FFI 边界**：OP 0005/0023 后续切片，
+  建立在本文的双向检查 + 局部推断基线上。
 - **方法依赖扫描的保守性**：按属性名匹配同类方法（不看 receiver 类型），可能给
   「调用其他类同名方法」多加一条依赖约束——只会更保守（偶尔多要求标注），不会
   不健全。精确化需 receiver 类型信息，留作后续。

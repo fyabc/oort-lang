@@ -38,7 +38,8 @@ magic "OBC" (3 字节) | kind u8 | version u8
 
 - `kind`：字节码种类。`0` = 动态/类型擦除（当前）；`1+` 预留给未来 typed/静态
   字节码。读入方遇到不支持的 kind 必须显式拒绝。
-- `version`：该 kind 的格式修订号，当前为 `1`。不支持的 version 显式拒绝。
+- `version`：该 kind 的格式修订号，当前写出 `2`（OP 0023：模式字面量值、
+  MatchArm guard 字段）；读入兼容 `1` 与 `2`。不支持的 version 显式拒绝。
 
 ## 模块布局
 
@@ -100,9 +101,14 @@ MatchArmSpec、ExtensionSpec、ParamSpec.default_index）一律索引 **function
 `seq<(string, u32)>` class_methods + `seq<(string, u16, u32)>` operators
 （symbol, operand_count, 索引）+ `bool` has_metaclass。
 
-**MatchArm** = `Pattern` + `u32` function_index。
-**Pattern**（递归）= `u8` kind（0 wildcard、1 name、2 constructor）+ `string` name +
-`seq<Pattern>` args。
+**MatchArm** = `Pattern` + `u32` function_index + `opt<u32>` guard_index。
+guard_index 自 version 2 起写出/读入；version 1 的 arm 没有该字段，读入时
+视为 `None`。
+
+**Pattern**（递归）= `u8` kind + `string` name + `seq<Pattern>` args；kind 编号：
+0 wildcard、1 name、2 constructor、3 literal_int、4 literal_float、
+5 literal_string、6 literal_bool、7 tuple、8 or。version 2 中 literal 类 kind
+在 args 之后追加一个 tagged `Constant` 作为模式字面量值（version 1 无此字段）。
 
 描述符字段语义见 spec 12 与 `bytecode/code.py`。
 

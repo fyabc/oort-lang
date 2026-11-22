@@ -35,7 +35,8 @@ from .code import (
 
 MAGIC = b"OBC"
 KIND_DYNAMIC = 0
-VERSION = 1
+VERSION = 2
+_SUPPORTED_VERSIONS = (1, 2)
 
 # Constant-pool tags. PatternSpec/MatchArmSpec are nested, not top-level entries.
 _TAG_NULL = 0
@@ -61,8 +62,21 @@ _PARAM_KIND_ORDER = (
 )
 _PARAM_KIND_INDEX = {kind: i for i, kind in enumerate(_PARAM_KIND_ORDER)}
 
-_PATTERN_KIND_INDEX = {"wildcard": 0, "name": 1, "constructor": 2}
+_PATTERN_KIND_INDEX = {
+    "wildcard": 0,
+    "name": 1,
+    "constructor": 2,
+    "literal_int": 3,
+    "literal_float": 4,
+    "literal_string": 5,
+    "literal_bool": 6,
+    "tuple": 7,
+    "or": 8,
+}
 _PATTERN_KIND_NAME = {i: name for name, i in _PATTERN_KIND_INDEX.items()}
+_LITERAL_PATTERN_KINDS = frozenset(
+    {"literal_int", "literal_float", "literal_string", "literal_bool"}
+)
 
 _I64_MIN = -(1 << 63)
 _I64_MAX = (1 << 63) - 1
@@ -120,6 +134,7 @@ class _Reader:
     def __init__(self, data: bytes) -> None:
         self._data = data
         self._pos = 0
+        self.version = 1
 
     def _take(self, n: int) -> bytes:
         if self._pos + n > len(self._data):
@@ -166,6 +181,8 @@ def _write_pattern(w: _Writer, pattern: PatternSpec) -> None:
     w.u32(len(pattern.args))
     for arg in pattern.args:
         _write_pattern(w, arg)
+    if pattern.kind in _LITERAL_PATTERN_KINDS:
+        _write_constant(w, pattern.value)
 
 
 def _write_constant(w: _Writer, value: object) -> None:
@@ -234,6 +251,7 @@ def _write_constant(w: _Writer, value: object) -> None:
         for arm in value.arms:
             _write_pattern(w, arm.pattern)
             w.u32(arm.function_index)
+            w.opt_u32(arm.guard_index)
     elif isinstance(value, ImportSpec):
         w.u8(_TAG_IMPORT)
         w.string(value.module_path)
@@ -315,7 +333,10 @@ def _read_pattern(r: _Reader) -> PatternSpec:
     kind = _PATTERN_KIND_NAME[r.u8()]
     name = r.string()
     args = tuple(_read_pattern(r) for _ in range(r.u32()))
-    return PatternSpec(kind, name, args)
+    value = None
+    if r.version >= 2 and kind in _LITERAL_PATTERN_KINDS:
+        value = _read_constant(r)
+    return PatternSpec(kind, name, args, value)
 
 
 def _read_constant(r: _Reader) -> object:
@@ -351,8 +372,14 @@ def _read_constant(r: _Reader) -> object:
         constructors = tuple((r.string(), r.u16()) for _ in range(r.u32()))
         return EnumSpec(name, constructors)
     if tag == _TAG_MATCH:
-        arms = tuple(MatchArmSpec(_read_pattern(r), r.u32()) for _ in range(r.u32()))
-        return MatchSpec(arms)
+        count = r.u32()
+        arms = []
+        for _ in range(count):
+            pattern = _read_pattern(r)
+            function_index = r.u32()
+            guard_index = r.opt_u32() if r.version >= 2 else None
+            arms.append(MatchArmSpec(pattern, function_index, guard_index))
+        return MatchSpec(tuple(arms))
     if tag == _TAG_IMPORT:
         module_path = r.string()
         alias = r.opt_string()
@@ -431,8 +458,9 @@ def read_obc(path: str | Path) -> BytecodeModule:
     if kind != KIND_DYNAMIC:
         raise ObcError(f"unsupported bytecode kind: {kind}")
     version = r.u8()
-    if version != VERSION:
+    if version not in _SUPPORTED_VERSIONS:
         raise ObcError(f"unsupported bytecode version: {version}")
+    r.version = version
     functions = tuple(_read_proto(r) for _ in range(r.u32()))
     main = _read_proto(r)
     return BytecodeModule(main, functions)

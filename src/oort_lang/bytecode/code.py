@@ -26,12 +26,14 @@ class PatternSpec:
     kind: str
     name: str = ""
     args: tuple["PatternSpec", ...] = ()
+    value: object = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class MatchArmSpec:
     pattern: PatternSpec
     function_index: int
+    guard_index: int | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

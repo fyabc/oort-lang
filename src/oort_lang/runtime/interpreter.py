@@ -1094,6 +1094,8 @@ class ASTInterpreter(ASTVisitor[OortObject]):
             prev = self.env
             try:
                 self.env = arm_env
+                if arm.guard is not None and not _is_truthy(arm.guard.accept(self)):
+                    continue
                 return arm.body.accept(self)
             finally:
                 self.env = prev
@@ -1111,6 +1113,35 @@ class ASTInterpreter(ASTVisitor[OortObject]):
     ) -> bool:
         if isinstance(pattern, nodes.WildcardPattern):
             return True
+        if isinstance(pattern, nodes.LiteralPattern):
+            expected = pattern.value
+            if isinstance(expected, bool):
+                return isinstance(value, OortBool) and value.value == expected
+            if isinstance(expected, int):
+                return isinstance(value, OortInt) and value.value == expected
+            if isinstance(expected, float):
+                return isinstance(value, OortFloat) and value.value == expected
+            return isinstance(value, OortString) and value.value == expected
+        if isinstance(pattern, nodes.TuplePattern):
+            if not isinstance(value, OortTuple):
+                return False
+            if len(value.value) != len(pattern.patterns):
+                raise OortTypeError(
+                    f"Tuple pattern has {len(pattern.patterns)} element(s), "
+                    f"got {len(value.value)}.",
+                    pattern.position,
+                )
+            for subpattern, payload in zip(pattern.patterns, value.value):
+                if not self._match_pattern(subpattern, payload, bindings):
+                    return False
+            return True
+        if isinstance(pattern, nodes.OrPattern):
+            for alternative in pattern.patterns:
+                attempt: dict[str, OortObject] = {}
+                if self._match_pattern(alternative, value, attempt):
+                    bindings.update(attempt)
+                    return True
+            return False
         if isinstance(pattern, nodes.NamePattern):
             if isinstance(value, OortADT) and value.type.adt_variants is not None:
                 arity = value.type.adt_variants.get(pattern.name)

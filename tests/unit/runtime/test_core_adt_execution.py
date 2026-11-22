@@ -120,6 +120,36 @@ def test_recursive_generic_enum_executes_on_both_backends(run_source):
     assert run_source(source, target="vm").stdout == "3\n"
 
 
+def test_full_patterns_on_both_backends(run_source):
+    source = core(
+        "enum Pair { P(a: Int, b: Int) }\n"
+        "def f(n: Int, p: Pair) -> Int {\n"
+        "    match n {\n"
+        "        0 => 10,\n"
+        "        1 | 2 => 20,\n"
+        "        _ => match p { P(x, 0) | P(0, x) => x, P(x, y) => x + y }\n"
+        "    }\n"
+        "}\n"
+        "def g(n: Int) -> Int {\n"
+        "    match n { x if x > 10 => x, x if x < 0 => -x, _ => 0 }\n"
+        "}\n"
+        "def h(t: Tuple[Int, Bool]) -> Int {\n"
+        "    match t {\n"
+        "        (0, true) => 1,\n"
+        "        (0, false) => 2,\n"
+        "        (_, true) => 3,\n"
+        "        (_, false) => 4\n"
+        "    }\n"
+        "}\n"
+        "print(f(0, P(1, 2)), f(2, P(1, 2)), f(9, P(4, 0)), f(9, P(4, 3)))\n"
+        "print(g(11), g(-3), g(5))\n"
+        "print(h((0, true)), h((0, false)), h((5, true)), h((5, false)))\n"
+    )
+    expected = "10 20 4 7\n11 3 0\n1 2 3 4\n"
+    assert run_source(source, target="eval").stdout == expected
+    assert run_source(source, target="vm").stdout == expected
+
+
 def test_builtin_option_and_result_on_both_backends(run_source):
     source = core(
         "val a: Option[Int] = Some(1)\n"

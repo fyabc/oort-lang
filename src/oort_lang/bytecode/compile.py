@@ -80,6 +80,7 @@ def _pattern_spec(pattern: Pattern) -> PatternSpec:
         kind=pattern.kind,
         name=pattern.name,
         args=tuple(_pattern_spec(arg) for arg in pattern.args),
+        value=pattern.value,
     )
 
 
@@ -298,6 +299,7 @@ class _ProtoCompiler:
                 tuple(
                     MatchArmSpec(
                         pattern=_pattern_spec(arm.pattern),
+                        guard_index=arm.guard_index,
                         function_index=arm.function_index,
                     )
                     for arm in instruction.arms

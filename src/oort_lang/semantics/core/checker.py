@@ -10,6 +10,7 @@ when pass 1 succeeded, so it can assume bindings exist and focus on types.
 """
 
 import dataclasses
+import itertools
 from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath
 
@@ -164,6 +165,133 @@ def _variance_violation(target: TypeParameterType, type_: Type, polarity: int) -
     return None
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class _NormPattern:
+    """A checked pattern in the shape used by exhaustiveness checking."""
+
+    kind: str  # "wild" | "ctor" | "literal"
+    name: str = ""
+    args: tuple["_NormPattern", ...] = ()
+    value: object = None
+
+
+_WILD_PATTERN = _NormPattern("wild")
+
+
+def _ctor_pattern(name: str, args: tuple[_NormPattern, ...] = ()) -> _NormPattern:
+    return _NormPattern("ctor", name, args)
+
+
+def _literal_pattern(value: object) -> _NormPattern:
+    return _NormPattern("literal", value=value)
+
+
+def _pattern_key(pattern: _NormPattern) -> tuple[str, object]:
+    if pattern.kind == "literal":
+        return ("literal", pattern.value)
+    return ("ctor", pattern.name)
+
+
+def _type_signature(type_: Type) -> list[tuple[str, object]] | None:
+    """All constructors of a type, or None when the domain is infinite/unknown."""
+    if isinstance(type_, AdtType):
+        return [("ctor", constructor.name) for constructor in type_.constructors]
+    if isinstance(type_, TupleType):
+        return [("ctor", "#tuple")]
+    if type_ == BOOL:
+        return [("literal", True), ("literal", False)]
+    return None
+
+
+def _adt_payload(adt: AdtType, constructor: ConstructorInfo) -> tuple[Type, ...]:
+    mapping = {param.name: arg for param, arg in zip(adt.template.params, adt.args)}
+    return tuple(substitute(payload, mapping) for payload in constructor.payload)
+
+
+def _key_arg_types(type_: Type, key: tuple[str, object]) -> tuple[Type, ...]:
+    kind, value = key
+    if kind == "ctor" and value == "#tuple" and isinstance(type_, TupleType):
+        return tuple(type_.elements)
+    if kind == "ctor" and isinstance(type_, AdtType):
+        constructor = type_.constructor(str(value))
+        if constructor is not None:
+            return _adt_payload(type_, constructor)
+    return ()
+
+
+def _specialize(
+    matrix: list[list[_NormPattern]], key: tuple[str, object], arity: int
+) -> list[list[_NormPattern]]:
+    result: list[list[_NormPattern]] = []
+    for row in matrix:
+        head, rest = row[0], row[1:]
+        if head.kind == "wild":
+            result.append([_WILD_PATTERN] * arity + rest)
+        elif _pattern_key(head) == key:
+            result.append(list(head.args) + rest)
+    return result
+
+
+def _default(matrix: list[list[_NormPattern]]) -> list[list[_NormPattern]]:
+    return [row[1:] for row in matrix if row[0].kind == "wild"]
+
+
+def _missing_witness(
+    matrix: list[list[_NormPattern]], types: list[Type]
+) -> list[_NormPattern] | None:
+    """Maranget usefulness witness for one missing pattern vector."""
+    if not types:
+        return [] if not matrix else None
+    if not matrix:
+        return [_WILD_PATTERN] * len(types)
+    # A row of wildcards covers the all-wild candidate; this is also what
+    # makes the search terminate on recursive ADTs.
+    if any(all(pattern.kind == "wild" for pattern in row) for row in matrix):
+        return None
+    signature = _type_signature(types[0])
+    if signature is not None:
+        for key in signature:
+            arg_types = _key_arg_types(types[0], key)
+            arity = len(arg_types)
+            specialized = _specialize(matrix, key, arity)
+            rest = _missing_witness(specialized, list(arg_types) + types[1:])
+            if rest is not None:
+                return [_witness_from_key(key, rest[:arity])] + rest[arity:]
+        return None
+    rest = _missing_witness(_default(matrix), types[1:])
+    if rest is None:
+        return None
+    return [_WILD_PATTERN] + rest
+
+
+def _witness_from_key(key: tuple[str, object], args: list[_NormPattern]) -> _NormPattern:
+    kind, value = key
+    if kind == "literal":
+        return _literal_pattern(value)
+    return _ctor_pattern(str(value), tuple(args))
+
+
+def _describe_pattern(pattern: _NormPattern) -> str:
+    if pattern.kind == "wild":
+        return "_"
+    if pattern.kind == "literal":
+        value = pattern.value
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        return repr(value)
+    if pattern.name == "#tuple":
+        if not pattern.args:
+            return "()"
+        body = ", ".join(_describe_pattern(arg) for arg in pattern.args)
+        if len(pattern.args) == 1:
+            body += ","
+        return f"({body})"
+    if pattern.args:
+        body = ", ".join(_describe_pattern(arg) for arg in pattern.args)
+        return f"{pattern.name}({body})"
+    return pattern.name
+
+
 @dataclasses.dataclass(slots=True)
 class NameInfo:
     type: Type
@@ -175,9 +303,7 @@ class NameInfo:
 @dataclasses.dataclass(slots=True)
 class PatternResult:
     bindings: list[tuple[str, Type, SourcePosition]]
-    covered: set[str] = dataclasses.field(default_factory=set)
-    covers_all: bool = False
-    irrefutable: bool = False
+    alternatives: list[_NormPattern] = dataclasses.field(default_factory=list)
     failed: bool = False
 
 
@@ -1754,12 +1880,17 @@ class CoreTypeChecker(ASTVisitor[Type]):
         scrutinee_type = node.scrutinee.accept(self) or UNKNOWN
         if isinstance(scrutinee_type, UnknownType):
             scrutinee_ok = False
-        elif isinstance(scrutinee_type, AdtType):
+        elif isinstance(scrutinee_type, (AdtType, TupleType)) or scrutinee_type in (
+            BOOL,
+            INT,
+            FLOAT,
+            STRING,
+        ):
             scrutinee_ok = True
         else:
             self._error(
-                "The scrutinee of match must have an enum type in oort-core, "
-                f"got {describe_type(scrutinee_type)}.",
+                "The scrutinee of match must have an enum, Bool, Int, Float, String "
+                f"or Tuple type in oort-core, got {describe_type(scrutinee_type)}.",
                 node.scrutinee.position,
             )
             scrutinee_type = UNKNOWN
@@ -1770,8 +1901,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
             return self._record(node, UNKNOWN)
 
         arm_types: list[Type] = []
-        covered: set[str] = set()
-        covers_all = False
+        matrix: list[list[_NormPattern]] = []
         any_failed = False
         for arm in node.arms:
             self.scopes.append({})
@@ -1779,6 +1909,8 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 result = self._check_pattern(arm.pattern, scrutinee_type)
                 for name, type_, position in result.bindings:
                     self.declare(name, type_, mutable=False, position=position)
+                if arm.guard is not None:
+                    self._check_expr(arm.guard, BOOL)
                 if expected is None or isinstance(expected, UnknownType):
                     body_type = arm.body.accept(self) or UNKNOWN
                 else:
@@ -1786,9 +1918,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
             finally:
                 self.scopes.pop()
             arm_types.append(body_type)
-            covered.update(result.covered)
-            covers_all = covers_all or result.covers_all
             any_failed = any_failed or result.failed
+            if arm.guard is None and not result.failed:
+                for alternative in result.alternatives:
+                    matrix.append([alternative])
 
         joined = arm_types[0]
         for arm_type in arm_types[1:]:
@@ -1803,33 +1936,35 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 break
             joined = next_joined
 
-        if (
-            scrutinee_ok
-            and not any_failed
-            and isinstance(scrutinee_type, AdtType)
-            and not covers_all
-        ):
-            missing = [
-                constructor.name
-                for constructor in scrutinee_type.constructors
-                if constructor.name not in covered
-            ]
-            if missing:
-                self._error(
-                    f"Match is not exhaustive; missing: {', '.join(missing)}.",
-                    node.position,
-                )
+        if scrutinee_ok and not any_failed:
+            witness = _missing_witness(matrix, [scrutinee_type])
+            if witness is not None:
+                missing = ", ".join(_describe_pattern(pattern) for pattern in witness)
+                self._error(f"Match is not exhaustive; missing: {missing}.", node.position)
         return self._record(node, joined)
 
     def _check_pattern(self, pattern: nodes.Pattern, expected: Type) -> PatternResult:
         if isinstance(pattern, nodes.WildcardPattern):
-            return PatternResult([], covers_all=True, irrefutable=True)
+            return PatternResult([], [_WILD_PATTERN])
         if isinstance(pattern, nodes.NamePattern):
             return self._check_name_pattern(pattern, expected)
+        if isinstance(pattern, nodes.LiteralPattern):
+            return self._check_literal_pattern(pattern, expected)
+        if isinstance(pattern, nodes.TuplePattern):
+            return self._check_tuple_pattern(pattern, expected)
+        if isinstance(pattern, nodes.OrPattern):
+            return self._check_or_pattern(pattern, expected)
         if isinstance(pattern, nodes.ConstructorPattern):
             return self._check_constructor_pattern(pattern, expected)
         self._error("Unknown pattern kind.", pattern.position)
         return PatternResult([], failed=True)
+
+    @staticmethod
+    def _combine_patterns(results: list[PatternResult], name: str) -> list[_NormPattern]:
+        if not results:
+            return [_ctor_pattern(name)]
+        combinations = itertools.product(*(result.alternatives for result in results))
+        return [_ctor_pattern(name, tuple(combination)) for combination in combinations]
 
     def _check_name_pattern(self, pattern: nodes.NamePattern, expected: Type) -> PatternResult:
         binding = (pattern.name, expected, pattern.position)
@@ -1843,11 +1978,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
                         pattern.position,
                     )
                     return PatternResult([binding], failed=True)
-                return PatternResult(
-                    [binding],
-                    covered={constructor.name},
-                    irrefutable=len(expected.constructors) == 1,
-                )
+                return PatternResult([binding], [_ctor_pattern(constructor.name)])
             owner = self.constructor_names.get(pattern.name)
             if owner is not None:
                 self._error(
@@ -1855,9 +1986,97 @@ class CoreTypeChecker(ASTVisitor[Type]):
                     pattern.position,
                 )
                 return PatternResult([binding], failed=True)
+        return PatternResult([binding], [_WILD_PATTERN])
+
+    def _check_literal_pattern(
+        self, pattern: nodes.LiteralPattern, expected: Type
+    ) -> PatternResult:
+        value = pattern.value
+        if isinstance(value, bool):
+            actual = BOOL
+        elif isinstance(value, int):
+            actual = INT
+        elif isinstance(value, float):
+            actual = FLOAT
+        else:
+            actual = STRING
+        if not isinstance(expected, UnknownType) and expected != actual:
+            self._error(
+                f"Literal pattern of type {describe_type(actual)} cannot match "
+                f"{describe_type(expected)}.",
+                pattern.position,
+            )
+            return PatternResult([], failed=True)
+        return PatternResult([], [_literal_pattern(value)])
+
+    def _check_tuple_pattern(self, pattern: nodes.TuplePattern, expected: Type) -> PatternResult:
         if isinstance(expected, UnknownType):
-            return PatternResult([binding], covers_all=True, irrefutable=True)
-        return PatternResult([binding], covers_all=True, irrefutable=True)
+            unknown_results = [self._check_pattern(item, UNKNOWN) for item in pattern.patterns]
+            unknown_bindings = [
+                binding for result in unknown_results for binding in result.bindings
+            ]
+            return PatternResult(unknown_bindings, failed=True)
+
+        if not isinstance(expected, TupleType):
+            self._error(
+                f"Tuple patterns require a tuple type, got {describe_type(expected)}.",
+                pattern.position,
+            )
+            unknown_results = [self._check_pattern(item, UNKNOWN) for item in pattern.patterns]
+            unknown_bindings = [
+                binding for result in unknown_results for binding in result.bindings
+            ]
+            return PatternResult(unknown_bindings, failed=True)
+
+        failed = len(pattern.patterns) != len(expected.elements)
+        if failed:
+            self._error(
+                f"Tuple pattern has {len(pattern.patterns)} element(s), expected "
+                f"{len(expected.elements)}.",
+                pattern.position,
+            )
+        results: list[PatternResult] = []
+        bindings: list[tuple[str, Type, SourcePosition]] = []
+        for index, item in enumerate(pattern.patterns):
+            item_type = expected.elements[index] if index < len(expected.elements) else UNKNOWN
+            result = self._check_pattern(item, item_type)
+            results.append(result)
+            bindings.extend(result.bindings)
+            failed = failed or result.failed
+        alternatives = self._combine_patterns(results, "#tuple") if not failed else []
+        return PatternResult(bindings, alternatives, failed)
+
+    def _check_or_pattern(self, pattern: nodes.OrPattern, expected: Type) -> PatternResult:
+        results = [self._check_pattern(alternative, expected) for alternative in pattern.patterns]
+        if not results:
+            return PatternResult([], failed=True)
+        failed = any(result.failed for result in results)
+        base_bindings = results[0].bindings
+        base = {name: type_ for name, type_, _ in base_bindings}
+        for result in results[1:]:
+            other = {name: type_ for name, type_, _ in result.bindings}
+            mismatched = set(base) ^ set(other)
+            if mismatched:
+                names = ", ".join(f"'{name}'" for name in sorted(mismatched))
+                self._error(
+                    "All alternatives of an or-pattern must bind the same names; "
+                    f"mismatch: {names}.",
+                    pattern.position,
+                )
+                failed = True
+                continue
+            for name, type_ in base.items():
+                other_type = other[name]
+                if not (is_assignable(type_, other_type) and is_assignable(other_type, type_)):
+                    self._error(
+                        f"Binding '{name}' has incompatible types "
+                        f"{describe_type(type_)} and {describe_type(other_type)} "
+                        "in an or-pattern.",
+                        pattern.position,
+                    )
+                    failed = True
+        alternatives = [alternative for result in results for alternative in result.alternatives]
+        return PatternResult(base_bindings, alternatives, failed)
 
     def _check_constructor_pattern(
         self, pattern: nodes.ConstructorPattern, expected: Type
@@ -1892,29 +2111,24 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 bindings.extend(result.bindings)
             return PatternResult(bindings, failed=True)
 
-        payload = self._instantiated_payload(constructor, expected)
-        if len(pattern.args) != len(payload):
+        payload = _adt_payload(expected, constructor)
+        failed = len(pattern.args) != len(payload)
+        if failed:
             self._error(
                 f"Constructor '{constructor.name}' expects "
                 f"{len(payload)} argument(s), got {len(pattern.args)}.",
                 pattern.position,
             )
-
+        results: list[PatternResult] = []
         bindings = []
-        irrefutable = True
-        failed = len(pattern.args) != len(payload)
-        for arg, payload_type in zip(pattern.args, payload):
+        for index, arg in enumerate(pattern.args):
+            payload_type = payload[index] if index < len(payload) else UNKNOWN
             result = self._check_pattern(arg, payload_type)
+            results.append(result)
             bindings.extend(result.bindings)
-            irrefutable = irrefutable and result.irrefutable
             failed = failed or result.failed
-
-        return PatternResult(
-            bindings,
-            covered={constructor.name} if irrefutable else set(),
-            irrefutable=len(expected.constructors) == 1 and irrefutable,
-            failed=failed,
-        )
+        alternatives = self._combine_patterns(results, constructor.name) if not failed else []
+        return PatternResult(bindings, alternatives, failed)
 
     def _instantiated_payload(
         self, constructor: ConstructorInfo, expected: AdtType

@@ -35,6 +35,29 @@ _PROGRAMS = [
         "print(Box.make(3).get())\n"
     ),
     "val f = do(x) { x + 1 }\nprint(f(4))\n",
+    (
+        "#lang oort-core\n"
+        "enum E { A(x: Int), B(y: Int) }\n"
+        "def f(n: Int, e: E) -> Int {\n"
+        "    match e {\n"
+        "        A(x) | B(x) if x > 0 => x,\n"
+        "        _ => match n { 0 => -1, 1 | 2 => -2, _ if n < 0 => -3, _ => -4 }\n"
+        "    }\n"
+        "}\n"
+        "print(f(1, A(5)), f(1, B(2)), f(0, A(-1)), f(-1, B(-2)), f(9, A(-3)))\n"
+    ),
+    (
+        "#lang oort-core\n"
+        "def g(p: Tuple[Int, Bool]) -> Int {\n"
+        "    match p {\n"
+        "        (0, true) => 1,\n"
+        "        (0, false) => 2,\n"
+        "        (x, true) => 3,\n"
+        "        (x, false) => 4\n"
+        "    }\n"
+        "}\n"
+        "print(g((0, true)), g((5, false)))\n"
+    ),
 ]
 
 

@@ -275,6 +275,26 @@ def unwrap(o: Option[Int]) -> Int {
 }
 ```
 
+完整模式示例：
+
+```oort
+def classify(n: Int) -> String {
+    match n {
+        0 => "zero",
+        1 | 2 | 3 => "small",
+        x if x < 0 => "negative",
+        _ => "large"
+    }
+}
+
+def at_origin(p: Tuple[Int, Int]) -> Bool {
+    match p {
+        (0, 0) => true,
+        _ => false
+    }
+}
+```
+
 - `enum` 只能出现在模块顶层；必须至少有一个构造器；字段类型必须标注，
   可为任意已支持的静态类型（标量、集合、函数、此前声明的 enum/类，不能是
   Unit）；支持自递归。enum 类型名
@@ -283,14 +303,24 @@ def unwrap(o: Option[Int]) -> Int {
 - 字段名用于声明/文档；构造与模式都按**位置**绑定，暂不支持命名字段。
 - 构造器名进入模块值命名空间，可被 `from`/`import` 导出；enum 类型名只进入
   类型命名空间，暂不支持跨模块类型注解。
-- `match` 的 scrutinee 必须是 enum；arm 用 `,` 或换行分隔。
-- 模式第一切片：`_`、绑定名、构造器模式（可嵌套）。
-  - 裸名字若命中当前 enum 的零参构造器：只匹配该 variant，并同时绑定该名字；
-  - 否则按普通绑定处理。
-- 每个 arm 独立作用域；绑定不可变；重复绑定报错。
+- `match` 的 scrutinee 可为 enum、`Bool`、`Int`、`Float`、`String` 或 `Tuple`；
+  arm 用 `,` 或换行分隔。
+- 模式：`_`、绑定名、构造器（可嵌套）、字面量（Int/Float/String/Bool，数字可带
+  `-`）、元组（`()`、`(p1, p2)`；`(p)` 是分组）、或模式 `p1 | p2`。
+  - 裸名字若命中当前 enum 的零参构造器：按构造器处理并同时绑定该名字；
+    否则按普通绑定处理。
+  - 字面量模式必须与期望类型精确一致（`Int` 不匹配 `Float`，反之亦然）。
+  - 或模式的每个分支必须绑定相同的名字集合与兼容类型；绑定不可变。
+- **守卫**：`pattern if cond => body`；`cond` 必须 Bool，可引用 pattern 绑定，
+  按 arm 作用域求值；`1 | 2 if c` 的守卫作用于整个或模式。守卫失败时继续下
+  一个 arm（不回溯或模式的其他分支）。
+- 每个 arm 独立作用域；重复绑定报错。
 - arm 体类型必须可合并；`Never` 可参与合并。
-- **顶层构造器穷尽性**：`_`/普通绑定覆盖全部；构造器模式在其所有子模式都
-  不可反驳时覆盖该构造器。嵌套穷尽性尚未实现，需用 `_`/绑定兜底。
+- **嵌套穷尽性**：按 Maranget usefulness 检查。ADT 构造器集合、`Bool`
+  （`true`/`false`）与元组（单构造器）是完整签名；Int/Float/String 是无限域，
+  必须由 `_`/绑定覆盖；或模式按分支展开；**守卫 arm 不计入覆盖**。缺失时
+  报告 witness：`Match is not exhaustive; missing: Some(false).`、
+  `... missing: (false, _).`、`... missing: _.`。
 - **泛型参数**：`[T]` / `[T, E]`；参数名不得遮蔽内建/已知类型，重复参数报错。
   可选声明处变型 `[out T]`（协变）/ `[in T]`（逆变），缺省不变型；`out` 仍是
   普通标识符（`val out = 1` 合法），非法变型文本报
@@ -384,7 +414,10 @@ enum Result[out T, out E] {
 | 类型实参冲突 | `Same(1, "s")`（`Same[T]` 的两个字段都是 `T`） | `Type parameter 'T' ... is inferred as both Int and String.` |
 | 非顶层 enum | 函数/块内 `enum` | `Enum declarations are only allowed at module top level...` |
 | 空 enum | `enum E { }` | `An enum must declare at least one constructor.` |
-| match 非 enum | `match 1 { _ => 1 }` | `The scrutinee of match must have an enum type...` |
+| match 不支持的类型 | `match [1] { _ => 1 }` | `The scrutinee of match must have an enum, Bool, Int, Float, String or Tuple type...` |
+| 字面量类型不符 | `match f { 1 => ... }`（f 为 Float） | `Literal pattern of type Int cannot match Float.` |
+| 元组模式误用 | `match 1 { (x, y) => ... }`、元组元数不符 | `Tuple patterns require a tuple type...` / `Tuple pattern has N element(s), expected M.` |
+| 或模式绑定不一致 | `A(x) \| B(x, z)`、`A(x) \| B(x: String)` | `All alternatives ... same names` / `Binding 'x' has incompatible types...` |
 | 非穷尽 | 缺少构造器 | `Match is not exhaustive; missing: ...` |
 | enum 相等 | `A == A` | `Enum equality is not supported...` |
 | 其他模式 | 字面量/元组/守卫/或模式 | 第一切片不支持（语法或诊断） |
@@ -419,4 +452,4 @@ print(x)          # 1
 ## 尚未实现
 
 null、类继承与元类、泛型类/函数/lambda、匿名 $n lambda、跨方言 FFI、
-REPL 方言切换、字面量/元组/守卫/或模式、嵌套穷尽性、ADT 相等。
+REPL 方言切换、ADT 相等。

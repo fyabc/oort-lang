@@ -196,12 +196,26 @@ matchArmList
     ;
 
 matchArm
-    : pattern FATARROW expression
+    : pattern (IF expression)? FATARROW expression
     ;
 
 pattern
-    : identifier LPA patternList? RPA    # ConstructorPattern
+    : patternPrimary (BIT_OR patternPrimary)*
+    ;
+
+patternPrimary
+    : patternLiteral                     # LiteralPattern
+    | LPA patternList? RPA               # TuplePattern
+    | identifier LPA patternList? RPA    # ConstructorPattern
     | identifier                         # NamePattern
+    ;
+
+patternLiteral
+    : SUB? integerLiteral
+    | SUB? FLOAT_LITERAL
+    | stringLiteral
+    | TRUE
+    | FALSE
     ;
 
 patternList

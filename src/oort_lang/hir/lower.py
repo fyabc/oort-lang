@@ -499,34 +499,48 @@ class HirLowerer:
         arms: list[MatchArm] = []
         for arm in node.arms:
             bindings = _pattern_bindings(arm.pattern)
-            index = self._reserve_function_index()
-            state = _FunctionState(
-                name="<match arm>",
-                code=[],
-                scopes=[{}],
-                in_match_arm=True,
+            index = self._lower_match_arm(bindings, arm.body, arm.body.position)
+            guard_index = (
+                None
+                if arm.guard is None
+                else self._lower_match_arm(bindings, arm.guard, arm.guard.position)
             )
-            self._states.append(state)
-            try:
-                for name in bindings:
-                    self._declare_local(name, mutable=False, position=arm.body.position)
-                value = self._require_value(arm.body)
-                self._emit(Return(arm.body.position, value))
-                function = HirFunction(
-                    name="<match arm>",
-                    params=bindings,
-                    local_count=state.max_reg,
-                    code=tuple(state.code),
-                    position=arm.body.position,
-                    signature=_simple_signature(bindings),
-                )
-            finally:
-                self._states.pop()
-            self._function_slots[index] = function
-            arms.append(MatchArm(_pattern_descriptor(arm.pattern), index))
+            arms.append(MatchArm(_pattern_descriptor(arm.pattern), index, guard_index))
         dst = self._alloc(node.position)
         self._emit(Match(node.position, dst, scrutinee, tuple(arms)))
         return dst
+
+    def _lower_match_arm(
+        self,
+        bindings: tuple[str, ...],
+        expression: nodes.ASTNode,
+        position: SourcePosition,
+    ) -> int:
+        index = self._reserve_function_index()
+        state = _FunctionState(
+            name="<match arm>",
+            code=[],
+            scopes=[{}],
+            in_match_arm=True,
+        )
+        self._states.append(state)
+        try:
+            for name in bindings:
+                self._declare_local(name, mutable=False, position=position)
+            value = self._require_value(expression)
+            self._emit(Return(position, value))
+            function = HirFunction(
+                name="<match arm>",
+                params=bindings,
+                local_count=state.max_reg,
+                code=tuple(state.code),
+                position=position,
+                signature=_simple_signature(bindings),
+            )
+        finally:
+            self._states.pop()
+        self._function_slots[index] = function
+        return index
 
     def _lower_nested_function(self, node: nodes.FunctionDef) -> int:
         self._validate_top_level_function(node)
@@ -1226,6 +1240,15 @@ def _pattern_bindings(pattern: nodes.Pattern) -> tuple[str, ...]:
         return (pattern.name,)
     if isinstance(pattern, nodes.ConstructorPattern):
         return tuple(name for arg in pattern.args for name in _pattern_bindings(arg))
+    if isinstance(pattern, nodes.TuplePattern):
+        return tuple(name for item in pattern.patterns for name in _pattern_bindings(item))
+    if isinstance(pattern, nodes.OrPattern):
+        names: list[str] = []
+        for alternative in pattern.patterns:
+            for name in _pattern_bindings(alternative):
+                if name not in names:
+                    names.append(name)
+        return tuple(names)
     return ()
 
 
@@ -1234,6 +1257,27 @@ def _pattern_descriptor(pattern: nodes.Pattern) -> Pattern:
         return Pattern("wildcard")
     if isinstance(pattern, nodes.NamePattern):
         return Pattern("name", pattern.name)
+    if isinstance(pattern, nodes.LiteralPattern):
+        value = pattern.value
+        if isinstance(value, bool):
+            kind = "literal_bool"
+        elif isinstance(value, int):
+            kind = "literal_int"
+        elif isinstance(value, float):
+            kind = "literal_float"
+        else:
+            kind = "literal_string"
+        return Pattern(kind, value=value)
+    if isinstance(pattern, nodes.TuplePattern):
+        return Pattern(
+            "tuple",
+            args=tuple(_pattern_descriptor(item) for item in pattern.patterns),
+        )
+    if isinstance(pattern, nodes.OrPattern):
+        return Pattern(
+            "or",
+            args=tuple(_pattern_descriptor(alt) for alt in pattern.patterns),
+        )
     if isinstance(pattern, nodes.ConstructorPattern):
         return Pattern(
             "constructor",

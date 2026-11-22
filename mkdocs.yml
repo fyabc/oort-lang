@@ -98,6 +98,7 @@ nav:
       - OP 0020 诊断消息质量: proposals/0020-diagnostic-quality.md
       - OP 0021 浮点字面量要求整数部分: proposals/0021-float-integer-part.md
       - OP 0022 泛型 ADT 与内建 Option/Result: proposals/0022-generic-adts.md
+      - OP 0023 完整模式匹配: proposals/0023-full-pattern-matching.md
   - 设计:
       - 设计索引: design/00-INDEX.md
       - 运行时值表示: design/01-runtime-value-representation.md

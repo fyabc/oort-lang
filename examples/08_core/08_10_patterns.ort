@@ -1,0 +1,42 @@
+#lang oort-core
+
+# 完整模式匹配：字面量、元组、或模式、守卫与嵌套穷尽性。
+
+enum Shape {
+    Point,
+    Line(x: Int),
+    Rect(w: Int, h: Int)
+}
+
+def describe(shape: Shape) -> String {
+    match shape {
+        Point => "point",
+        Line(0) => "zero-line",
+        Line(x) if x < 0 => "negative-line",
+        Line(x) => "line",
+        Rect(0, 0) => "empty-rect",
+        Rect(w, h) if w == h => "square",
+        Rect(w, h) => "rect"
+    }
+}
+
+def classify(n: Int) -> String {
+    match n {
+        0 => "zero",
+        1 | 2 | 3 => "small",
+        x if x < 0 => "negative",
+        _ => "large"
+    }
+}
+
+def at_origin(p: Tuple[Int, Int]) -> Bool {
+    match p {
+        (0, 0) => true,
+        _ => false
+    }
+}
+
+print(describe(Point), describe(Line(0)), describe(Line(-2)), describe(Line(5)))
+print(describe(Rect(0, 0)), describe(Rect(3, 3)), describe(Rect(2, 5)))
+print(classify(0), classify(2), classify(-1), classify(9))
+print(at_origin((0, 0)), at_origin((0, 1)))

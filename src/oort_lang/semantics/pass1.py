@@ -11,6 +11,7 @@ from ..diagnostics.syntax_errors import UnsupportedSyntax
 from ..parser.dialect import DEFAULT_DIALECT, DialectConfig
 from ..parser.names import anonymous_param_index
 from ..source.input_info import InputInfo
+from ..source.source_position import SourcePosition
 from .decl import OutsideDeclType
 from .functions import FunctionResolverMixin
 from .resolution import ScopeResolverMixin
@@ -254,22 +255,48 @@ class Pass1Analyzer(ScopeResolverMixin, FunctionResolverMixin, ASTVisitor[T]):
         for arm in node.arms:
             self.begin_scope()
             try:
-                self._declare_pattern_bindings(arm.pattern)
+                bindings = self._pattern_bindings(arm.pattern)
+                for name, position in bindings:
+                    self.declare(name, position)
+                for name, _ in bindings:
+                    self.define(name)
+                if arm.guard is not None:
+                    arm.guard.accept(self)
                 arm.body.accept(self)
             finally:
                 self.end_scope()
         return None
 
-    def _declare_pattern_bindings(self, pattern: nodes.Pattern) -> None:
-        if isinstance(pattern, nodes.WildcardPattern):
-            return
-        if isinstance(pattern, nodes.NamePattern):
-            self.declare(pattern.name, pattern.position)
-            self.define(pattern.name)
-            return
-        if isinstance(pattern, nodes.ConstructorPattern):
-            for arg in pattern.args:
-                self._declare_pattern_bindings(arg)
+    def _pattern_bindings(self, pattern: nodes.Pattern) -> list[tuple[str, SourcePosition]]:
+        """Unique binding names in one pattern, including or-alternatives.
+
+        Alternatives in an or-pattern reuse the same arm scope; dedupe so
+        Pass1 does not report duplicates before the checker can validate that
+        every alternative binds the same names.
+        """
+        names: list[tuple[str, SourcePosition]] = []
+
+        def walk(current: nodes.Pattern) -> None:
+            if isinstance(current, nodes.NamePattern):
+                names.append((current.name, current.position))
+            elif isinstance(current, nodes.ConstructorPattern):
+                for arg in current.args:
+                    walk(arg)
+            elif isinstance(current, nodes.TuplePattern):
+                for item in current.patterns:
+                    walk(item)
+            elif isinstance(current, nodes.OrPattern):
+                for alternative in current.patterns:
+                    walk(alternative)
+
+        walk(pattern)
+        seen: set[str] = set()
+        unique: list[tuple[str, SourcePosition]] = []
+        for name, position in names:
+            if name not in seen:
+                seen.add(name)
+                unique.append((name, position))
+        return unique
 
     def visit_for_expr(self, node: nodes.ForExpr) -> T | None:
         node.iterator.accept(self)

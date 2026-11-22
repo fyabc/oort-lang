@@ -48,11 +48,12 @@ pub struct Pattern {
     pub kind: u8,
     pub name: String,
     pub args: Vec<Pattern>,
+    pub value: Option<Constant>,
 }
 
 #[derive(Debug, Clone)]
 pub struct MatchSpec {
-    pub arms: Vec<(Pattern, u32)>,
+    pub arms: Vec<(Pattern, u32, Option<u32>)>,
 }
 
 #[derive(Debug, Clone)]
@@ -111,13 +112,18 @@ pub struct Module {
 pub struct Reader<'a> {
     data: &'a [u8],
     pos: usize,
+    version: u8,
 }
 
 type RResult<T> = Result<T, String>;
 
 impl<'a> Reader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Reader { data, pos: 0 }
+        Reader {
+            data,
+            pos: 0,
+            version: 1,
+        }
     }
 
     fn take(&mut self, n: usize) -> RResult<&'a [u8]> {
@@ -186,7 +192,17 @@ impl<'a> Reader<'a> {
         for _ in 0..n {
             args.push(self.pattern()?);
         }
-        Ok(Pattern { kind, name, args })
+        let value = if self.version >= 2 && (3..=6).contains(&kind) {
+            Some(self.constant()?)
+        } else {
+            None
+        };
+        Ok(Pattern {
+            kind,
+            name,
+            args,
+            value,
+        })
     }
 
     fn constant(&mut self) -> RResult<Constant> {
@@ -258,7 +274,14 @@ impl<'a> Reader<'a> {
                 let na = self.u32()?;
                 let mut arms = Vec::with_capacity(na as usize);
                 for _ in 0..na {
-                    arms.push((self.pattern()?, self.u32()?));
+                    let pattern = self.pattern()?;
+                    let function_index = self.u32()?;
+                    let guard_index = if self.version >= 2 {
+                        self.opt_u32()?
+                    } else {
+                        None
+                    };
+                    arms.push((pattern, function_index, guard_index));
                 }
                 Constant::Match(MatchSpec { arms })
             }
@@ -378,9 +401,10 @@ pub fn read_module(data: &[u8]) -> RResult<Module> {
         return Err(format!("unsupported bytecode kind: {kind}"));
     }
     let version = r.u8()?;
-    if version != 1 {
+    if version != 1 && version != 2 {
         return Err(format!("unsupported bytecode version: {version}"));
     }
+    r.version = version;
     let nf = r.u32()?;
     let mut functions = Vec::with_capacity(nf as usize);
     for _ in 0..nf {

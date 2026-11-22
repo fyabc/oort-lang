@@ -124,6 +124,15 @@ class ASTVisitor(Generic[T]):
     def visit_constructor_pattern(self, node) -> T | None:
         return self.visit_children(node)
 
+    def visit_literal_pattern(self, node) -> T | None:
+        return self.visit_children(node)
+
+    def visit_tuple_pattern(self, node) -> T | None:
+        return self.visit_children(node)
+
+    def visit_or_pattern(self, node) -> T | None:
+        return self.visit_children(node)
+
     def visit_function_def(self, node) -> T | None:
         return self.visit_children(node)
 

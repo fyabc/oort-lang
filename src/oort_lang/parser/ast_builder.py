@@ -279,7 +279,49 @@ class ASTBuilder(ExpressionParsingMixin, ParameterParsingMixin, OortVisitor):
         return MatchExpr(ctx, self.visit(ctx.expression()), arms)
 
     def visitMatchArm(self, ctx: OortParser.MatchArmContext) -> MatchArm:
-        return MatchArm(ctx, self.visit(ctx.pattern()), self.visit(ctx.expression()))
+        expressions = ctx.expression()
+        if ctx.IF() is not None:
+            guard = self.visit(expressions[0])
+            body = self.visit(expressions[1])
+        else:
+            guard = None
+            body = self.visit(expressions[0])
+        return MatchArm(ctx, self.visit(ctx.pattern()), body, guard)
+
+    def visitPattern(self, ctx: OortParser.PatternContext) -> Pattern:
+        primaries = ctx.patternPrimary()
+        if len(primaries) == 1:
+            return self.visit(primaries[0])
+        return OrPattern(ctx, [self.visit(primary) for primary in primaries])
+
+    def visitLiteralPattern(self, ctx: OortParser.LiteralPatternContext) -> Pattern:
+        literal = ctx.patternLiteral()
+        sign = -1 if literal.SUB() is not None else 1
+        integer_ctx = literal.integerLiteral()
+        if integer_ctx is not None:
+            text = integer_ctx.getText()
+            if text.startswith(("0d", "0D")):
+                text = text[2:]
+            return LiteralPattern(ctx, sign * int(text, base=0))
+        float_ctx = literal.FLOAT_LITERAL()
+        if float_ctx is not None:
+            return LiteralPattern(ctx, sign * float(float_ctx.getText()))
+        if literal.TRUE() is not None:
+            return LiteralPattern(ctx, True)
+        if literal.FALSE() is not None:
+            return LiteralPattern(ctx, False)
+        return LiteralPattern(ctx, parse_string_literal(literal.stringLiteral()))
+
+    def visitTuplePattern(self, ctx: OortParser.TuplePatternContext) -> Pattern:
+        pattern_list = ctx.patternList()
+        patterns = (
+            []
+            if pattern_list is None
+            else [self.visit(pattern) for pattern in pattern_list.pattern()]
+        )
+        if len(patterns) == 1:
+            return patterns[0]
+        return TuplePattern(ctx, patterns)
 
     def visitNamePattern(self, ctx: OortParser.NamePatternContext) -> Pattern:
         name = ctx.identifier().getText()

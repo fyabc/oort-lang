@@ -50,6 +50,12 @@ EXPECTED_OUTPUTS = {
     ),
     "08_core/08_08_slots.ort": "slot\nctor\n3\norigin\n",
     "08_core/08_09_generic_adt.ort": "3\n-1\n3\ntext\ngap\n7\n",
+    "08_core/08_10_patterns.ort": (
+        "point zero-line negative-line line\n"
+        "empty-rect square rect\n"
+        "zero small negative large\n"
+        "true false\n"
+    ),
 }
 
 # The JSON showcase is covered by `test_json_example.py`, which compiles it
