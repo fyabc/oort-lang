@@ -402,10 +402,10 @@ TypedFunction
   Python typed VM 的 stdout 全部一致；
 - `benchmarks/typed_run.py` + `typed_report.py` 把 typed 路径接入
   `benchmarks/RESULTS.md` §6（研究快照，不进门禁）；
-- 初步测量（本机，exec 口径，5 次中位数）：Rust typed **fib(20) 5.9 ms /
-  loop 20000 1.4 ms**；同机 Python typed 字节码 VM 为 **658.8 / 424.3 ms**，
-  kind=0 VM 为 **364.4 / 213.9 ms**。Rust typed 比 kind=0 VM 快约
-  62–152×（boxed 值仍是 spike 表示）；
+- 初步测量（本机，exec 口径，5 次中位数）：Rust typed **fib(20) 5.8 ms /
+  loop 20000 1.2 ms**；同机 Python typed 字节码 VM 为 **631.6 / 432.7 ms**，
+  kind=0 VM 为 **358.1 / 215.8 ms**。Rust typed 比 kind=0 VM 快约
+  62–186×（boxed 值仍是 spike 表示）；
 - **尚未做**：未装箱寄存器、动态边界；`exec_ms` 已接入 RESULTS §6。
 
 ## 9. 风险与开放问题
