@@ -134,7 +134,7 @@ print(l.add(1, 2))
 | `a + b`、`-`、`*`、`//`、`%` | 两个数值 -> `Int`，任一为 Float 则 `Float` |
 | `a / b` | 两个数值 -> `Float` |
 | `a < b`、`<=`、`>`、`>=` | 两个数值或两个 String -> Bool |
-| `a == b`、`!=` | 两个数值、两个 Bool、两个 String 或同类型集合 -> Bool；`1 == 1.0` 允许 |
+| `a == b`、`!=` | 两个数值、两个 Bool、两个 String、同类型集合、同类型 ADT（结构相等）或同类实例（身份相等） -> Bool；`1 == 1.0` 允许 |
 | `[1, 2]`、`(1, true)`、`{: ... :}`、`{. ... .}` | 集合字面量；同质 List/Set/Dict 推断，Tuple 可异构 |
 | `xs[i]` | List/Tuple/String 用 Int，Dict 用键类型；Tuple 字面量下标检查越界 |
 | `len(x)` | String 或集合 -> Int |
@@ -147,7 +147,7 @@ print(l.add(1, 2))
 | `f(...)` | 仅位置实参；精确元数；实参类型匹配；被调者可为函数值 |
 | `do(x: Int) -> Int { ... }` | 函数值；参数必须标注，返回可省略（推断/期望下推） |
 | `if c { ... } else { ... }` | 条件 Bool；两分支类型一致 |
-| `match e { ... }` | `e` 必须是 enum；arm 为 `pattern => expr`；结果类型为各 arm 的合并 |
+| `match e { ... }` | `e` 为 enum/Bool/Int/Float/String/Tuple；arm 为 `pattern (if guard)? => expr`；结果类型为各 arm 的合并 |
 | `{ ... }` | 块的值是最后一条语句的值；空块为 Unit |
 | `print(...)` | 任意个 Int/Float/Bool/String/Unit/enum 实参 -> Unit；可被用户定义遮蔽 |
 
@@ -223,7 +223,8 @@ class Point {
   [design 14](../design/14-core-typechecking.md)）；**递归环上的方法需显式返回
   标注**。`this` 的类型是当前类。方法可读取槽、调用其他方法、返回 `this`，
   方法引用可作为函数值传递。
-- 类实例不可打印、不可用 `==` 比较；类类型可用于参数/变量/返回值与槽类型。
+- 类实例按**身份**相等（`a == a` 为真，不同实例为假），可用于容器与 Dict/Set 键；
+  类实例仍不可打印。类类型可用于参数/变量/返回值与槽类型。
 
 ## ADT（`enum`）与 `match`
 
@@ -344,7 +345,12 @@ def at_origin(p: Tuple[Int, Int]) -> Bool {
 - **模式载荷**：match 按 scrutinee 的实参代换构造器载荷类型；
   `Option[Int]` 上的 `Some(v)` 把 `v` 绑定为 `Int`。递归载荷
   （`MyList[T]` 里的 `MyList[T]`）与嵌套构造器模式均支持。
-- 空 enum、非顶层 enum、匹配非 enum、enum `==` 均显式拒绝。
+- 空 enum、非顶层 enum、匹配不支持的类型均显式拒绝。
+- **相等**：同类型 ADT 按结构比较（同构造器、载荷递归值相等）；同类型静态类
+  实例按身份比较。含函数载荷的 ADT 显式拒绝比较。ADT 可作 Dict/Set 键，但
+  要求所有载荷 key-safe（含 List/Dict/Set/函数的 ADT 作键时报错）；键语义按
+  OP 0016（Bool/Int 严格、Int/Float 键不同）。**core 不提供 `is`**：没有可重载
+  的 `==`，类实例的 `==` 已是身份；ADT 是值类型，不暴露运行时对象身份。
 
 ### 内建 `Option` / `Result`
 
@@ -385,7 +391,7 @@ enum Result[out T, out E] {
 | 未声明槽 | `this.y = 2`（未声明） | `Class 'C' has no slot 'y'.` |
 | `val` 只读 | 方法内改 `val`、初始化器已赋值的 `val`、循环中赋值 | 只读槽诊断 |
 | 确定赋值 | 分支漏赋值、赋值前读取、提前 return | `Constructor must initialize...` 等 |
-| 类实例打印/相等 | `print(C())`、`c == c` | 不可打印 / `Class equality is not supported` |
+| 类实例打印 | `print(C())` | 不可打印 |
 | 扩展方法 | `def C.f` | `Extension methods...` |
 | lambda/嵌套函数 | `do: 1`、函数体里的 `def` | `Lambdas...` / `Nested function definitions...` |
 | null | `null` | `null is not supported...` |
@@ -419,11 +425,10 @@ enum Result[out T, out E] {
 | 元组模式误用 | `match 1 { (x, y) => ... }`、元组元数不符 | `Tuple patterns require a tuple type...` / `Tuple pattern has N element(s), expected M.` |
 | 或模式绑定不一致 | `A(x) \| B(x, z)`、`A(x) \| B(x: String)` | `All alternatives ... same names` / `Binding 'x' has incompatible types...` |
 | 非穷尽 | 缺少构造器 | `Match is not exhaustive; missing: ...` |
-| enum 相等 | `A == A` | `Enum equality is not supported...` |
-| 其他模式 | 字面量/元组/守卫/或模式 | 第一切片不支持（语法或诊断） |
+| 其他模式 | 范围/集合字面量/`@` 绑定 | 尚未实现 |
 | 匿名 lambda | `do: $0 + 1` | `Lambdas without an explicit parameter list...` |
 | 泛型 lambda | `do[T](x: Int) -> Int ...` | `Generic functions are not implemented yet.` |
-| 函数值打印/相等 | `print(f)`、`f == g` | 打印仅接受标量/ADT/集合；相等仅数值/Bool/String/同类型集合 |
+| 函数值打印/相等 | `print(f)`、`f == g` | 打印仅接受标量/ADT/集合；函数值不可比较 |
 
 类型错误使用 `TypeCheckError`，未实现构造使用 `UnsupportedSyntax`。
 
@@ -452,4 +457,4 @@ print(x)          # 1
 ## 尚未实现
 
 null、类继承与元类、泛型类/函数/lambda、匿名 $n lambda、跨方言 FFI、
-REPL 方言切换、ADT 相等。
+REPL 方言切换。

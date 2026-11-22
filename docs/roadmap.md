@@ -94,8 +94,10 @@ lambda + 类方法，递归仍需标注，类方法按依赖序推断；算法�
 声明处变型、内建 `Option`/`Result`；类型参数擦除，后端零改动；设计与切片见
 [OP 0022](proposals/0022-generic-adts.md)）。**已完成完整模式匹配语义切片**
 （[OP 0023](proposals/0023-full-pattern-matching.md)：字面量/元组/或/守卫、
-嵌套穷尽性 witness；决策树编译留作性能切片）。后续：ADT 相等、静态对象模型
-与槽变量，以及跨方言 FFI 边界。
+嵌套穷尽性 witness；决策树编译留作性能切片）。**已完成 ADT 结构相等、
+key-safe ADT 键与静态类身份相等**（[OP 0024](proposals/0024-adt-and-slot-equality.md)）。
+后续：静态对象模型扩展（继承/接口/访问器/跨模块类类型）、决策树编译与跨方言
+FFI 边界。
 
 ### 阶段 3：共享后端
 

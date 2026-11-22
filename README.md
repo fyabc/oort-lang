@@ -57,13 +57,13 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
 - `oort-core` 薄探针：`#lang oort-core`、Int/Float/Bool/String/Unit、List/Tuple/Dict/Set、循环、静态类/槽、标注必填的函数、
   `if`/`return`、ADT（`enum`，单态与泛型 `enum E[T]`，含 `[out T]`/`[in T]`
   声明处变型）、内建 `Option`/`Result`、完整模式匹配（字面量/元组/或/守卫、
-  嵌套穷尽性）、函数类型/lambda/高阶函数、独立静态检查器；同方言模块导入与
-  导出类型接口；
+  嵌套穷尽性）、ADT 结构相等与静态类身份相等、函数类型/lambda/高阶函数、独立
+  静态检查器；同方言模块导入与导出类型接口；
   `oort-object` 仍忽略标注。见 [规范](docs/spec/11-core-probe.md)
 
 ### 待实现（见 proposals）
 
-- ADT 相等与静态槽对象 — [OP 0005](docs/proposals/0005-type-system.md)
+- 静态对象模型扩展（继承/接口/访问器） — [OP 0005](docs/proposals/0005-type-system.md)
 - 自定义运算符声明与优先级 — [OP 0002](docs/proposals/0002-dsl-support.md)
 - 宏系统与 `comptime` — [设计笔记](docs/design/05-macro-system-design.md)
 - VM 性能优化（调用点缓存等）与 LLVM 后端 — [OP 0004](docs/proposals/0004-bytecode-vm.md)

@@ -638,13 +638,6 @@ class TestCoreAdtRejections:
             "or Tuple type in oort-core, got List[Int].",
         )
 
-    def test_enum_equality_is_rejected(self, caplog):
-        check_error(
-            caplog,
-            "enum E { A }\nprint(A == A)\n",
-            "Enum equality is not supported in oort-core yet; use match.",
-        )
-
     def test_nested_enum_is_rejected(self, caplog):
         check_error(
             caplog,
@@ -1172,6 +1165,113 @@ class TestCorePatterns:
             "enum E { A(x: Int), B(x: String) }\nprint(match A(1) { A(x) | B(x) => 0, _ => 1 })\n",
             "Binding 'x' has incompatible types Int and String in an or-pattern.",
         )
+
+
+class TestCoreEquality:
+    def test_adt_equality(self, run_source):
+        result = run_source(
+            core(
+                """enum E { A(x: Int), B }
+val a = A(1)
+val b = A(1)
+val c = A(2)
+val d = B
+print(a == b, a == c, a == d, a != b)
+"""
+            )
+        )
+        assert result.stdout.splitlines() == ["true false false false"]
+
+    def test_nested_and_container_equality(self, run_source):
+        result = run_source(
+            core(
+                """val a: Option[Option[Int]] = Some(Some(1))
+val b: Option[Option[Int]] = Some(Some(1))
+val c: Option[Option[Int]] = Some(Some(2))
+val xs: List[Option[Int]] = [Some(1), None]
+val ys: List[Option[Int]] = [Some(1), None]
+print(a == b, a == c, xs == ys)
+"""
+            )
+        )
+        assert result.stdout.splitlines() == ["true false true"]
+
+    def test_adt_equality_requires_same_type(self, caplog):
+        check_error(
+            caplog,
+            """print(Some(1) == Some("x"))
+""",
+            "Operator '==' requires both operands to have the same type, "
+            "got Option[Int] and Option[String].",
+        )
+
+    def test_adt_equality_rejects_function_payloads(self, caplog):
+        check_error(
+            caplog,
+            """enum F { F(f: (Int) -> Int) }
+val a: F = F(do(x: Int) { x })
+print(a == a)
+""",
+            "Equality is not supported for enums containing functions in oort-core yet.",
+        )
+
+    def test_adt_keys(self, run_source):
+        result = run_source(
+            core(
+                """enum Color { Red, Green }
+val d: Dict[Color, Int] = {: Red: 1, Green: 2 :}
+val s: Set[Color] = {. Red, Green .}
+print(d[Red], s == {. Green, Red .})
+"""
+            )
+        )
+        assert result.stdout.splitlines() == ["1 true"]
+
+    def test_adt_with_list_payload_cannot_be_key(self, caplog):
+        check_error(
+            caplog,
+            """enum L { L(xs: List[Int]) }
+val s: Set[L] = {. L([]) .}
+""",
+            "Set elements must be Int, Float, Bool, String, an enum or a "
+            "Tuple of key types, got L.",
+        )
+
+    def test_class_identity_equality(self, run_source):
+        result = run_source(
+            core(
+                """class C {
+    val x: Int
+
+    def __init__(x: Int) {
+        this.x = x
+    }
+}
+val a = C(1)
+val b = C(1)
+print(a == a, a == b, a != b)
+"""
+            )
+        )
+        assert result.stdout.splitlines() == ["true false true"]
+
+    def test_class_containers_and_keys(self, run_source):
+        result = run_source(
+            core(
+                """class C {
+    val x: Int
+
+    def __init__(x: Int) {
+        this.x = x
+    }
+}
+val a = C(1)
+val d: Dict[C, Int] = {: a: 7 :}
+print(d[a], [a] == [a], [a] == [C(1)])
+"""
+            )
+        )
+        assert result.stdout.splitlines() == ["7 true false"]
 
 
 class TestCoreFunctionValues:
@@ -1708,14 +1808,6 @@ class TestCoreLoops:
         )
 
 
-def test_collection_equality_rejects_enum_elements(caplog):
-    check_error(
-        caplog,
-        "enum E { A }\nval xs = [A]\nprint(xs == xs)\n",
-        "Equality is not supported for collections containing enums or functions",
-    )
-
-
 class TestCoreClasses:
     def test_slots_constructor_and_methods(self, run_source):
         result = run_source(
@@ -2232,13 +2324,6 @@ class C {
 }
 """,
             "Attribute fallback hooks are only supported in oort-object.",
-        )
-
-    def test_class_equality_is_rejected(self, caplog):
-        check_error(
-            caplog,
-            "class C { val x: Int = 1 }\nval c = C()\nprint(c == c)\n",
-            "Class equality is not supported",
         )
 
     def test_class_instances_are_not_printable(self, caplog):

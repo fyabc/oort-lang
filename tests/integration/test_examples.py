@@ -56,6 +56,7 @@ EXPECTED_OUTPUTS = {
         "zero small negative large\n"
         "true false\n"
     ),
+    "08_core/08_11_equality.ort": "true false false\ntrue\n1 true\ntrue false\n",
 }
 
 # The JSON showcase is covered by `test_json_example.py`, which compiles it

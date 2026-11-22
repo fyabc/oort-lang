@@ -182,6 +182,20 @@ class OortADT(OortNativeMixin, OortObject):
         payload = ", ".join(repr(value) for value in self.values)
         return f"{self.variant}({payload})"
 
+    def __eq__(self, other):
+        # Key equality (OP 0016): Bool/Int strict, Int/Float distinct.  Value
+        # equality (`==` in Oort) is implemented by the interpreter and may be
+        # looser for numeric payloads.
+        return (
+            isinstance(other, OortADT)
+            and self.type.name == other.type.name
+            and self.variant == other.variant
+            and self.values == other.values
+        )
+
+    def __hash__(self):
+        return hash((self.type.name, self.variant, self.values))
+
 
 class OortSuperProxy(OortNativeMixin, OortObject):
     """Oort super proxy object."""

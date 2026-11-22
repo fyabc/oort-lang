@@ -323,6 +323,24 @@ class ASTInterpreter(ASTVisitor[OortObject]):
         if isinstance(lhs, OortSet) or isinstance(rhs, OortSet):
             return isinstance(lhs, OortSet) and isinstance(rhs, OortSet) and lhs.value == rhs.value
 
+        if isinstance(lhs, OortADT) or isinstance(rhs, OortADT):
+            if not isinstance(lhs, OortADT) or not isinstance(rhs, OortADT):
+                return False
+            if (
+                lhs.type.name != rhs.type.name
+                or lhs.variant != rhs.variant
+                or len(lhs.values) != len(rhs.values)
+            ):
+                return False
+            pair = (id(lhs), id(rhs))
+            if pair in memo:
+                return True
+            memo.add(pair)
+            return all(
+                self._values_equal(left, right, memo, position)
+                for left, right in zip(lhs.values, rhs.values, strict=True)
+            )
+
         if isinstance(lhs, OortBool) or isinstance(rhs, OortBool):
             return (
                 isinstance(lhs, OortBool) and isinstance(rhs, OortBool) and lhs.value == rhs.value
@@ -827,6 +845,10 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                 )
             result = self._invoke_operator(method, [lhs], op_text, position)
             return OortBool.get_bool_value(_is_truthy(result))
+
+        if op_text in ("==", "!=") and isinstance(lhs, OortADT) and isinstance(rhs, OortADT):
+            equal = self.values_equal(lhs, rhs, position)
+            return OortBool.get_bool_value(equal if op_text == "==" else not equal)
 
         method = self._find_operator(lhs, op_text, 2, position, env=env)
         if method is None and op_text == "!=":

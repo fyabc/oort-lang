@@ -129,8 +129,11 @@ HIR/字节码前擦除，后端零改动。
 **完整模式匹配语义切片（2026-11-22，[OP 0023](0023-full-pattern-matching.md)）**：
 已实现字面量/元组/或模式、`if` 守卫与嵌套穷尽性（Maranget witness）；
 `match` 的 scrutinee 扩展到 Bool/Int/Float/String/Tuple。`.obc` 升到 version 2
-（模式字面量值与 guard 字段，仍读 v1）。决策树编译留作性能切片；ADT 相等与
-槽对象仍待完成。
+（模式字面量值与 guard 字段，仍读 v1）。决策树编译留作性能切片。
+
+**ADT 相等与槽对象（2026-11-22，[OP 0024](0024-adt-and-slot-equality.md)）**：
+已实现 ADT 结构值相等与 key-safe ADT 键，以及静态类实例的身份相等/键；
+含函数载荷的 ADT 相等、不可键 ADT 作键显式拒绝。
 
 ### 5. 错误处理
 

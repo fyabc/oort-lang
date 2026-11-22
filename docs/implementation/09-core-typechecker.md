@@ -159,6 +159,15 @@ source
 - **运行时**：解释器 `_match_pattern` 与 VM 同步支持 literal/tuple/or；守卫
   失败继续下一个 arm，不回溯或模式分支。
 
+## 相等（OP 0024）
+
+- `_supports_value_equality`：ADT 递归载荷（seen 收敛）、类实例身份；函数载荷拒绝。
+- `_is_valid_key_type`：ADT 递归检查 key-safe 载荷，类实例身份键；不可键 ADT
+  在 Set/Dict 注解与字面量处报错。
+- `_check_equality`：同类型 ADT/类放行；ADT 类型不同或函数载荷给专用诊断。
+- 运行时：`OortADT.__eq__`/`__hash__` 实现键语义；`values_equal` 与
+  `apply_binary` 的 `==`/`!=` 实现 ADT 值语义；类继续走 Object 身份相等。
+
 **内建 `Option`/`Result`（`semantics/core/prelude.py`）**：用 AST 节点构造
 `Option[out T]` / `Result[out T, out E]`，由 `Compiler._run_input` 与
 `compile_unit_details` 在语义分析前注入 core 模块（`-t ast` 不注入）。注入

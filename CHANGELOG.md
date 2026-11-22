@@ -34,6 +34,11 @@
   并报告具体 witness（如 `Some(false)`、`(false, _)`）；守卫 arm 不计入覆盖。
   解释器与 VM 同步实现，`.obc` 版本升到 2（模式字面量值 + guard 字段，仍兼容
   读取 v1）。决策树编译留作后续性能切片。
+- **oort-core ADT 相等与槽对象相等**（OP 0024）：ADT 采用结构化值相等
+  （同构造器、载荷递归比较），可用于 `==`/`!=`、容器相等，以及 `Dict`/`Set`
+  键（key-safe 载荷；Bool/Int 严格、Int/Float 键不同）。静态类实例采用身份
+  相等/键；类实例仍不可打印。含函数载荷的 ADT 相等、含 List/Dict/Set/函数
+  载荷的 ADT 作键在检查期显式拒绝。
 - **oort-core 函数返回类型推断**（OP 0005）：顶层 `def`、`do` lambda 与**类方法**
   可省略返回标注，从各 `return` 类型与尾表达式类型合并推断；lambda 还可由期望
   函数类型下推返回类型（`val f: (Int) -> Int = do(x: Int) { x }`）。类方法按调用

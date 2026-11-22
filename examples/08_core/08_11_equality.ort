@@ -1,0 +1,47 @@
+#lang oort-core
+
+# ADT 结构相等、静态类身份相等与 key-safe ADT 键。
+#
+# - enum 是值类型：同构造器 + 载荷递归相等。
+# - class 是引用类型：== 是身份相等。
+# - ADT 可作 Dict/Set 键，但载荷必须是 key-safe（没有 List/函数等）。
+
+enum Color {
+    Red,
+    Green
+}
+
+class Point {
+    val x: Int
+    val y: Int
+
+    def __init__(x: Int, y: Int) {
+        this.x = x
+        this.y = y
+    }
+}
+
+# a 与 b 是不同对象但结构相等；c 是 None。
+val a: Option[Int] = Some(1)
+val b: Option[Int] = Some(1)
+val c: Option[Int] = None
+# 输出：true false false
+print(a == b, a == c, a != b)
+
+# 容器相等逐元素使用 Oort 值相等；None 需要标注提供期望类型。
+val xs: List[Option[Int]] = [Some(1), None]
+val ys: List[Option[Int]] = [Some(1), None]
+# 输出：true
+print(xs == ys)
+
+# ADT 作为 Dict 键：键语义区分 Bool/Int，Int/Float 键不同。
+# Set 相等与元素顺序无关。
+val counts: Dict[Color, Int] = {: Red: 1, Green: 2 :}
+# 输出：1 true
+print(counts[Red], {. Red, Green .} == {. Green, Red .})
+
+# 静态类实例按身份比较：p == p 为真，槽值相同的 q 仍不相等。
+val p = Point(1, 2)
+val q = Point(1, 2)
+# 输出：true false
+print(p == p, p == q)

@@ -89,27 +89,54 @@ def _is_same_container(left: Type, right: Type) -> bool:
     return type(left) is type(right) and is_assignable(left, right) and is_assignable(right, left)
 
 
-def _supports_value_equality(type_: Type) -> bool:
+def _supports_value_equality(type_: Type, seen: set[AdtType] | None = None) -> bool:
     if isinstance(type_, UnknownType):
         return True
     if type_ in (INT, FLOAT, BOOL, STRING):
         return True
     if isinstance(type_, (ListType, SetType)):
-        return _supports_value_equality(type_.element)
+        return _supports_value_equality(type_.element, seen)
     if isinstance(type_, DictType):
-        return _supports_value_equality(type_.key) and _supports_value_equality(type_.value)
+        return _supports_value_equality(type_.key, seen) and _supports_value_equality(
+            type_.value, seen
+        )
     if isinstance(type_, TupleType):
-        return all(_supports_value_equality(element) for element in type_.elements)
+        return all(_supports_value_equality(element, seen) for element in type_.elements)
+    if isinstance(type_, ClassType):
+        # Class instances use identity equality.
+        return True
+    if isinstance(type_, AdtType):
+        if seen is None:
+            seen = set()
+        if type_ in seen:
+            return True
+        seen.add(type_)
+        return all(
+            _supports_value_equality(payload, seen)
+            for constructor in type_.constructors
+            for payload in _adt_payload(type_, constructor)
+        )
     return False
 
 
-def _is_valid_key_type(type_: Type) -> bool:
+def _is_valid_key_type(type_: Type, seen: set[AdtType] | None = None) -> bool:
     if isinstance(type_, UnknownType):
         return True
-    if type_ in (INT, FLOAT, BOOL, STRING) or isinstance(type_, AdtType):
+    if type_ in (INT, FLOAT, BOOL, STRING) or isinstance(type_, ClassType):
         return True
     if isinstance(type_, TupleType):
-        return all(_is_valid_key_type(element) for element in type_.elements)
+        return all(_is_valid_key_type(element, seen) for element in type_.elements)
+    if isinstance(type_, AdtType):
+        if seen is None:
+            seen = set()
+        if type_ in seen:
+            return True
+        seen.add(type_)
+        return all(
+            _is_valid_key_type(payload, seen)
+            for constructor in type_.constructors
+            for payload in _adt_payload(type_, constructor)
+        )
     return False
 
 
@@ -1799,17 +1826,29 @@ class CoreTypeChecker(ASTVisitor[Type]):
         if isinstance(left, UnknownType) or isinstance(right, UnknownType):
             return self._record(node, BOOL)
         if isinstance(left, AdtType) or isinstance(right, AdtType):
-            self._error(
-                "Enum equality is not supported in oort-core yet; use match.",
-                node.position,
-            )
-            return self._record(node, UNKNOWN)
+            if not (isinstance(left, AdtType) and isinstance(right, AdtType) and left == right):
+                self._error(
+                    f"Operator '{node.op.text}' requires both operands to have the "
+                    f"same type, got {describe_type(left)} and {describe_type(right)}.",
+                    node.position,
+                )
+                return self._record(node, UNKNOWN)
+            if not _supports_value_equality(left):
+                self._error(
+                    "Equality is not supported for enums containing functions in oort-core yet.",
+                    node.position,
+                )
+                return self._record(node, UNKNOWN)
+            return self._record(node, BOOL)
         if isinstance(left, ClassType) or isinstance(right, ClassType):
-            self._error(
-                "Class equality is not supported in oort-core yet.",
-                node.position,
-            )
-            return self._record(node, UNKNOWN)
+            if not (isinstance(left, ClassType) and isinstance(right, ClassType) and left == right):
+                self._error(
+                    f"Operator '{node.op.text}' requires both operands to have the "
+                    f"same type, got {describe_type(left)} and {describe_type(right)}.",
+                    node.position,
+                )
+                return self._record(node, UNKNOWN)
+            return self._record(node, BOOL)
         if (_is_numeric(left) and _is_numeric(right)) or (left == right and left in (BOOL, STRING)):
             return self._record(node, BOOL)
         if _is_container(left) and _is_container(right):
