@@ -85,6 +85,18 @@ uv run python benchmarks/typed_run.py --repeat 5 --json > typed.json
 uv run python benchmarks/typed_report.py --typed typed.json
 ```
 
+### 静态库 vs 动态库（诊断）
+
+`benchmarks/boundary_run.py` 对比同一个库的四种路径：动态库（Python VM）、
+静态库（Python typed VM）、静态库（Rust typed VM），以及 object→core 的 B1
+边界。Python 路径在进程内计时（编译 + 执行），B1 包含守卫与容器深拷贝；这是
+研究诊断，不进入 CI，也不作为性能门禁。
+
+```bash
+uv run python benchmarks/boundary_run.py --repeat 3
+uv run python benchmarks/boundary_run.py --repeat 3 --json
+```
+
 ## 性能分析
 
 基准告诉我们*是否*回退；profiler 告诉我们*在哪里*回退。
