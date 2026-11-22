@@ -51,6 +51,7 @@ from .nodes import (
     validate_module,
 )
 from .typed import (
+    AdtType,
     ContainerType,
     IrType,
     TypedFunction,
@@ -62,6 +63,7 @@ from .typed import (
 )
 
 __all__ = [
+    "AdtType",
     "BinOp",
     "BuildClass",
     "BuildDict",

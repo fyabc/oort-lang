@@ -1,7 +1,7 @@
 # 类型化 ADT 设计（S4）
 
 > **状态**：设计草案 + **S4a/S4b 原型**（2026-11-23）。单态与泛型 ADT（含
-> prelude `Option`）已进入 typed HIR / kind=1 v5 / Python typed VM / Rust typed
+> prelude `Option`）已进入 typed HIR / kind=1 v6 / Python typed VM / Rust typed
 > VM；S4b 原型在运行时**擦除**类型参数，复杂模式仍留后续。**不改变语言表面**。
 >
 > 关联：[design 15](15-typed-ir.md) 的 S4 扩展；[design 03](03-type-system-design.md)
@@ -118,7 +118,7 @@ class AdtType:
 ### 4.2 模块级声明表
 
 ADT 是模块级声明，构造器 ID 必须跨 proto 稳定，因此不能继续只放在每 proto
-类型表里。kind=1 v5 增加模块头：
+类型表里。kind=1 v6 增加模块头：
 
 ```text
 u32 adt_decl_count
@@ -145,15 +145,14 @@ tag 12: AdtDeclRef
   u16 adt_decl_id
 ```
 
-S4b 的**静态类型**允许类型参数：
+S4b 支持类型参数：
 
 ```text
 AdtType(origin, name, args)
 ```
 
-但 v5 原型的线格式仍只写 `u16 adt_decl_id`，运行时也按 decl 身份擦除类型参数。
-这是为了先跑通泛型构造/匹配/prelude；完整 reified 实例表（`arg_count` +
-`arg_type_id[]`）留到后续 ABI 阶段。格式版本为 **v5**。
+类型表 tag 12 写入 `u16 adt_decl_id, u16 arg_count, u16 arg_type_id[]`；运行时
+ADT 值保存具体实例类型（decl + args），用于守卫与相等。格式版本提升为 **v6**。
 
 ## 5. 构造器与值
 
@@ -259,13 +258,13 @@ S4c 可把线性测试改成决策树（Maranget 风格）或跳转表；初始�
 
 ## 8. 序列化与兼容性
 
-- kind=1 版本提升为 **v5**；
+- kind=1 版本提升为 **v6**；
 - 文件头增加模块级 ADT 声明表，再写 functions/main；
 - 每 proto 类型表新增 tag 12；
 - 新 opcode：`NEW_ADT`、`ADT_TAG`、`ADT_FIELD`、`EQ_ADT`、`NE_ADT`；
-- 旧读者遇到 v5/未知 opcode/tag 必须显式拒绝；
+- 旧读者遇到 v6/未知 opcode/tag 必须显式拒绝；
 - 不改变 kind=0 格式；
-- 单模块 S4a 不涉及跨模块 origin；v5 预留 `origin` 字段，跨模块 ADT 在 B2/
+- 单模块 S4a 不涉及跨模块 origin；v6 预留 `origin` 字段，跨模块 ADT 在 B2/
   后续扩展中启用。
 
 ## 9. 里程碑
@@ -273,12 +272,12 @@ S4c 可把线性测试改成决策树（Maranget 风格）或跳转表；初始�
 | 阶段 | 范围 | 退出条件 |
 |---|---|---|
 | **S4a 单态 ADT** | 模块声明表；构造器；同构/递归单态 enum；`NEW_ADT`/`ADT_TAG`/`ADT_FIELD`；构造器/通配/变量/守卫匹配；相等/打印 | 示例与差分通过；round-trip；Rust 一致 |
-| **S4b 泛型 ADT** | `Option`/`Result`、泛型载荷、静态类型参数；S4b 原型运行时擦除参数 | **原型完成**；reified 实例表与复杂模式留后续 |
+| **S4b 泛型 ADT** | `Option`/`Result`、泛型载荷、reified 实例类型参数 | **已完成（原型）**；复杂模式留后续 |
 | **S4c 优化** | 决策树/跳转表、单态布局、标量载荷内联；基准 | 不改变语义；typed benchmark 有收益 |
 
 S4a 的实现顺序：
 
-1. 类型模型 + 模块声明表 + v5 序列化；
+1. 类型模型 + 模块声明表 + v6 序列化；
 2. typed HIR 识别 `EnumDef`/构造器调用/match；
 3. Python typed VM 的构造/匹配/相等/打印；
 4. Rust typed VM 同步；
@@ -307,7 +306,7 @@ S4a 的实现顺序：
 
 - `AdtType(origin, name)` 进入 `IrTypeLike`；S4a 使用固定 origin
   `"<typed-module>"`（跨模块身份留 B2）；
-- 模块级 `AdtDecl`/`AdtConstructor` 表；kind=1 **v5** 文件头写入 origin/
+- 模块级 `AdtDecl`/`AdtConstructor` 表；kind=1 **v6** 文件头写入 origin/
   name/构造器名/arity；
 - typed HIR 新增 `BuildAdt`/`AdtTag`/`AdtField`；`EnumDef` 不再写入 main，
   构造器直接调用/空载荷引用会转成 `BuildAdt`；
@@ -341,20 +340,16 @@ S4a 的实现顺序：
 
 S4b 原型的限制：
 
-- **运行时类型参数被擦除**：ADT 值只携带 decl/变体/payload，不携带
-  `Option[Int]` vs `Option[String]` 的实例身份；静态检查仍区分它们，但没有
-  reified 边界守卫。B1 边界尚不接受 ADT，因此当前不暴露跨方言守卫漏洞；
-- v5 类型表 tag 12 只写 decl_id；读取后 `AdtType.args` 丢失，执行不受影响，
-  但反汇编/类型表 round-trip 不保留实例参数；
+- 运行时 ADT 值现在携带 `AdtType` 实例身份（decl + args），守卫/相等可区分
+  `Option[Int]` 与 `Option[String]`；
+- v6 类型表 tag 12 保存参数列表；反汇编/round-trip 保留实例参数；
 - prelude 的 Option/Result 声明会出现在每个 typed 模块的声明表中；
-- `AdtField` 对泛型字段只做宽松校验（字段 payload 模板不写入声明表）。
-
-完整 reified 泛型实例（用于边界守卫、跨模块 ADT、精确相等/反汇编）是后续
-ABI 扩展，不在当前 S4b 原型范围内。
+- `AdtField` 对泛型字段仍做宽松校验（字段 payload 模板不写入声明表）；
+- 跨模块 ADT、边界转换、完整复杂模式仍留后续。
 
 ## 12. 推荐决策
 
-- **先 S4a 单态 ADT**，把名义身份、构造、匹配、相等、打印和 v5 格式跑通；
+- **先 S4a 单态 ADT**，把名义身份、构造、匹配、相等、打印和 v6 格式跑通；
 - **类型身份用 `(origin, name, args)`**，不要用构造器名字符串；
 - **值布局先用统一 tagged payload**，不提前做 Rust enum 单态化；
 - **match 用 typed 专用 lowering + `ADT_TAG`/`ADT_FIELD`**，不复用 arm 函数；

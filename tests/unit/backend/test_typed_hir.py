@@ -16,7 +16,7 @@ from oort_lang.bytecode.serialize import ObcError, read_obc, write_obc
 from oort_lang.diagnostics.error_handler import CompilerErrorHandler
 from oort_lang.diagnostics.syntax_errors import UnsupportedSyntax
 from oort_lang.driver.compiler import CompilerError
-from oort_lang.hir import ContainerType, IrType, lower_module, lower_typed_module
+from oort_lang.hir import AdtType, ContainerType, IrType, lower_module, lower_typed_module
 from oort_lang.hir.typed_exec import TypedInterpreter
 from oort_lang.runtime.interpreter import ASTInterpreter
 from tests.helpers import EXAMPLES_DIR, build_ast, get_compiler
@@ -539,6 +539,8 @@ print(unwrap(Just(3), 9) + unwrap(Nothing, 4))
     path = tmp_path / "generic_adts.obc"
     write_typed_obc(program, path)
     loaded = read_typed_obc(path)
+    loaded_adts = [ir_type for ir_type in loaded.main.types if isinstance(ir_type, AdtType)]
+    assert any(ir_type.args == (IrType.INT,) for ir_type in loaded_adts)
 
     result = TypedCodeVM(ASTInterpreter(CompilerErrorHandler())).run(loaded)
     assert result.host_value is None

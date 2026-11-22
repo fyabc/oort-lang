@@ -29,7 +29,7 @@ pub enum TypedType {
     Dict(Box<TypedType>, Box<TypedType>),
     Tuple(Vec<TypedType>),
     Iterator,
-    Adt(u16),
+    Adt(u16, Vec<TypedType>),
 }
 
 #[derive(Debug, Clone)]
@@ -122,7 +122,15 @@ fn read_type_table(
                         "typed proto '{name}' has an unknown ADT declaration"
                     ));
                 }
-                TypedType::Adt(decl_id)
+                let mut arguments = Vec::new();
+                for _ in 0..r.u16()? {
+                    let child = r.u16()? as usize;
+                    if child >= types.len() {
+                        return Err(format!("typed proto '{name}' has a forward type reference"));
+                    }
+                    arguments.push(types[child].clone());
+                }
+                TypedType::Adt(decl_id, arguments)
             }
             _ => return Err(format!("invalid typed type tag {tag}")),
         };
@@ -211,7 +219,7 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
         return Err(format!("expected typed bytecode (kind=1), got kind={kind}"));
     }
     let version = data[4];
-    if version != 5 {
+    if version != 6 {
         return Err(format!("unsupported typed bytecode version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -264,7 +272,7 @@ enum TypedValue {
 }
 
 struct TypedAdt {
-    decl_id: u16,
+    type_: TypedType,
     variant: u16,
     variant_name: Rc<str>,
     payload: Box<[TypedValue]>,
@@ -430,7 +438,7 @@ fn typed_equal(lhs: &TypedValue, rhs: &TypedValue) -> TResult<bool> {
                 })
         }
         (TypedValue::Adt(a), TypedValue::Adt(b)) => {
-            a.decl_id == b.decl_id
+            a.type_ == b.type_
                 && a.variant == b.variant
                 && a.payload.len() == b.payload.len()
                 && a.payload
@@ -498,6 +506,15 @@ fn as_str(value: &TypedValue) -> TResult<&str> {
 }
 
 fn guard(expected: &TypedType, value: &TypedValue) -> TResult<()> {
+    if let (TypedType::Adt(_, _), TypedValue::Adt(adt)) = (expected, value) {
+        return if adt.type_ == *expected {
+            Ok(())
+        } else {
+            Err(format!(
+                "typed bytecode guard failed: expected {expected:?}"
+            ))
+        };
+    }
     let ok = matches!(
         (expected, value),
         (TypedType::Int, TypedValue::Int(_))
@@ -509,7 +526,7 @@ fn guard(expected: &TypedType, value: &TypedValue) -> TResult<()> {
             | (TypedType::Tuple(_), TypedValue::Tuple(_))
             | (TypedType::Set(_), TypedValue::Set(_))
             | (TypedType::Dict(_, _), TypedValue::Dict(_))
-            | (TypedType::Adt(_), TypedValue::Adt(_))
+            | (TypedType::Adt(_, _), TypedValue::Adt(_))
             | (TypedType::Iterator, TypedValue::Iterator(_))
     );
     if ok {
@@ -1115,14 +1132,28 @@ fn execute(
                 registers[c] = TypedValue::Tuple(Rc::from(items));
             }
             NEW_ADT => {
-                let (decl_index, ctor_index, ctor) = adt_constructor(adt_decls, b as u16)?;
+                let (_decl_index, ctor_index, ctor) = adt_constructor(adt_decls, b as u16)?;
                 let payload: Vec<TypedValue> = if ctor.1 == 0 {
                     Vec::new()
                 } else {
                     registers[a..a + ctor.1 as usize].to_vec()
                 };
+                let type_id = proto
+                    .register_types
+                    .get(c)
+                    .copied()
+                    .flatten()
+                    .ok_or_else(|| "typed ADT target has no static type".to_string())?;
+                let type_ = proto
+                    .types
+                    .get(type_id as usize)
+                    .cloned()
+                    .ok_or_else(|| "typed ADT target type id out of range".to_string())?;
+                if !matches!(type_, TypedType::Adt(_, _)) {
+                    return Err("typed ADT target is not an ADT type".into());
+                }
                 registers[c] = TypedValue::Adt(Rc::new(TypedAdt {
-                    decl_id: decl_index,
+                    type_,
                     variant: ctor_index,
                     variant_name: Rc::from(ctor.0.as_str()),
                     payload: payload.into_boxed_slice(),
@@ -1479,7 +1510,7 @@ mod tests {
     fn adt_display_and_equality() {
         let make = |value: i64| {
             TypedValue::Adt(Rc::new(TypedAdt {
-                decl_id: 0,
+                type_: TypedType::Adt(0, vec![]),
                 variant: 0,
                 variant_name: Rc::from("Circle"),
                 payload: Box::new([TypedValue::Int(value)]),

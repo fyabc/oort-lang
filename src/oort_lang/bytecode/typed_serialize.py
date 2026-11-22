@@ -2,7 +2,7 @@
 
 """Serialization of typed bytecode (``.obc`` kind=1, design 15).
 
-Version 5 stores a module-level ADT declaration table plus a per-proto type
+Version 6 stores a module-level ADT declaration table plus a per-proto type
 table: register/param/return types are type-table indices, composite types
 reference earlier entries, and ADT types reference module declarations. The
 table only describes static types; values remain runtime values.
@@ -28,7 +28,7 @@ from .serialize import MAGIC, ObcError, _read_constant, _Reader, _write_constant
 from .typed_compile import TypedProgram, TypedProto
 
 KIND_TYPED = 1
-VERSION = 5
+VERSION = 6
 
 _SCALAR_BY_TAG = {
     1: IrType.INT,
@@ -67,6 +67,9 @@ def _write_type_table(
                 w.u16(adt_index[(ir_type.origin, ir_type.name)])
             except KeyError as exc:
                 raise ObcError(f"unknown ADT type {ir_type}") from exc
+            w.u16(len(ir_type.args))
+            for argument in ir_type.args:
+                w.u16(index[argument])
 
 
 def _write_type_id(w: _Writer, type_id: int | None) -> None:
@@ -134,8 +137,14 @@ def _read_type_table(
             decl_id = r.u16()
             if decl_id >= len(adt_decls):
                 raise ObcError(f"typed proto {proto_name!r} has an unknown ADT declaration")
+            arguments = []
+            for _ in range(r.u16()):
+                child = r.u16()
+                if child >= len(types):
+                    raise ObcError(f"typed proto {proto_name!r} has a forward type reference")
+                arguments.append(types[child])
             decl = adt_decls[decl_id]
-            types.append(AdtType(decl.origin, decl.name))
+            types.append(AdtType(decl.origin, decl.name, tuple(arguments)))
             continue
         if tag == 10:
             elements = []

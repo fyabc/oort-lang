@@ -16,7 +16,7 @@
 ## 2. 文件头与布局
 
 ```text
-magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=5)
+magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=6)
 u32 adt_decl_count
 adt_decl[adt_decl_count]:
   string origin
@@ -70,7 +70,7 @@ positions?:
 | 9 | `Dict` | `u16 key_type_id, u16 value_type_id` |
 | 10 | `Tuple` | `u16 count, u16 element_type_id[count]` |
 | 11 | `Iterator` | — |
-| 12 | `Adt` | `u16 adt_decl_id`；S4b 原型运行时擦除实例类型参数 |
+| 12 | `Adt` | `u16 adt_decl_id, u16 arg_count, u16 arg_type_id[arg_count]` |
 
 - 类型表按**后序**写入：容器类型只能引用已经出现的子类型（不允许前向引用）；
 - 寄存器类型 0 表示“无类型”；参数/返回不允许 0；
@@ -218,14 +218,15 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   直接调用、`if`/`while`/`for`/早返回、String 拼接/比较/`len`、List/Tuple/Set/
   Dict 字面量、List/Tuple/String/Dict 下标读取、`len`、深相等、
   List/Tuple（元素齐次）/Set/Dict/String 的 `for` 迭代；
-- 支持单态与泛型 ADT（S4b 原型运行时擦除类型参数，含 prelude `Option`）；
-  构造器/通配/变量/守卫模式和嵌套构造器；字面量/Tuple/或模式仍拒绝；
+- 支持单态与泛型 ADT（含 prelude `Option`）；类型参数进入类型表并在运行时
+  作为 ADT 实例身份保留；构造器/通配/变量/守卫模式和嵌套构造器；
+  字面量/Tuple/或模式仍拒绝；
 - 无集合原地修改（`SET_ITEM` 预留；核心检查器尚未允许 `xs[i] = v`）、`in`/
   集合运算、类/接口/泛型/lambda、模块导入、切片；
-- kind=1 **v5 是当前唯一版本**；ADT 模块声明表位于文件头；旧读者遇到未知
+- kind=1 **v6 是当前唯一版本**；ADT 模块声明表位于文件头；旧读者遇到未知
   version/opcode/tag 必须报错而不是猜测；破坏既有布局的变更必须提升 version；
 - 无动态↔静态边界、`box`/`unbox`/blame；跨方言调用仍拒绝；
-- 格式版本 `version=5`；不兼容变更必须提升 version，并保持 kind=1 的独立
+- 格式版本 `version=6`；不兼容变更必须提升 version，并保持 kind=1 的独立
   命名空间。
 
 ## 6. 参考实现入口

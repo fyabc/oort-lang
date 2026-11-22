@@ -150,7 +150,7 @@ class _ProtoBuilder:
         existing = self.type_index.get(ir_type)
         if existing is not None:
             return existing
-        if isinstance(ir_type, ContainerType):
+        if isinstance(ir_type, (AdtType, ContainerType)):
             for arg in ir_type.args:
                 self._intern_type(arg)
         index = len(self.types)

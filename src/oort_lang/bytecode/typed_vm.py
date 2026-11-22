@@ -52,7 +52,7 @@ class TypedCodeVM:
         self.runtime = interpreter.runtime
         self.globals: dict[str, TypedCodeFunction] = {}
         self._program: TypedProgram | None = None
-        self._adt_types: list[OortType] = []
+        self._adt_types: dict[str, OortType] = {}
         self._adt_by_name: dict[str, int] = {}
         self._constructors: dict[int, tuple[int, int]] = {}
         self.env = Environment(
@@ -72,19 +72,26 @@ class TypedCodeVM:
             return self._execute(program, program.main, registers)
 
     def _prepare_adts(self, program: TypedProgram) -> None:
-        self._adt_types = []
+        self._adt_types = {}
         self._adt_by_name = {}
         self._constructors = {}
+        decl_index = {
+            (decl.origin, decl.name): index for index, decl in enumerate(program.adt_decls)
+        }
+        for proto in (program.main, *program.functions):
+            for ir_type in proto.types:
+                if not isinstance(ir_type, AdtType):
+                    continue
+                key = (ir_type.origin, ir_type.name)
+                index = decl_index.get(key)
+                if index is None:
+                    raise OortTypeError(f"Unknown ADT type {ir_type}.", proto.positions[0])
+                self._adt_types[str(ir_type)] = OortType(str(ir_type))
+                self._adt_by_name[str(ir_type)] = index
         constructor_id = 0
-        for decl_index, decl in enumerate(program.adt_decls):
-            type_obj = OortType(decl.name)
-            type_obj.adt_variants = {
-                constructor.name: constructor.arity for constructor in decl.constructors
-            }
-            self._adt_types.append(type_obj)
-            self._adt_by_name[decl.name] = decl_index
+        for decl_index_value, decl in enumerate(program.adt_decls):
             for ctor_index, _constructor in enumerate(decl.constructors):
-                self._constructors[constructor_id] = (decl_index, ctor_index)
+                self._constructors[constructor_id] = (decl_index_value, ctor_index)
                 constructor_id += 1
 
     def invoke(
@@ -220,10 +227,19 @@ class TypedCodeVM:
                     decl_index, ctor_index = self._constructors[b]
                 except KeyError as exc:
                     raise OortTypeError("Invalid typed ADT constructor id.", position) from exc
+                type_id = proto.register_types[c] if c < len(proto.register_types) else None
+                if type_id is None:
+                    raise OortTypeError("Typed ADT target has no static type.", position)
+                adt_type = proto.types[type_id]
+                if not isinstance(adt_type, AdtType):
+                    raise OortTypeError("Typed ADT target is not an ADT type.", position)
+                type_obj = self._adt_types.get(str(adt_type))
+                if type_obj is None:
+                    raise OortTypeError(f"Unknown ADT type {adt_type}.", position)
                 decl = program.adt_decls[decl_index]
                 constructor = decl.constructors[ctor_index]
                 registers[c] = OortADT(
-                    self._adt_types[decl_index],
+                    type_obj,
                     constructor.name,
                     registers[a : a + constructor.arity],
                 )
@@ -389,7 +405,7 @@ class TypedCodeVM:
                 or (expected.kind == "Dict" and type(value) is OortDict)
             )
         elif isinstance(expected, AdtType):
-            ok = type(value) is OortADT and value.type.name == expected.name
+            ok = type(value) is OortADT and value.type.name == str(expected)
         else:
             ok = (
                 (expected is IrType.INT and type(value) is OortInt)
