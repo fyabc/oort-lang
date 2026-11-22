@@ -1,6 +1,6 @@
 # OP 0022: 泛型 ADT 与内建 `Option` / `Result`
 
-- **状态**：Accepted（增量 A/B 已实现；增量 C 待实现）
+- **状态**：Implemented
 - **作者**：fyabc
 - **创建日期**：2026-11-22
 - **相关提案**：[OP 0005](0005-type-system.md)（类型系统主线；§3.1 变型、§4 ADT、§5 错误处理）、
@@ -148,23 +148,17 @@ val g = Some                          # 拒绝：没有一等多态
 语法来自 OP 0005 §3.1：`[out T]` / `[in T]`，缺省不变型。
 
 **软关键字**。`in` 已是保留字（`for ... in`），`out` 不是。为避免把 `out` 升为
-全局关键字（破坏 `val out = 1` 这类合法代码），文法在类型参数内接受
-`IN | identifier` 的变型槽，由 AST builder 校验文本必须是 `in`/`out`：
+全局关键字（破坏 `val out = 1` 这类合法代码），文法用两个独立标签：
 
 ```text
 typeParameter
-    : variance=(IN | identifier)? name=identifier
+    : (in_variance=IN | out_variance=identifier)? name=identifier
       (qualifier=(COLON | LT | GT) typeExpr=expression)? (ASSIGN defaultValue=expression)?
 ```
 
-若生成解析器在该规则上无法无歧义预测，回退方案只有“把 `out` 升为保留字并在
-CHANGELOG 记录破坏”，不推荐；实现时必须先用 ANTLR 再生验证第一种方案。
-
-**实现（2026-11-22）**：语法改为两个独立标签
-`(in_variance=IN | out_variance=identifier)? name=identifier ...`——ANTLR 不允许
-同一标签混用 token 与 rule（`variance=(IN | identifier)` 会报
-`RULE_LABEL != TOKEN_LABEL`）。两个标签在 AST builder 中合并为一个
-`VarianceKind`；`out` 仍是普通标识符（`val out = 1` 合法），非法变型文本报
+ANTLR 不允许同一标签混用 token 与 rule（`variance=(IN | identifier)` 会报
+`RULE_LABEL != TOKEN_LABEL`）。两个标签在 AST builder 中合并为 `VarianceKind`；
+`out` 仍是普通标识符（`val out = 1` 合法），非法变型文本报
 `Expected 'in' or 'out' before type parameter ...`。
 
 **声明处健全性检查**。enum 的载荷是构造器**产出**的数据，处于协变位置；
@@ -305,6 +299,14 @@ enum Result[out T, out E] {
 **迁移路径**：跨模块类型导出（P6“跨模块类类型标注”）落地后，可把预置源码迁到
 随包分发的 core stdlib 模块；用户可见的名字与类型不变。
 
+**实现（2026-11-22）**：`semantics/core/prelude.py` 用 AST 节点构造两段声明；
+`Compiler._run_input` 与 `compile_unit_details` 在语义分析前对 core 模块调用
+`inject_core_prelude`（`-t ast` 不注入）。注入节点 `synthetic=True`，AST dump
+跳过；`declaration_origin="<core-prelude>"` 固定名义 origin。检查器把预置构造器
+标为 `from_prelude`，模块导出过滤它们；用户重定义类型/构造器/顶层名报
+`... is declared in the core prelude.`。运行时每个模块照常执行注入的 enum，
+构造器绑定存在于模块环境，但静态导出已过滤，检查后的代码不可达。
+
 ### 9. 诊断
 
 | 场景 | 诊断 | 类别 |
@@ -373,9 +375,9 @@ enum Result[out T, out E] {
 
 ## 实现计划
 
-> **进度（2026-11-22）**：增量 A（泛型 ADT）与增量 B（声明处变型）已实现，
-> 由 spec 11/06、design 14、implementation 09 与测试覆盖；增量 C
-> （内建 `Option`/`Result`）待实现。
+> **进度（2026-11-22）**：增量 A（泛型 ADT）、B（声明处变型）与 C
+> （内建 `Option`/`Result`）均已实现，由 spec 11/06、design 14、
+> implementation 09 与测试覆盖。
 
 分三个可独立评审的增量：
 

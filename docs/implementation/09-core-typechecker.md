@@ -139,6 +139,15 @@ source
   “无法推断类型实参”。
 - `enum ==` 显式拒绝；`print(enum)` 允许。
 
+**内建 `Option`/`Result`（`semantics/core/prelude.py`）**：用 AST 节点构造
+`Option[out T]` / `Result[out T, out E]`，由 `Compiler._run_input` 与
+`compile_unit_details` 在语义分析前注入 core 模块（`-t ast` 不注入）。注入
+`EnumDef` 带 `synthetic=True`（AST printer 跳过）与
+`declaration_origin="<core-prelude>"`（检查器用它替代模块路径）。预置构造器
+以 `NameInfo.from_prelude` 标记：`visit_module` 过滤导出，`declare` 与 enum/class
+重复检查报 `... is declared in the core prelude.`。运行时每个模块照常执行注入
+的 enum；运行时模块命名空间仍含这些绑定，但静态导出过滤使检查后的代码不可达。
+
 **与内置容器泛型的关系**：`List[T]`/`Set[T]`/`Dict[K, V]`/`Tuple[...]` 是
 `ListType` 等硬编码的结构化类型，由 `_resolve_container_type` 按名字白名单
 特判；它们**不经过** `AdtTemplate`。运行时的 `List` 等也只是每种容器一个
@@ -194,6 +203,9 @@ Checker.visit_import -> Compiler._resolve_core_module
   跨模块构造器与打印；泛型 ADT 的 eval/vm 差分与跨模块用例。
 - `tests/unit/frontend/test_core_checker.py::TestCoreVariance`：协变/逆变
   正例、函数位置误用、嵌套不变/逆变复合、非法变型文本与 `out` 标识符兼容。
+- `tests/unit/frontend/test_core_checker.py::TestCorePrelude` 与
+  `tests/unit/runtime/test_core_adt_execution.py`：内建 Option/Result 的
+  构造/匹配、跨模块、导出过滤与保留名；`test_cli.py` 验证 astm 隐藏预置。
 - `tests/unit/runtime/test_core_function_values.py`：lambda、闭包、高阶函数、
   函数值跨模块与 ADT payload。
 - `tests/unit/runtime/test_core_modules.py`：同方言导入、再导出、类型检查、

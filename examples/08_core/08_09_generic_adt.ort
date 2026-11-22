@@ -1,10 +1,11 @@
 #lang oort-core
 
-# 泛型 ADT：类型参数、构造器实参推断与 match 载荷代换。
+# 泛型 ADT：用户定义的泛型 enum + 内建 Option。
+# 类型参数在 HIR/字节码前擦除；match 按实参代换载荷类型。
 
-enum Option[T] {
-    Some(value: T),
-    None
+enum Maybe[T] {
+    Just(value: T),
+    Nothing
 }
 
 enum MyList[T] {
@@ -29,8 +30,11 @@ def total(xs: MyList[Int]) -> Int {
 val some: Option[Int] = Some(3)
 val none: Option[Int] = None
 val xs: MyList[Int] = Cons(1, Cons(2, Nil))
+val maybe: Maybe[String] = Just("gap")
 
 print(unwrap(some, 0))
 print(unwrap(none, -1))
 print(total(xs))
 print(match Some("text") { Some(v) => v, None => "" })
+print(match maybe { Just(v) => v, Nothing => "" })
+print(match Just(7) { Just(v) => v, Nothing => 0 })

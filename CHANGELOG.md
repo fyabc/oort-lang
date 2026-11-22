@@ -8,13 +8,12 @@
 
 ### 新增
 
-- **oort-core 泛型 ADT**（OP 0022 增量 A）：`enum Option[T] { Some(value: T), None }`
-  形式的类型参数声明与 `Option[Int]` 类型应用。构造器类型实参由期望类型
+- **oort-core 泛型 ADT**（OP 0022 增量 A）：`enum Maybe[T] { Just(value: T), Nothing }`
+  形式的类型参数声明与 `Maybe[Int]` 类型应用。构造器类型实参由期望类型
   （`val x: Option[Int] = Some(1)`、`Some([])`）或实参类型（`Some(1)`）确定；
   无法推断（`val x = None`）或冲突时显式报错。`match` 按 scrutinee 的实参
   代换构造器载荷类型；支持自递归泛型载荷（`MyList[T]`）。类型参数在 HIR/字节码
-  前擦除，解释器与 VM 无改动。上界、类型参数默认值与内建 `Option`/`Result`
-  （增量 C）仍未实现。
+  前擦除，解释器与 VM 无改动。上界与类型参数默认值仍未实现。
 - **oort-core 声明处变型**（OP 0022 增量 B）：泛型 enum 的类型参数可写
   `[out T]`（协变）/ `[in T]`（逆变），缺省不变型。声明处按 payload 使用
   位置做极性检查：函数参数翻转、内建不可变集合保持协变、嵌套 ADT 按声明
@@ -22,6 +21,12 @@
   等误用定位到字段报错。`out` 仍是普通标识符；非法变型文本由 AST builder
   报语法错误。当前无子类型（继承/接口），变型关系尚不可观察，但检查已启用，
   `is_assignable` 也按变型逐参比较，为后续对象模型预置健全性。
+- **oort-core 内建 `Option` / `Result`**（OP 0022 增量 C）：每个 core 模块
+  隐式获得 `Option[out T]`（`Some`/`None`）与 `Result[out T, out E]`
+  （`Ok`/`Err`），无需 import。预置以普通 AST 节点注入语义分析前的模块
+  （`-t ast` 不注入），`Option`/`Result` 与四个构造器是模块级保留名，
+  预置构造器不进入模块导出；固定名义 origin 使 `Option[Int]` 跨模块
+  统一。类型参数继续在后端擦除，解释器/VM/`.obc` 无改动。
 - **oort-core 函数返回类型推断**（OP 0005）：顶层 `def`、`do` lambda 与**类方法**
   可省略返回标注，从各 `return` 类型与尾表达式类型合并推断；lambda 还可由期望
   函数类型下推返回类型（`val f: (Int) -> Int = do(x: Int) { x }`）。类方法按调用

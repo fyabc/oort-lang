@@ -387,6 +387,19 @@ def test_core_enum_match_astm(monkeypatch, capsys):
     assert "type='Int'" in out
 
 
+def test_core_astm_hides_prelude(monkeypatch, capsys):
+    source = (
+        "#lang oort-core\n"
+        "val a: Option[Int] = Some(1)\n"
+        "print(match a { Some(v) => v, None => 0 })\n"
+    )
+    assert _run_cli(monkeypatch, ["-t", "astm", "-c", source]) == 0
+    out = capsys.readouterr().out
+    assert "type='Option[Int]'" in out
+    assert "EnumDef(name='Option')" not in out
+    assert "EnumDef(name='Result')" not in out
+
+
 @pytest.mark.parametrize(
     ("source", "message"),
     [

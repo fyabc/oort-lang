@@ -1,6 +1,6 @@
 # oort-core 类型检查与推断算法
 
-> **状态**：as-implemented 参考（2026-11-22，含函数返回类型推断与泛型 ADT 增量 A）。
+> **状态**：as-implemented 参考（2026-11-22，含函数返回类型推断与泛型 ADT 增量 A/B/C）。
 > 本文描述 `oort-core` 静态检查器**当前实现**的双向检查与局部推断算法，作为
 > [OP 0005](../proposals/0005-type-system.md) 主线后续切片（泛型、ADT、FFI）的
 > 算法基线。
@@ -175,7 +175,7 @@ Oort 的递归规则对齐 Kotlin/Scala。共同根因：推断靠分析函数�
   与 [Scala Type Inference](https://www.geeksforgeeks.org/scala/scala-type-inference/)：
   递归方法无法推断结果类型。
 
-## 7. 泛型 ADT 与变型（增量 A/B，2026-11-22）
+## 7. 泛型 ADT、变型与内建 ADT（增量 A/B/C，2026-11-22）
 
 泛型 `enum E[T]` 与声明处变型的已实现算法。设计取舍见
 [OP 0022](../proposals/0022-generic-adts.md) §2–§5；此处只记录落地形态。
@@ -226,12 +226,21 @@ payload，解释器与 VM 均不读类型参数。
 无参数的 `OortType`（`type_system.py`），类型参数只存在于检查器抽象域。
 未来若统一，属于类型系统重构，不在增量 A 范围内。
 
-**尚未落地**：内建 `Option`/`Result` 预置（增量 C）。
+**内建 Option / Result（增量 C）**。`semantics/core/prelude.py` 用 AST 节点
+构造 `Option[out T]` 与 `Result[out T, out E]`；`Compiler._run_input` 与
+`compile_unit_details` 在语义分析前注入（`-t ast` 不注入）。注入节点
+`synthetic=True`，AST dump 跳过；`declaration_origin="<core-prelude>"` 固定
+名义 origin，使跨模块的 `Option[Int]` 相等。检查器把预置构造器标为
+`from_prelude`：模块导出过滤它们，用户重定义类型/构造器/顶层名报 prelude
+诊断。运行时照常执行注入的 enum；模块环境仍含这些绑定，但静态导出过滤后
+检查器不允许访问。
+
+**至此 OP 0022 的 A/B/C 全部落地**；后续是完整模式匹配、对象模型与 FFI。
 
 ## 8. 边界与后续
 
-- **Result·Option 预置 / 完整模式匹配 / FFI 边界**：OP 0005 后续切片，
-  建立在本文的双向检查 + 局部推断基线上。
+- **完整模式匹配 / 对象模型 / FFI 边界**：OP 0005 后续切片，建立在本文的
+  双向检查 + 局部推断基线上。
 - **方法依赖扫描的保守性**：按属性名匹配同类方法（不看 receiver 类型），可能给
   「调用其他类同名方法」多加一条依赖约束——只会更保守（偶尔多要求标注），不会
   不健全。精确化需 receiver 类型信息，留作后续。

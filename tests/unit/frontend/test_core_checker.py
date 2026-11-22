@@ -677,13 +677,13 @@ class TestCoreGenericAdt:
     def test_generic_enum_construction_and_match(self, run_source):
         result = run_source(
             core(
-                "enum MyOption[T] { Some(value: T), None }\n"
-                "def unwrap(o: MyOption[Int]) -> Int {\n"
-                "    match o { Some(v) => v, None => 0 }\n"
+                "enum Maybe[T] { Just(value: T), Nothing }\n"
+                "def unwrap(o: Maybe[Int]) -> Int {\n"
+                "    match o { Just(v) => v, Nothing => 0 }\n"
                 "}\n"
-                "val a: MyOption[Int] = Some(3)\n"
+                "val a: Maybe[Int] = Just(3)\n"
                 "print(unwrap(a))\n"
-                "print(unwrap(None))\n"
+                "print(unwrap(Nothing))\n"
             )
         )
         assert result.stdout == "3\n0\n"
@@ -691,11 +691,11 @@ class TestCoreGenericAdt:
     def test_generic_enum_infers_from_arguments(self, run_source):
         result = run_source(
             core(
-                "enum MyOption[T] { Some(value: T), None }\n"
-                "val a = Some(5)\n"
-                "print(match a { Some(v) => v, None => 0 })\n"
-                'val b = Some("text")\n'
-                'print(match b { Some(v) => v, None => "" })\n'
+                "enum Maybe[T] { Just(value: T), Nothing }\n"
+                "val a = Just(5)\n"
+                "print(match a { Just(v) => v, Nothing => 0 })\n"
+                'val b = Just("text")\n'
+                'print(match b { Just(v) => v, Nothing => "" })\n'
             )
         )
         assert result.stdout == "5\ntext\n"
@@ -703,9 +703,9 @@ class TestCoreGenericAdt:
     def test_generic_enum_expected_type_propagates_to_payload(self, run_source):
         result = run_source(
             core(
-                "enum MyOption[T] { Some(value: T), None }\n"
-                "val a: MyOption[List[Int]] = Some([])\n"
-                "print(match a { Some(v) => len(v), None => -1 })\n"
+                "enum Maybe[T] { Just(value: T), Nothing }\n"
+                "val a: Maybe[List[Int]] = Just([])\n"
+                "print(match a { Just(v) => len(v), Nothing => -1 })\n"
             )
         )
         assert result.stdout == "0\n"
@@ -733,18 +733,18 @@ class TestCoreGenericAdt:
     def test_generic_enum_in_class_slot(self, run_source):
         result = run_source(
             core(
-                "enum MyOption[T] { Some(value: T), None }\n"
+                "enum Maybe[T] { Just(value: T), Nothing }\n"
                 "class Holder {\n"
-                "    val o: MyOption[Int]\n"
-                "    def __init__(o: MyOption[Int]) {\n"
+                "    val o: Maybe[Int]\n"
+                "    def __init__(o: Maybe[Int]) {\n"
                 "        this.o = o\n"
                 "    }\n"
                 "    def get() -> Int {\n"
-                "        match this.o { Some(v) => v, None => 0 }\n"
+                "        match this.o { Just(v) => v, Nothing => 0 }\n"
                 "    }\n"
                 "}\n"
-                "print(Holder(Some(5)).get())\n"
-                "print(Holder(None).get())\n"
+                "print(Holder(Just(5)).get())\n"
+                "print(Holder(Nothing).get())\n"
             )
         )
         assert result.stdout == "5\n0\n"
@@ -765,9 +765,9 @@ class TestCoreGenericAdt:
     def test_generic_constructor_as_value_with_expected_function(self, run_source):
         result = run_source(
             core(
-                "enum MyOption[T] { Some(value: T), None }\n"
-                "val f: (Int) -> MyOption[Int] = Some\n"
-                "print(match f(2) { Some(v) => v, None => 0 })\n"
+                "enum Maybe[T] { Just(value: T), Nothing }\n"
+                "val f: (Int) -> Maybe[Int] = Just\n"
+                "print(match f(2) { Just(v) => v, Nothing => 0 })\n"
             )
         )
         assert result.stdout == "2\n"
@@ -775,11 +775,11 @@ class TestCoreGenericAdt:
     def test_nested_generic_construction(self, run_source):
         result = run_source(
             core(
-                "enum MyOption[T] { Some(value: T), None }\n"
-                "val nested = Some(Some(1))\n"
+                "enum Maybe[T] { Just(value: T), Nothing }\n"
+                "val nested = Just(Just(1))\n"
                 "print(match nested {\n"
-                "    Some(inner) => match inner { Some(v) => v, None => 0 },\n"
-                "    None => -1\n"
+                "    Just(inner) => match inner { Just(v) => v, Nothing => 0 },\n"
+                "    Nothing => -1\n"
                 "})\n"
             )
         )
@@ -788,15 +788,15 @@ class TestCoreGenericAdt:
     def test_nullary_generic_constructor_requires_expectation(self, caplog):
         check_error(
             caplog,
-            "enum MyOption[T] { Some(value: T), None }\nval x = None\n",
-            "Cannot infer type argument 'T' of constructor 'None'",
+            "enum Maybe[T] { Just(value: T), Nothing }\nval x = Nothing\n",
+            "Cannot infer type argument 'T' of constructor 'Nothing'",
         )
 
     def test_partial_generic_constructor_requires_expectation(self, caplog):
         check_error(
             caplog,
-            "enum MyResult[T, E] { Ok(value: T), Err(error: E) }\nval r = Ok(1)\n",
-            "Cannot infer type argument 'E' of constructor 'Ok'",
+            "enum MyOutcome[T, E] { Good(value: T), Bad(error: E) }\nval r = Good(1)\n",
+            "Cannot infer type argument 'E' of constructor 'Good'",
         )
 
     def test_conflicting_type_argument_inference(self, caplog):
@@ -809,15 +809,15 @@ class TestCoreGenericAdt:
     def test_expected_payload_mismatch(self, caplog):
         check_error(
             caplog,
-            "enum MyOption[T] { Some(value: T), None }\nval x: MyOption[String] = Some(1)\n",
+            "enum Maybe[T] { Just(value: T), Nothing }\nval x: Maybe[String] = Just(1)\n",
             "Expected String, got Int.",
         )
 
     def test_bare_generic_type_requires_arguments(self, caplog):
         check_error(
             caplog,
-            "enum MyOption[T] { Some(value: T), None }\nval x: MyOption = None\n",
-            "Type 'MyOption' requires 1 type argument(s); write MyOption[...].",
+            "enum Maybe[T] { Just(value: T), Nothing }\nval x: Maybe = Nothing\n",
+            "Type 'Maybe' requires 1 type argument(s); write Maybe[...].",
         )
 
     def test_monomorphic_enum_rejects_type_arguments(self, caplog):
@@ -830,8 +830,8 @@ class TestCoreGenericAdt:
     def test_generic_type_argument_arity(self, caplog):
         check_error(
             caplog,
-            "enum MyOption[T] { Some(value: T), None }\nval x: MyOption[Int, String] = None\n",
-            "Type 'MyOption' expects 1 type argument(s), got 2.",
+            "enum Maybe[T] { Just(value: T), Nothing }\nval x: Maybe[Int, String] = Nothing\n",
+            "Type 'Maybe' expects 1 type argument(s), got 2.",
         )
 
     def test_type_parameter_cannot_shadow_type(self, caplog):
@@ -960,6 +960,67 @@ class TestCoreVariance:
             caplog,
             "enum E[out] { A }\n",
             "Type parameter 'out' is already declared or reserved.",
+        )
+
+
+class TestCorePrelude:
+    def test_option_and_result_are_always_available(self, run_source):
+        result = run_source(
+            core(
+                "def unwrap(o: Option[Int]) -> Int {\n"
+                "    match o { Some(v) => v, None => 0 }\n"
+                "}\n"
+                "val r: Result[Int, String] = Ok(3)\n"
+                "print(unwrap(Some(1)))\n"
+                "print(unwrap(None))\n"
+                "print(match r { Ok(v) => v, Err(e) => 0 })\n"
+            )
+        )
+        assert result.stdout == "1\n0\n3\n"
+
+    def test_prelude_constructor_inference_and_expectation(self, run_source):
+        result = run_source(
+            core(
+                "val a = Some(5)\n"
+                "val xs: Option[List[Int]] = Some([])\n"
+                "print(match a { Some(v) => v, None => 0 })\n"
+                "print(match xs { Some(v) => len(v), None => -1 })\n"
+                "val f: (Int) -> Option[Int] = Some\n"
+                "print(match f(2) { Some(v) => v, None => 0 })\n"
+            )
+        )
+        assert result.stdout == "5\n0\n2\n"
+
+    def test_local_binding_can_shadow_prelude_constructor(self, run_source):
+        result = run_source(core("def f() -> Int {\n    val Some = 7\n    Some\n}\nprint(f())\n"))
+        assert result.stdout == "7\n"
+
+    def test_prelude_type_cannot_be_redeclared(self, caplog):
+        check_error(
+            caplog,
+            "enum Option[T] { O(x: T) }\n",
+            "Type 'Option' is declared in the core prelude.",
+        )
+
+    def test_prelude_type_cannot_be_redeclared_as_class(self, caplog):
+        check_error(
+            caplog,
+            "class Result { val x: Int = 1 }\n",
+            "Type 'Result' is declared in the core prelude.",
+        )
+
+    def test_prelude_constructor_cannot_be_redeclared(self, caplog):
+        check_error(
+            caplog,
+            "enum Foo { Some(x: Int) }\n",
+            "Constructor 'Some' is declared in the core prelude.",
+        )
+
+    def test_prelude_name_cannot_be_redeclared(self, caplog):
+        check_error(
+            caplog,
+            "val Some = 1\n",
+            "Name 'Some' is declared in the core prelude.",
         )
 
 

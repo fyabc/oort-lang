@@ -34,7 +34,7 @@ Oort 以“显式优于隐式、正交优于特例、先语义后性能”为准
 - [标准库](spec/08-stdlib.md) — 集合助手、`math` / `string`
 - [迭代器协议](spec/09-iterators.md) — `__iter__`、流式 `for`
 - [扩展方法与运算符](spec/10-extensions.md) — `def C.f`、作用域、导入、`super`
-- [`oort-core` 薄探针](spec/11-core-probe.md) — Int/Float/Bool/String/Unit、集合与循环、静态类/槽、单态/泛型 ADT 与 `match`、静态检查与拒绝清单
+- [`oort-core` 薄探针](spec/11-core-probe.md) — Int/Float/Bool/String/Unit、集合与循环、静态类/槽、单态/泛型 ADT、内建 `Option`/`Result` 与 `match`、静态检查与拒绝清单
 - [实现状态矩阵](spec/06-conformance.md) — 已实现 / 被拒绝 / 计划中的特性
 
 ## 提案

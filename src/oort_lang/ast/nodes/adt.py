@@ -6,7 +6,7 @@ from antlr4 import ParserRuleContext
 
 from ...source.source_position import SourcePosition
 from ..ast_visitor import ASTVisitor
-from .base import ASTNode
+from .base import ASTNode, NodeContext
 from .declarations import TypeParameter
 from .expressions import StmtExpr
 
@@ -16,17 +16,21 @@ class EnumDef(StmtExpr):
 
     def __init__(
         self,
-        context: ParserRuleContext,
+        context: NodeContext,
         name: str,
         type_params: Iterable[TypeParameter],
         constructors: Iterable["EnumConstructor"],
         name_position: SourcePosition,
+        declaration_origin: str | None = None,
     ):
         super().__init__(context)
         self.name = name
         self.type_params = list(type_params)
         self.constructors = list(constructors)
         self.name_position = name_position
+        # Fixed nominal origin for compiler-injected enums (the core prelude);
+        # user enums use the module path.
+        self.declaration_origin = declaration_origin
 
     def named_children(self) -> Iterable[tuple[str, ASTNode | None]]:
         for index, type_param in enumerate(self.type_params):
@@ -46,7 +50,7 @@ class EnumConstructor(ASTNode):
 
     def __init__(
         self,
-        context: ParserRuleContext,
+        context: NodeContext,
         name: str,
         fields: Iterable["EnumField"],
     ):
@@ -66,7 +70,7 @@ class EnumConstructor(ASTNode):
 
 
 class EnumField(ASTNode):
-    def __init__(self, context: ParserRuleContext, name: str, type_expr: ASTNode | None):
+    def __init__(self, context: NodeContext, name: str, type_expr: ASTNode | None):
         super().__init__(context)
         self.name = name
         self.type_expr = type_expr

@@ -22,6 +22,7 @@ from ...parser.dialect import DialectConfig
 from ...source.input_info import InputInfo
 from ...source.source_position import SourcePosition
 from .definite_assignment import DefiniteAssignmentAnalyzer, SlotFact
+from .prelude import CORE_PRELUDE_ORIGIN
 from .types import (
     BOOL,
     FLOAT,
@@ -168,6 +169,7 @@ class NameInfo:
     type: Type
     mutable: bool
     is_function: bool = False
+    from_prelude: bool = False
 
 
 @dataclasses.dataclass(slots=True)
@@ -249,7 +251,9 @@ class CoreTypeChecker(ASTVisitor[Type]):
             for stmt in statements
             if not isinstance(stmt, (nodes.ImportStmt, nodes.ImportFromStmt))
         )
-        self.module_exports = tuple((name, info.type) for name, info in self.scopes[0].items())
+        self.module_exports = tuple(
+            (name, info.type) for name, info in self.scopes[0].items() if not info.from_prelude
+        )
         return UNIT
 
     def visit_block_expr(self, node: nodes.BlockExpr) -> Type:
@@ -399,12 +403,17 @@ class CoreTypeChecker(ASTVisitor[Type]):
         mutable: bool,
         position,
         is_function: bool = False,
+        from_prelude: bool = False,
     ) -> None:
         scope = self.scopes[-1]
-        if name in scope:
-            self._error(f"Duplicate declaration of '{name}' in oort-core.", position)
+        existing = scope.get(name)
+        if existing is not None:
+            if existing.from_prelude:
+                self._error(f"Name '{name}' is declared in the core prelude.", position)
+            else:
+                self._error(f"Duplicate declaration of '{name}' in oort-core.", position)
             return
-        scope[name] = NameInfo(type_, mutable, is_function)
+        scope[name] = NameInfo(type_, mutable, is_function, from_prelude)
 
     # ------------------------------------------------------------------
     # Declarations and statements
@@ -537,6 +546,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
             return self._unsupported(node, "Namespaced classes are not supported in oort-core yet.")
 
         name = node.name
+        existing_enum = self.enums.get(name)
+        if existing_enum is not None and existing_enum.origin == CORE_PRELUDE_ORIGIN:
+            self._error(f"Type '{name}' is declared in the core prelude.", node.name_position)
+            return UNIT
         if name in _RESERVED_TYPE_NAMES or name in self.classes or name in self.enums:
             self._error(f"Type name '{name}' is already declared or reserved.", node.name_position)
             return UNIT
@@ -817,6 +830,8 @@ class CoreTypeChecker(ASTVisitor[Type]):
             return self._unsupported(
                 node, "Enum declarations are only allowed at module top level in oort-core."
             )
+        origin = node.declaration_origin or self._module_origin()
+        is_prelude = origin == CORE_PRELUDE_ORIGIN
         if node.name in _RESERVED_TYPE_NAMES:
             self._error(
                 f"Enum name '{node.name}' is reserved in oort-core.",
@@ -827,14 +842,21 @@ class CoreTypeChecker(ASTVisitor[Type]):
             self._error(f"Type name '{node.name}' is already declared.", node.name_position)
             return UNIT
         if node.name in self.enums:
-            self._error(f"Enum '{node.name}' is already declared.", node.name_position)
+            existing = self.enums[node.name]
+            if existing.origin == CORE_PRELUDE_ORIGIN and not is_prelude:
+                self._error(
+                    f"Type '{node.name}' is declared in the core prelude.",
+                    node.name_position,
+                )
+            else:
+                self._error(f"Enum '{node.name}' is already declared.", node.name_position)
             return UNIT
         if not node.constructors:
             self._error("An enum must declare at least one constructor.", node.position)
             return UNIT
 
         params = self._enum_type_parameters(node)
-        template = AdtTemplate(self._module_origin(), node.name, params)
+        template = AdtTemplate(origin, node.name, params)
         self.enums[node.name] = template
 
         previous_params = self.type_parameters
@@ -849,10 +871,17 @@ class CoreTypeChecker(ASTVisitor[Type]):
                     )
                     continue
                 if case.name in self.constructor_names:
-                    self._error(
-                        f"Constructor '{case.name}' is already declared.",
-                        case.position,
-                    )
+                    owner = self.constructor_names[case.name]
+                    if owner.origin == CORE_PRELUDE_ORIGIN and not is_prelude:
+                        self._error(
+                            f"Constructor '{case.name}' is declared in the core prelude.",
+                            case.position,
+                        )
+                    else:
+                        self._error(
+                            f"Constructor '{case.name}' is already declared.",
+                            case.position,
+                        )
                     continue
                 field_names: list[str] = []
                 payload: list[Type] = []
@@ -897,6 +926,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 mutable=False,
                 position=case.position,
                 is_function=is_function,
+                from_prelude=is_prelude,
             )
         node.metadata["type"] = describe_type(applied)
         return UNIT

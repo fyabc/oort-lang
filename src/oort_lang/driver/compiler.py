@@ -32,6 +32,7 @@ from ..runtime.interpreter import ASTInterpreter
 from ..runtime.modules import CompiledModule, ModuleLoader, resolve_module_path
 from ..runtime.stdlib import NATIVE_MODULE_NAMES, native_module_factories
 from ..semantics.analyzer import SemanticAnalyzer, create_semantic_analyzer
+from ..semantics.core.prelude import inject_core_prelude
 from ..semantics.core.types import CoreModuleInfo, Type
 from ..source.input_info import FileInputInfo, InputInfo, StringInputInfo
 from ..source.source_position import SourcePosition
@@ -115,6 +116,10 @@ class Compiler:
             ast_printer = ASTPrinter(show_metadata=False)
             print(ast_printer.parse(ast))
             return None
+
+        if dialect.features.type_checking:
+            assert isinstance(ast, nodes.ModuleNode)
+            inject_core_prelude(ast)
 
         # Semantic analysis.
         analyzer = self.make_semantic_analyzer(input_info, dialect)
@@ -229,6 +234,10 @@ class Compiler:
         )
         if ast is None or self.error_handler.error_count > start:
             return None
+
+        if dialect.features.type_checking:
+            assert isinstance(ast, nodes.ModuleNode)
+            inject_core_prelude(ast)
 
         analyzer = self.make_semantic_analyzer(input_info, dialect)
         ast = self.semantic_analyze(

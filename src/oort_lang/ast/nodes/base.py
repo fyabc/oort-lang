@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, TypeAlias
 
 from antlr4 import ParserRuleContext, Token
 
@@ -11,9 +11,11 @@ from ..ast_visitor import ASTVisitor, T
 if TYPE_CHECKING:
     from ..binding import Binding
 
+NodeContext: TypeAlias = SourcePosition | ParserRuleContext | Token
+
 
 class ASTNode:
-    def __init__(self, context: SourcePosition | ParserRuleContext | Token):
+    def __init__(self, context: NodeContext):
         if isinstance(context, ParserRuleContext):
             position = SourcePosition.from_context(context)
         elif isinstance(context, Token):
@@ -27,6 +29,10 @@ class ASTNode:
         self.binding: Binding | None = None
 
         self.metadata: dict[str, Any] = {}
+
+        # True for compiler-injected nodes (for example the core prelude);
+        # AST dumps skip them and they are not module exports.
+        self.synthetic = False
 
     @property
     def node_type(self):

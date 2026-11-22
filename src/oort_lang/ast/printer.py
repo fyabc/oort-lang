@@ -54,6 +54,8 @@ class ASTPrinter(ASTVisitor[list[str]]):
             return lines
 
         for name, child in node.named_children():
+            if child is not None and child.synthetic:
+                continue
             if child is None:
                 child_lines = ["NULL"]
             else:

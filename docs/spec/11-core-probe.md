@@ -2,8 +2,8 @@
 
 本页描述 `#lang oort-core` 当前**已实现**的最小静态子集。它不是完整的
 `oort-core` v1：已实现 Int/Float/Bool/String、集合与循环、函数、泛型 ADT
-（`enum E[T]`，含声明处变型）与 `match`、静态类与固定槽，但内建
-`Option`/`Result` 与跨方言 FFI 尚未实现。
+（`enum E[T]`，含声明处变型）、内建 `Option`/`Result` 与 `match`、静态类
+与固定槽，但跨方言 FFI 尚未实现。
 设计取舍见 [OP 0017](../proposals/0017-oort-core-thin-probe.md) 与
 [OP 0022](../proposals/0022-generic-adts.md)。
 
@@ -34,6 +34,7 @@ print(add(1, 2))
 | `String` | 参数、变量、返回值、表达式 |
 | `Unit` | **仅函数返回类型**；声明的内部类型，不是变量类型 |
 | `enum` 类型 | 参数、变量、返回值、字段类型；单态 `Shape` 或泛型 `Option[Int]`，名称在模块内唯一 |
+| 内建 ADT | `Option[T]`（`Some`/`None`）与 `Result[T,E]`（`Ok`/`Err`）；每个 core 模块隐式可用 |
 | 集合类型 | `List[T]`、`Set[T]`、`Dict[K, V]`、`Tuple[T1, ...]`；参数/变量/返回值/字段 |
 | 类类型 | 类名；参数、变量、返回值、槽类型；名义相等 |
 | 函数类型 | `Int -> Bool`、`(Int, Bool) -> Int`、`() -> Unit`；参数/变量/返回值/字段 |
@@ -245,9 +246,9 @@ def area(shape: Shape) -> Int {
 泛型 ADT 用 `[T]` 声明类型参数，用 `Name[...]` 应用：
 
 ```oort
-enum Option[T] {
-    Some(value: T),
-    None
+enum Maybe[T] {
+    Just(value: T),
+    Nothing
 }
 
 enum MyList[T] {
@@ -264,9 +265,10 @@ enum Consumer[in T] {
     Use(f: (T) -> Int)
 }
 
-val a: Option[Int] = Some(1)
+val a: Option[Int] = Some(1)          # Option 是内建 ADT（见下）
 val b = Some("text")                  # 推断为 Option[String]
 val xs: MyList[Int] = Cons(1, Cons(2, Nil))
+val m: Maybe[Int] = Just(2)           # 用户定义的泛型 enum
 
 def unwrap(o: Option[Int]) -> Int {
     match o { Some(v) => v, None => 0 }
@@ -314,6 +316,32 @@ def unwrap(o: Option[Int]) -> Int {
   （`MyList[T]` 里的 `MyList[T]`）与嵌套构造器模式均支持。
 - 空 enum、非顶层 enum、匹配非 enum、enum `==` 均显式拒绝。
 
+### 内建 `Option` / `Result`
+
+每个 `oort-core` 模块隐式拥有：
+
+```oort
+enum Option[out T] {
+    Some(value: T),
+    None
+}
+
+enum Result[out T, out E] {
+    Ok(value: T),
+    Err(error: E)
+}
+```
+
+- 无需 import；`Some`/`None`/`Ok`/`Err` 是普通预置构造器，构造、match 与作值
+  的规则同其他泛型 enum。
+- `Option`/`Result` 类型名与四个构造器是**模块级保留名**；用户重定义类型、
+  类、构造器或顶层绑定报 `... is declared in the core prelude.`。内层作用域
+  可按普通遮蔽规则局部遮蔽（如函数内 `val Some = 1`）。
+- 预置构造器不进入模块导出（`from "m" import Some` 失败）；每个模块各自获得
+  预置声明。
+- 预置类型使用固定名义 origin，因此模块 A 返回的 `Option[Int]` 与模块 B 的
+  `Option[Int]` 是同一类型，可以跨模块传递与匹配。
+
 ## 显式拒绝
 
 以下写法通过词法/语法分析，但在 `oort-core` 中报错：
@@ -348,6 +376,7 @@ def unwrap(o: Option[Int]) -> Int {
 | 类型参数上界/默认值 | `enum E[T: Int] { A }`、`enum E[T = Int] { A }` | `Type parameter bounds/defaults are not supported...` |
 | 变型误用 | `enum E[out T] { A(f: (T) -> Int) }`、`enum E[in T] { A(v: T) }` | `Type parameter 'T' is declared covariant/contravariant ... but appears in a ... position ...` |
 | 非法变型文本 | `enum E[foo T] { A }` | `Expected 'in' or 'out' before type parameter 'T', got 'foo'.` |
+| 重定义预置 | `enum Option[T]`、`class Result`、`val Some = 1`、`enum Foo { Some(x: Int) }` | `Type/Constructor/Name ... is declared in the core prelude.` |
 | 裸泛型类型 | `val x: MyOption = None` | `Type 'MyOption' requires 1 type argument(s); write MyOption[...].` |
 | 单态 enum 加实参 | `Shape[Int]` | `Enum 'Shape' does not take type arguments.` |
 | 泛型实参数目 | `MyOption[Int, String]` | `Type 'MyOption' expects 1 type argument(s), got 2.` |
@@ -389,6 +418,5 @@ print(x)          # 1
 
 ## 尚未实现
 
-null、类继承与元类、泛型类/函数/lambda、内建 `Option`/`Result`、匿名 $n
-lambda、跨方言 FFI、REPL 方言切换、字面量/元组/守卫/或模式、嵌套穷尽性、
-ADT 相等。
+null、类继承与元类、泛型类/函数/lambda、匿名 $n lambda、跨方言 FFI、
+REPL 方言切换、字面量/元组/守卫/或模式、嵌套穷尽性、ADT 相等。

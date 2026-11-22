@@ -2,6 +2,8 @@
 
 """Runtime execution of `oort-core` enums and `match`."""
 
+import pytest
+
 
 def core(source: str) -> str:
     return "#lang oort-core\n" + source
@@ -74,18 +76,18 @@ def test_return_from_match_arm(run_source):
 def test_adt_constructors_and_match_across_modules(tmp_path, run_file):
     (tmp_path / "lib.ort").write_text(
         "#lang oort-core\n"
-        "enum IntOption { Some(value: Int), None }\n"
-        "def wrap(x: Int) -> IntOption { Some(x) }\n",
+        "enum IntMaybe { Just(value: Int), Nothing }\n"
+        "def wrap(x: Int) -> IntMaybe { Just(x) }\n",
         encoding="utf-8",
     )
     main = tmp_path / "main.ort"
     main.write_text(
         "#lang oort-core\n"
-        'from "./lib" import Some, None, wrap\n'
+        'from "./lib" import Just, Nothing, wrap\n'
         "val x = wrap(3)\n"
-        "print(match x { Some(v) => v, None => 0 })\n"
-        "val y = None\n"
-        "print(match y { Some(v) => v, None => 42 })\n",
+        "print(match x { Just(v) => v, Nothing => 0 })\n"
+        "val y = Nothing\n"
+        "print(match y { Just(v) => v, Nothing => 42 })\n",
         encoding="utf-8",
     )
     assert run_file(main).stdout == "3\n42\n"
@@ -93,11 +95,11 @@ def test_adt_constructors_and_match_across_modules(tmp_path, run_file):
 
 def test_generic_enum_executes_on_both_backends(run_source):
     source = core(
-        "enum MyOption[T] { Some(value: T), None }\n"
+        "enum Maybe[T] { Just(value: T), Nothing }\n"
         "enum Pair[A, B] { Pair(first: A, second: B) }\n"
-        "def unwrap(o: MyOption[Int]) -> Int { match o { Some(v) => v, None => 0 } }\n"
-        "val a: MyOption[Int] = Some(2)\n"
-        "print(unwrap(a), unwrap(None))\n"
+        "def unwrap(o: Maybe[Int]) -> Int { match o { Just(v) => v, Nothing => 0 } }\n"
+        "val a: Maybe[Int] = Just(2)\n"
+        "print(unwrap(a), unwrap(Nothing))\n"
         'val p: Pair[Int, String] = Pair(1, "x")\n'
         "print(match p { Pair(n, s) => s })\n"
     )
@@ -118,12 +120,62 @@ def test_recursive_generic_enum_executes_on_both_backends(run_source):
     assert run_source(source, target="vm").stdout == "3\n"
 
 
+def test_builtin_option_and_result_on_both_backends(run_source):
+    source = core(
+        "val a: Option[Int] = Some(1)\n"
+        "val n: Option[Int] = None\n"
+        "val r: Result[Int, String] = Ok(2)\n"
+        'val e: Result[Int, String] = Err("bad")\n'
+        "print(match a { Some(v) => v, None => 0 })\n"
+        "print(match n { Some(v) => v, None => -1 })\n"
+        "print(match r { Ok(v) => v, Err(m) => 0 })\n"
+        "print(match e { Ok(v) => v, Err(m) => len(m) })\n"
+    )
+    expected = "1\n-1\n2\n3\n"
+    assert run_source(source, target="eval").stdout == expected
+    assert run_source(source, target="vm").stdout == expected
+
+
+def test_builtin_option_and_result_across_modules(tmp_path, run_file):
+    (tmp_path / "lib.ort").write_text(
+        "#lang oort-core\n"
+        "def wrap(x: Int) -> Option[Int] { Some(x) }\n"
+        'def fail(x: Int) -> Result[Int, String] { Err("no") }\n',
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        "#lang oort-core\n"
+        'from "./lib" import wrap, fail\n'
+        "val a = wrap(7)\n"
+        "print(match a { Some(v) => v, None => 0 })\n"
+        "val r = fail(1)\n"
+        "print(match r { Ok(v) => v, Err(m) => len(m) })\n",
+        encoding="utf-8",
+    )
+    assert run_file(main).stdout == "7\n2\n"
+
+
+def test_prelude_constructors_are_not_module_exports(tmp_path, run_file):
+    (tmp_path / "lib.ort").write_text(
+        "#lang oort-core\nval base: Int = 1\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        '#lang oort-core\nfrom "./lib" import Some\nprint(1)\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit):
+        run_file(main)
+
+
 def test_generic_enum_across_modules(tmp_path, run_file):
     (tmp_path / "lib.ort").write_text(
         "#lang oort-core\n"
-        "enum LibOption[T] { Some(value: T), None }\n"
-        "def wrap(x: Int) -> LibOption[Int] { Some(x) }\n"
-        "def nothing() -> LibOption[Int] { None }\n",
+        "enum LibMaybe[T] { Just(value: T), Nothing }\n"
+        "def wrap(x: Int) -> LibMaybe[Int] { Just(x) }\n"
+        "def nothing() -> LibMaybe[Int] { Nothing }\n",
         encoding="utf-8",
     )
     main = tmp_path / "main.ort"
@@ -131,9 +183,9 @@ def test_generic_enum_across_modules(tmp_path, run_file):
         "#lang oort-core\n"
         'from "./lib" import wrap, nothing\n'
         "val a = wrap(7)\n"
-        "print(match a { Some(v) => v, None => 0 })\n"
+        "print(match a { Just(v) => v, Nothing => 0 })\n"
         "val b = nothing()\n"
-        "print(match b { Some(v) => v, None => 0 })\n",
+        "print(match b { Just(v) => v, Nothing => 0 })\n",
         encoding="utf-8",
     )
     assert run_file(main).stdout == "7\n0\n"
@@ -142,13 +194,13 @@ def test_generic_enum_across_modules(tmp_path, run_file):
 def test_module_namespace_adt_function(tmp_path, run_file):
     (tmp_path / "lib.ort").write_text(
         "#lang oort-core\n"
-        "enum IntOption { Some(value: Int), None }\n"
-        "def wrap(x: Int) -> IntOption { Some(x) }\n",
+        "enum IntMaybe { Just(value: Int), Nothing }\n"
+        "def wrap(x: Int) -> IntMaybe { Just(x) }\n",
         encoding="utf-8",
     )
     main = tmp_path / "main.ort"
     main.write_text(
-        '#lang oort-core\nimport "./lib"\nprint(match lib.wrap(4) { Some(v) => v, None => 0 })\n',
+        '#lang oort-core\nimport "./lib"\nprint(match lib.wrap(4) { Just(v) => v, Nothing => 0 })\n',
         encoding="utf-8",
     )
     assert run_file(main).stdout == "4\n"

@@ -6,11 +6,11 @@ from enum import Enum
 from antlr4 import ParserRuleContext
 
 from ..ast_visitor import ASTVisitor
-from .base import ASTNode
+from .base import ASTNode, NodeContext
 
 
 class Declaration(ASTNode):
-    def __init__(self, context: ParserRuleContext, name: str, type_expr: ASTNode | None):
+    def __init__(self, context: NodeContext, name: str, type_expr: ASTNode | None):
         super().__init__(context)
         self.name = name
         self.type_expr: ASTNode | None = type_expr
@@ -108,7 +108,7 @@ class VarianceKind(Enum):
 class TypeParameter(Declaration):
     def __init__(
         self,
-        context: ParserRuleContext,
+        context: NodeContext,
         name: str,
         type_expr: ASTNode | None,
         qualifier: TypeQualifierKind = TypeQualifierKind.DEFAULT,

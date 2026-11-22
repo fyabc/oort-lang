@@ -43,7 +43,7 @@
 | [0019](0019-hir-vm-parameter-binding.md) | 参数绑定进入 HIR/VM（默认值、关键字、变长、块参数） | Implemented |
 | [0020](0020-diagnostic-quality.md) | 诊断消息质量（词法分类、定界符诊断，效仿 Python） | Implemented |
 | [0021](0021-float-integer-part.md) | 浮点字面量要求整数部分（禁止 `.5`） | Implemented |
-| [0022](0022-generic-adts.md) | 泛型 ADT 与内建 `Option`/`Result` | Accepted（增量 A/B 已实现；C 待实现） |
+| [0022](0022-generic-adts.md) | 泛型 ADT 与内建 `Option`/`Result` | Implemented |
 
 ## 流程
 
