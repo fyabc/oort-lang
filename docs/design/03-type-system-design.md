@@ -132,6 +132,88 @@ def add(a: Int, b: Int) -> Int:
 - 提取失败时抛出**运行时错误**（而非编译错误），保证渐进性
 - 静态模块内部不跨边界的值**绝不装箱**（逃逸分析保证）
 
+### 2.5 类型内部表示与泛型实例化
+
+> 本节是跨语言调研与 Oort 的取舍记录，不改变当前已实现行为。具体的
+> typed IR 类型表与线格式见 [design 15](15-typed-ir.md) 与
+> [spec 14](../spec/14-typed-bytecode.md)。
+
+泛型实现经常把三个层次混在一起：**编译期类型表示**、**实例化的运行时
+表示**、**值/布局/ABI**。它们解决的问题不同，必须分开讨论。
+
+#### 2.5.1 编译期类型表示
+
+| 方案 | 代表 | 优点 | 缺点 |
+|---|---|---|---|
+| 名义类型 | Java、C#、Rust、Swift、Kotlin | 身份稳定、跨模块/ABI 容易、递归类型自然 | 需要符号表；结构相同不自动兼容 |
+| 结构类型 | TypeScript、Go interface、部分 ML | 组合灵活、无需预声明 | 身份/规范化复杂，跨模块 ABI 更难 |
+| 混合 | Scala、Dart、Haskell | 兼顾 | 规则与实现更复杂 |
+
+主流编译器通常把类型规范化成**类型图/树 + 驻留表（interning）**，而不是
+源码字符串：
+
+- 相同类型只存一份，比较退化为 ID/指针比较（rustc `TyCtxt`/`TyKind`、
+  Swift `Type`、GHC `Type`、MLIR `Type`）；
+- 递归类型用名义引用（`Nominal(symbol, args)`）或 `Box`/ID 避免无限展开；
+- 泛型参数用 `TypeParam(index)`/de Bruijn；推断变量用 union-find/levels；
+- 泛型签名用 `Forall(params, body)` 表示 scheme，实例化 = 替换 + 规范化；
+- 方差（声明处或使用处）、类型别名是否展开、递归类型的相等规则都需要在
+  表示层显式建模。
+
+**结论**：无论泛型采用哪种实例化方案，编译器内部都需要一个规范化的类型
+表示与驻留/去重，否则相等判断、替换和缓存都会退化。
+
+#### 2.5.2 实例化与运行时表示
+
+| 方案 | 代表 | 换来的 | 付出的 |
+|---|---|---|---|
+| **类型擦除** | Java、TypeScript、Kotlin/JVM、Scala/JVM、OCaml | 代码小、编译快、二进制兼容好、动态友好 | 无运行时类型参数、基本类型装箱、无法特化布局 |
+| **单态化/模板** | C++、Rust、D、Swift（特化）、C#（值类型） | 无装箱、内联/去虚化、性能最好 | 代码膨胀、编译慢、分离编译难 |
+| **具体化（Reified）** | C#/.NET、Dart、Swift（metadata） | 运行时类型信息、反射、值类型泛型 | metadata/ABI 复杂、启动与内存成本 |
+| **字典/见证** | Haskell type class、Swift witness、Rust `dyn Trait`、Go 泛型 | 一份代码、灵活、分离编译友好 | 间接调用、布局不特化 |
+| **混合** | C#、Swift、Go（GCshape + 字典） | 在体积/性能间折中 | 实现与规则更复杂 |
+
+- **擦除**：泛型参数只存在于编译期。Java 的 `Signature` 属性、Kotlin
+  metadata、Scala `ClassTag` 能在反射层部分恢复信息，但不能用于
+  `new T`、`instanceof T` 或基本类型特化。
+- **单态化**：每个具体实参生成专用代码/布局。C++ 模板通常要求头文件可见；
+  Rust 依赖 metadata 做跨 crate 单态化；嵌套泛型可能组合爆炸。
+- **具体化**：运行时保留类型实参/描述符。C# 引用类型实例共享代码、值类型
+  特化；Dart 用 reified 类型 + tree shaking。
+- **字典/见证**：把类型对应的操作集合作为隐藏参数传递。Haskell 字典、
+  Swift witness table、Rust trait object、Go 的 shape/dictionary 都属于
+  这一类；代码小，但每次操作有间接成本。
+
+#### 2.5.3 值、布局与 ABI
+
+| 问题 | 擦除/字典 | 单态化/具体化 |
+|---|---|---|
+| 是否装箱 | 通常装箱或统一表示 | 可按具体类型拆箱 |
+| 布局 | 只能统一布局 | `List<Int>` 与 `List<String>` 可有不同布局 |
+| 调用 | 间接（虚表/字典） | 直接调用 |
+| 符号/名称 | 描述符/metadata token | 需要 mangling 包含类型实参 |
+| 分离编译 | Java class / C# metadata 较友好 | C++ 头文件/模板实例化较难 |
+| 运行时反射 | C#/Dart 有 Type 对象；Java 受限 | Rust/C++/TS 基本没有 |
+
+#### 2.5.4 对 Oort 的取舍
+
+Oort 是模块级渐进类型：`oort-core` 静态、`oort-object` 动态。§2.2 已选择
+**静态侧单态化 + 动态侧擦除 + 边界桩**；本节的表示结论是：
+
+1. **编译期**：类型表使用规范化后的类型对象 + 驻留 ID。标量/容器结构相等，
+   类/ADT/接口名义相等（稳定 `symbol_id`）。泛型阶段再引入
+   `TypeParam`/`Forall`/`App(Nominal, args)`；实例化 = 替换 + 规范化。
+2. **typed IR**：S2/S3 只存**具体**容器类型（`List[Int]` 等）；泛型单态化
+   在 typed HIR → typed 字节码之间完成，类型表最终不含类型变量，Rust VM
+   无需运行时类型参数。
+3. **运行时**：静态实例使用具体布局/未装箱值；动态方言保持 tagged/boxed；
+   跨方言边界用 box/unbox + 守卫。当前没有 `is`/cast/反射，暂不引入
+   reified 描述符；将来需要时再在类型表中增加 runtime descriptor。
+4. **代码膨胀兜底**：若泛型实例组合过多，可引入字典/共享 shape 作为 fallback
+   （类似 Go），而不是一开始就放弃单态化。
+5. **开放问题**：多态递归、跨模块 ABI/mangling、特化策略（`@inline`/`final`）、
+   运行时类型测试的边界语义，留到泛型实现阶段裁决。
+
 ---
 
 ## 3. 类型检查器架构
