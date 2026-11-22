@@ -152,20 +152,20 @@ uv run --frozen python benchmarks/report.py --benchmark benchmark-050-clean.json
 <!-- TYPED-BENCH-START -->
 ## 6. 类型化路径（研究快照）
 
-> 快照日期：2026-11-23；提交：`5b627da`；重复 5 次取中位数。
+> 快照日期：2026-11-23；提交：`9b63fb1`；重复 5 次取中位数。
 > 仅标量子集（fib20 / loop 20000）；Python 运行时为进程内计时，Rust 为
 > 子进程 wall time 扣除空 typed 程序启动。该节不进入门禁，由
 > `benchmarks/typed_run.py` + `typed_report.py` 生成。
 
 | 运行时 | fib(20) | loop 20000 | 说明 |
 |---|---:|---:|---|
-| Oort VM (kind=0) | 421.2 ms | 179.6 ms | 基线 |
-| Typed HIR 解释器 (M2) | 506.3 ms | 383.1 ms | Python，in-process |
-| Typed 字节码 VM (M3) | 654.1 ms | 498.5 ms | Python，in-process |
-| Rust typed VM (M4) | 1.8 ms | 1.2 ms | kind=1，exec 扣启动 |
+| Oort VM (kind=0) | 369.3 ms | 163.4 ms | 基线 |
+| Typed HIR 解释器 (M2) | 523.7 ms | 355.1 ms | Python，in-process |
+| Typed 字节码 VM (M3) | 662.2 ms | 396.8 ms | Python，in-process |
+| Rust typed VM (M4) | 1.5 ms | 0.9 ms | kind=1，exec 扣启动 |
 
-Python typed 字节码相对 kind=0 VM：**1.55–2.78×**（仍更慢，类型断言与解码开销；M3 只验证 ABI）。
-Rust typed 字节码比 kind=0 VM 快 **150.04–232.47×**（exec 口径；标量已未装箱，函数边界仍用 boxed 值）。
+Python typed 字节码相对 kind=0 VM：**1.79–2.43×**（仍更慢，类型断言与解码开销；M3 只验证 ABI）。
+Rust typed 字节码比 kind=0 VM 快 **190.64–251.83×**（exec 口径；标量已未装箱，函数边界仍用 boxed 值）。
 
 生成命令：
 
