@@ -1,6 +1,10 @@
 #lang oort-core
 
 # 完整模式匹配：字面量、元组、或模式、守卫与嵌套穷尽性。
+#
+# - 编译器按 Maranget usefulness 做嵌套穷尽性检查。
+# - 守卫 arm 不建立覆盖（守卫可能为假），所以后面保留无守卫兜底。
+# - 或模式各分支必须绑定相同名字；守卫失败继续下一个 arm，不回溯或模式分支。
 
 enum Shape {
     Point,
@@ -11,9 +15,12 @@ enum Shape {
 def describe(shape: Shape) -> String {
     match shape {
         Point => "point",
+        # 字面量模式：精确匹配 Line 的载荷 0。
         Line(0) => "zero-line",
+        # 守卫：x < 0 时才选中；失败会继续尝试下一个 Line arm。
         Line(x) if x < 0 => "negative-line",
         Line(x) => "line",
+        # 构造器字段按位置绑定；字段本身也可以是字面量。
         Rect(0, 0) => "empty-rect",
         Rect(w, h) if w == h => "square",
         Rect(w, h) => "rect"
@@ -23,19 +30,28 @@ def describe(shape: Shape) -> String {
 def classify(n: Int) -> String {
     match n {
         0 => "zero",
+        # 或模式：1、2、3 共用同一个 arm。
         1 | 2 | 3 => "small",
+        # 绑定 x 并在守卫中使用；守卫 arm 不算穷尽性覆盖。
         x if x < 0 => "negative",
+        # Int 是无限域，必须有 _/绑定兜底。
         _ => "large"
     }
 }
 
 def at_origin(p: Tuple[Int, Int]) -> Bool {
     match p {
+        # 元组模式：(0, 0) 同时匹配两个分量。
         (0, 0) => true,
         _ => false
     }
 }
 
+# 输出：
+# point zero-line negative-line line
+# empty-rect square rect
+# zero small negative large
+# true false
 print(describe(Point), describe(Line(0)), describe(Line(-2)), describe(Line(5)))
 print(describe(Rect(0, 0)), describe(Rect(3, 3)), describe(Rect(2, 5)))
 print(classify(0), classify(2), classify(-1), classify(9))

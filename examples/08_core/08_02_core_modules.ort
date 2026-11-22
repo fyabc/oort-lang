@@ -2,6 +2,9 @@
 
 # 同方言模块导入：from 直接取名字，import 绑定模块命名空间。
 
+# from 直接绑定导出的名字；import 绑定模块命名空间。
+# 导入在模块正文前执行；mathlib 的 add/square 省略了返回标注，
+# 推断结果会随模块接口导出。
 from "./mathlib" import base, square
 import "./mathlib" as lib
 

@@ -12,6 +12,7 @@ class Shape {
     }
 }
 
+# 子类覆盖 area；super.__init__ 调用父初始化器。
 class Rect < Shape {
     def __init__(w, h) {
         super.__init__("rect")
@@ -29,13 +30,13 @@ class Square < Rect {
 print(Rect(3, 4).describe())
 print(Square(5).describe())
 
-# 类方法定义在元类上
+# 类方法定义在元类上：Factory.make 由元类提供。
 class Factory {
     def class.make: this()
 }
 print(type(Factory.make()))
 
-# 元类：M < Type，则 A 的元类可以是 M
+# 元类：M < Type，则 A 的元类可以是 M。
 class M < Type {}
 class A :: M {}
 print(type(A))

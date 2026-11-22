@@ -2,13 +2,15 @@
 
 # core 基础：Int/Bool 标注与推断、可变的 var、if 条件与 print。
 
-var count: Int = 2
-val enabled: Bool = true
+var count: Int = 2      # 标注类型；var 可重新赋值
+val enabled: Bool = true  # val 不可重新赋值
 
+# if 条件必须是 Bool；没有 else 时整体类型为 Unit。
 if enabled {
     count = count * 3
 }
 
+# print 可打印标量、ADT 与集合；表达式保持静态类型。
 print(count)
 print(count > 5)
 print(enabled and count == 6)

@@ -2,14 +2,17 @@
 
 # 函数值：lambda 赋给变量、作为实参传入 apply，以及 make_adder 返回的闭包。
 
+# 函数类型可作参数与返回类型。
 def apply(f: (Int) -> Int, x: Int) -> Int {
     f(x)
 }
 
+# 返回一个捕获 n 的闭包。
 def make_adder(n: Int) -> (Int) -> Int {
     do(x: Int) -> Int { x + n }
 }
 
+# lambda 的返回类型也可由期望函数类型下推。
 val double: (Int) -> Int = do(x: Int) -> Int { x * 2 }
 val add10 = make_adder(10)
 

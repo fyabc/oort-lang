@@ -1,18 +1,24 @@
 #lang oort-core
 
 # 泛型 ADT：用户定义的泛型 enum + 内建 Option。
-# 类型参数在 HIR/字节码前擦除；match 按实参代换载荷类型。
+#
+# - 类型参数 [T] 只存在于检查期；HIR/字节码前擦除，运行时仍是 variant + payload。
+# - 构造器类型实参由期望类型或实参类型推断。
+# - match 按 scrutinee 的实参代换载荷类型。
 
+# 用户泛型 enum：Just 携带 T，Nothing 不携带。
 enum Maybe[T] {
     Just(value: T),
     Nothing
 }
 
+# 自递归泛型载荷：MyList[T] 的 tail 仍然是 MyList[T]。
 enum MyList[T] {
     Cons(head: T, tail: MyList[T]),
     Nil
 }
 
+# 内建 Option 无需 import；match 按 Option[Int] 的实参把 v 绑定为 Int。
 def unwrap(o: Option[Int], fallback: Int) -> Int {
     match o {
         Some(v) => v,
@@ -20,6 +26,7 @@ def unwrap(o: Option[Int], fallback: Int) -> Int {
     }
 }
 
+# 递归遍历泛型载荷：h 是 Int，t 是 MyList[Int]。
 def total(xs: MyList[Int]) -> Int {
     match xs {
         Cons(h, t) => h + total(t),
@@ -27,14 +34,15 @@ def total(xs: MyList[Int]) -> Int {
     }
 }
 
-val some: Option[Int] = Some(3)
-val none: Option[Int] = None
-val xs: MyList[Int] = Cons(1, Cons(2, Nil))
-val maybe: Maybe[String] = Just("gap")
+# 以下绑定分别演示不同的推断来源：
+val some: Option[Int] = Some(3)                 # 期望类型确定 T = Int
+val none: Option[Int] = None                    # 零参构造器必须有期望类型
+val xs: MyList[Int] = Cons(1, Cons(2, Nil))     # 期望类型驱动内层 Nil 实例化
+val maybe: Maybe[String] = Just("gap")          # 用户泛型 enum 的实参
 
-print(unwrap(some, 0))
-print(unwrap(none, -1))
-print(total(xs))
-print(match Some("text") { Some(v) => v, None => "" })
-print(match maybe { Just(v) => v, Nothing => "" })
-print(match Just(7) { Just(v) => v, Nothing => 0 })
+print(unwrap(some, 0))          # 3
+print(unwrap(none, -1))         # -1
+print(total(xs))                # 3
+print(match Some("text") { Some(v) => v, None => "" })   # text（推断 Option[String]）
+print(match maybe { Just(v) => v, Nothing => "" })        # gap
+print(match Just(7) { Just(v) => v, Nothing => 0 })       # 7（推断 Maybe[Int]）

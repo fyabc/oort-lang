@@ -1,8 +1,8 @@
 #lang oort-core
 
-# `/` 固定返回 Float；`//` 在 Int 之间保持 Int，混入 Float 时返回 Float。
-# String 支持 `+` 拼接、字典序比较与值相等。
+# 标量：Float/String、数值混合运算与严格标注。
 
+# `/` 固定返回 Float；`//` 在 Int 之间保持 Int，混入 Float 时为 Float。
 val half: Float = 5 / 2
 val whole: Int = 5 // 2
 val mixed_floor: Float = 5 // 2.0
@@ -16,4 +16,5 @@ print(half)
 print(whole, mixed_floor)
 print(average(1.0, 2.0))
 print(greeting)
+# Int 与 Float 值相等；String 按字典序比较。
 print(1 == 1.0, "a" < "b")

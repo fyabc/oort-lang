@@ -8,6 +8,8 @@ enum Shape {
     Empty
 }
 
+# 构造器按位置绑定；每个 arm 独立作用域。
+# 编译器检查顶层构造器穷尽性——漏掉 Empty 会报错。
 def area(shape: Shape) -> Int {
     match shape {
         Circle(r) => r * r * 3,
@@ -19,4 +21,5 @@ def area(shape: Shape) -> Int {
 print(area(Circle(2)))
 print(area(Rect(3, 4)))
 print(area(Empty))
+# ADT 值可打印；相等在 08_11 演示。
 print(Circle(1))

@@ -1,4 +1,7 @@
 # 默认值、关键字实参、*args、**kwargs 与 &block
+# `/` 之前是仅位置参数；timeout 起可用关键字传入。
+# *headers 收集多余位置实参为 Tuple；**options 收集关键字为 Dict；
+# &block 接收尾随 do 块，缺省为 null。
 def connect(host, port = 80, /, timeout = 30, *headers, retries = 2, **options, &block) {
     print(host, port, timeout, headers, retries, options)
     if block != null: block()

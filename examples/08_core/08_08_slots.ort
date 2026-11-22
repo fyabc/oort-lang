@@ -7,6 +7,8 @@ def mark(label: String) -> String {
     label
 }
 
+# 槽初始化器先于 __init__ 执行；未初始化的 val 必须在 __init__
+# 的所有路径上赋值（确定赋值）。
 class Point {
     val x: Int
     val y: Int
@@ -25,6 +27,7 @@ class Point {
     }
 }
 
+# 输出顺序：slot -> ctor -> 3 -> origin
 val p = Point(1, 2)
 print(p.sum())
 p.rename("origin")

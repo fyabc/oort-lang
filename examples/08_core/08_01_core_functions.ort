@@ -2,10 +2,12 @@
 
 # 标注必填的函数、自递归与返回 Unit 的过程。
 
+# 参数必须标注；自递归函数必须显式写返回类型。
 def fact(n: Int) -> Int {
     if n <= 1 { 1 } else { n * fact(n - 1) }
 }
 
+# -> Unit 的过程：不要求所有路径返回值。
 def show(label: Int, value: Int) -> Unit {
     print(label)
     print(value)

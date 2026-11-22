@@ -4,9 +4,9 @@ import "math"
 import "string"
 from "string" import upper
 
-print(math.floor(math.sqrt(10)))
-print(math.pi > 3.14)
-print(string.join(["a", "b"], "-"))
-print(upper("oort"))
-print(string.split("a,b,c", ","))
-print(string.startswith("oort", "oo"))
+print(math.floor(math.sqrt(10)))          # 3
+print(math.pi > 3.14)                     # true
+print(string.join(["a", "b"], "-"))      # a-b
+print(upper("oort"))                      # OORT（from 导入）
+print(string.split("a,b,c", ","))        # [a, b, c]
+print(string.startswith("oort", "oo"))   # true

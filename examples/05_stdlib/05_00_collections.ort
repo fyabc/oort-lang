@@ -2,9 +2,10 @@
 
 val xs = [3, 1, 2]
 
-print(map(xs) do(x): x * 2)
-print(filter(xs) do(x): x > 1)
-print(zip(xs, [10, 20]))
-print(enumerate(xs))
-print(sorted(xs))
-print(sorted(xs, do(x): -x))
+# 尾随 lambda 是最后一个实参；助手都是急切的，返回新 List。
+print(map(xs) do(x): x * 2)      # [6, 2, 4]
+print(filter(xs) do(x): x > 1)   # [3, 2]
+print(zip(xs, [10, 20]))         # [(3, 10), (1, 20)]（按最短截断）
+print(enumerate(xs))             # [(0, 3), (1, 1), (2, 2)]
+print(sorted(xs))                # [1, 2, 3]（稳定排序）
+print(sorted(xs, do(x): -x))     # [3, 2, 1]（key 回调）
