@@ -215,15 +215,18 @@ B1 只做 Python 侧语义验证，不做性能门禁：
   List/Tuple/Set/Dict），容器跨边界深拷贝；返回容器同样拷贝；标量/String
   共享不可变值；
 - **值映射**：当前 typed 子集（Int/Float/Bool/String/Unit/List/Tuple/Set/Dict）
-  可用；Unit ↔ `null`；类、接口、ADT、函数值、迭代器显式拒绝；
+  可用；Unit ↔ `null`；ADT 按 `(origin, name, args)` 名义身份守卫并复制；
+  对象侧只能持有/打印/回传 ADT，不能构造或模式匹配；类、接口、函数值、
+  迭代器显式拒绝；
 - **错误**：守卫失败归责动态调用方，错误包含 core 函数名、参数位置与期望/实际
   类型；core 内部错误沿用 core 源码位置；
-- **限制**：只导出顶层函数；core 模块自身的 typed 导入、类/ADT、回调、C FFI
-  均未开放；每个 core 模块一个 `TypedCodeVM` 实例，模块只执行一次；
+- **限制**：只导出顶层函数；core 模块自身的 typed 导入、类/接口、回调、C FFI
+  均未开放；每个 core 模块一个 `TypedCodeVM` 实例，模块只执行一次；不同 core
+  模块的同名 ADT 通过模块 origin 区分；
 - **入口**：默认 `-t vm` 与回退 `-t eval` 的 object 入口都可用；验收示例
   `examples/09_boundary/09_00_object_calls_core.ort`（配套 `core_lib.ort`）；
-  测试覆盖 `from` 导入、模块属性导入、嵌套 core 调用、Unit 返回、容器复制与
-  守卫失败。
+  测试覆盖 `from` 导入、模块属性导入、嵌套 core 调用、Unit 返回、容器复制、
+  ADT 跨模块 origin 与守卫失败。
 
 实现入口：`src/oort_lang/bytecode/typed_boundary.py`、`runtime/modules.py`
 的 object→core 分支，以及 `driver/compiler.py` 的回调接线。诊断基准

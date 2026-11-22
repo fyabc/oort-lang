@@ -542,7 +542,7 @@ wrapping、不引入 `unsafe` 或外部 crate。
 | **S1 String** | `IrType.STRING`；`ADD_S`/`EQ_S`/`*_S`；`len` native；`TypedValue::Str(Rc<str>)`；kind=1 **v3** | **已完成** |
 | **S2 List / Tuple** | 递归类型描述 + 类型表；`NEW_LIST`/`NEW_TUPLE`/`GET_ITEM`/`LEN`；`for` 迭代；Tuple 不可变；List 可变（语言表面待开放） | **已完成（S2a + S2b）**；`SET_ITEM` 因核心检查器限制只预留 opcode |
 | **S3 Set / Dict** | `NEW_SET`/`NEW_DICT`、Dict 下标读取、`len`、深相等、`for` 迭代；键相等用线性查找，不实现哈希 | **已完成（不可变集合）**；写入/`in`/集合运算受核心语言表面限制 |
-| **S4 ADT** | 构造器/`match`/布局；依赖集合与类型表的稳定 | **S4a 完成；S4b 完成（reified 泛型 + 复杂模式）**；S4c 优化待做；见 [design 18](18-typed-adt.md) |
+| **S4 ADT** | 构造器/`match`/布局；依赖集合与类型表的稳定 | **S4a/S4b 完成；S4c 部分完成（tag 缓存，布局优化延后）**；见 [design 18](18-typed-adt.md) |
 
 泛型类型表示的跨语言调研与 Oort 取舍见
 [design 03 §2.5](03-type-system-design.md)。S2/S3 只存具体类型；

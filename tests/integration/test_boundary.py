@@ -73,6 +73,42 @@ print(set_count({. 1, 2, 2 .}))
     assert result.stdout == ("core init\n5\n9\n10\n20\n(7, x)\n1 99\npong\nnull\n12\n2\n")
 
 
+@pytest.mark.parametrize("target", ["eval", "vm"])
+def test_boundary_copies_adts_with_module_origin(tmp_path, run_file, target):
+    _write(
+        tmp_path,
+        "a.ort",
+        """#lang oort-core
+enum Shape { Circle(radius: Int) }
+def make(r: Int) -> Shape { Circle(r) }
+def area(s: Shape) -> Int { match s { Circle(r) => r * r * 3 } }
+""",
+    )
+    _write(
+        tmp_path,
+        "b.ort",
+        """#lang oort-core
+enum Shape { Square(side: Int) }
+def make(side: Int) -> Shape { Square(side) }
+def area(s: Shape) -> Int { match s { Square(s) => s * s } }
+""",
+    )
+    main = _write(
+        tmp_path,
+        "main.ort",
+        """#lang oort-object
+import "./a"
+import "./b"
+val sa = a.make(2)
+val sb = b.make(4)
+print(sa, sb)
+print(a.area(sa), b.area(sb))
+""",
+    )
+
+    assert run_file(main, target=target).stdout == "Circle(2) Square(4)\n12 16\n"
+
+
 def test_boundary_guard_rejects_wrong_argument_type(tmp_path, caplog):
     _write(
         tmp_path,

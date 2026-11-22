@@ -8,9 +8,10 @@ function is then exposed as a native Oort callable.  Boundary stubs copy
 container values and guard arguments, so the two sides never share mutable
 container objects.
 
-This is the B1 semantic prototype from design 17: no callbacks, no ADT/class
-boundary, and no performance gate.  Unsupported core features fail explicitly
-when the imported module is lowered.
+This is the B1 semantic prototype from design 17: ADTs are copied and guarded
+by nominal identity; callbacks, classes/interfaces and a performance boundary
+are still out of scope.  Unsupported core features fail explicitly when the
+imported module is lowered.
 """
 
 from __future__ import annotations
@@ -18,10 +19,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ..diagnostics.runtime_errors import OortTypeError
-from ..hir.typed import ContainerType, IrType, IrTypeLike, lower_typed_module
+from ..hir.typed import (
+    AdtType,
+    ContainerType,
+    IrType,
+    IrTypeLike,
+    adt_runtime_name,
+    lower_typed_module,
+)
 from ..runtime.functions import OortNativeFunction
 from ..runtime.native import NativeMode
 from ..runtime.objects import (
+    OortADT,
     OortBool,
     OortDict,
     OortFloat,
@@ -76,6 +85,11 @@ def _guard(
             position,
         )
 
+    if isinstance(expected, AdtType):
+        if type(value) is not OortADT or value.type.name != adt_runtime_name(expected):
+            raise fail()
+        return
+
     if isinstance(expected, ContainerType):
         if expected.kind == "List":
             if type(value) is not OortList:
@@ -120,6 +134,12 @@ def _guard(
 def _copy_value(value: OortObject) -> OortObject:
     """Copy containers across the boundary; scalars are immutable and shared."""
 
+    if type(value) is OortADT:
+        return OortADT(
+            value.type,
+            value.variant,
+            tuple(_copy_value(item) for item in value.values),
+        )
     if type(value) is OortList:
         return OortList([_copy_value(item) for item in value.value])
     if type(value) is OortTuple:

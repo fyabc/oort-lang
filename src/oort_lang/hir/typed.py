@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, NoReturn
 
 from ..ast import nodes
 from ..diagnostics.syntax_errors import UnsupportedSyntax
-from ..semantics.core.prelude import CORE_PRELUDE_ORIGIN
 from ..semantics.core.types import (
     AdtType as CoreAdtType,
 )
@@ -127,6 +126,12 @@ class AdtType:
 
 
 IrTypeLike = IrType | ContainerType | AdtType
+
+
+def adt_runtime_name(ir_type: AdtType) -> str:
+    """Stable runtime identity for one nominal ADT instance."""
+
+    return f"{ir_type.origin}::{ir_type}"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -251,9 +256,8 @@ def _ir_type_from(type_: Type, position, *, allow_function: bool = False) -> IrT
     if isinstance(type_, TupleType):
         return tuple_type(*(_ir_type_from(element, position) for element in type_.elements))
     if isinstance(type_, CoreAdtType):
-        origin = CORE_PRELUDE_ORIGIN if type_.origin == CORE_PRELUDE_ORIGIN else "<typed-module>"
         return AdtType(
-            origin,
+            type_.origin,
             type_.name,
             tuple(_ir_type_from(argument, position) for argument in type_.args),
         )
@@ -610,10 +614,10 @@ def _collect_adt_decls(
     for stmt in module.body.statements:
         if not isinstance(stmt, nodes.EnumDef):
             continue
-        origin = stmt.declaration_origin or "<typed-module>"
         enum_type = stmt.metadata.get("type_obj")
         if not isinstance(enum_type, CoreAdtType):
             raise UnsupportedSyntax("Enum is missing a checked type.", stmt.position)
+        origin = enum_type.origin
         if stmt.type_params:
             # Generic payload types depend on the instantiation. S4b erases
             # runtime type arguments; constructors keep arity here.
@@ -722,13 +726,14 @@ class _TypedHirLowerer(HirLowerer):
         end_label = self._new_label("match_end")
         arm_labels = [self._new_label("match_arm") for _ in node.arms]
         arm_labels.append(end_label)
+        tag_cache: dict[int, int] = {}
 
         for index, (arm, arm_label) in enumerate(zip(node.arms, arm_labels)):
             fail_label = arm_labels[index + 1]
             self._emit(Label(arm.position, arm_label))
             self._push_scope()
             try:
-                self._lower_pattern(arm.pattern, scrutinee, scrutinee_type, fail_label)
+                self._lower_pattern(arm.pattern, scrutinee, scrutinee_type, fail_label, tag_cache)
                 if arm.guard is not None:
                     guard = self._require_value(arm.guard)
                     self._emit(JumpIfFalse(arm.guard.position, guard, fail_label))
@@ -747,10 +752,14 @@ class _TypedHirLowerer(HirLowerer):
         constructor_index: int,
         fail_label: str,
         position,
+        tag_cache: dict[int, int],
     ) -> None:
-        tag = self._alloc(position)
-        self._record(tag, IrType.INT, position)
-        self._emit(AdtTag(position, tag, value))
+        tag = tag_cache.get(value)
+        if tag is None:
+            tag = self._alloc(position)
+            self._record(tag, IrType.INT, position)
+            self._emit(AdtTag(position, tag, value))
+            tag_cache[value] = tag
         expected = self._const(constructor_index, position)
         self._record(expected, IrType.INT, position)
         ok = self._alloc(position)
@@ -795,6 +804,7 @@ class _TypedHirLowerer(HirLowerer):
         value: int,
         expected: Type,
         fail_label: str,
+        tag_cache: dict[int, int],
         bindings: dict[str, int] | None = None,
     ) -> None:
         if isinstance(pattern, nodes.WildcardPattern):
@@ -813,7 +823,7 @@ class _TypedHirLowerer(HirLowerer):
                         for index, item in enumerate(expected.constructors)
                         if item.name == constructor.name
                     )
-                    self._emit_tag_test(value, index, fail_label, pattern.position)
+                    self._emit_tag_test(value, index, fail_label, pattern.position, tag_cache)
                     return
             slot = None if bindings is None else bindings.get(pattern.name)
             if slot is None:
@@ -843,7 +853,7 @@ class _TypedHirLowerer(HirLowerer):
                 slot = self._alloc(pattern.position)
                 self._record(slot, slot_type, pattern.position)
                 self._emit(TupleItem(pattern.position, slot, value, index))
-                self._lower_pattern(item, slot, item_type, fail_label, bindings)
+                self._lower_pattern(item, slot, item_type, fail_label, tag_cache, bindings)
             return
         if isinstance(pattern, nodes.OrPattern):
             if not pattern.patterns:
@@ -863,7 +873,7 @@ class _TypedHirLowerer(HirLowerer):
                     if alt_index == len(pattern.patterns) - 1
                     else self._new_label("or_fail")
                 )
-                self._lower_pattern(alternative, value, expected, alt_fail, slot_map)
+                self._lower_pattern(alternative, value, expected, alt_fail, tag_cache, slot_map)
                 self._emit(Jump(pattern.position, success))
                 if alt_index != len(pattern.patterns) - 1:
                     self._emit(Label(pattern.position, alt_fail))
@@ -885,7 +895,7 @@ class _TypedHirLowerer(HirLowerer):
                 for index, item in enumerate(expected.constructors)
                 if item.name == constructor.name
             )
-            self._emit_tag_test(value, index, fail_label, pattern.position)
+            self._emit_tag_test(value, index, fail_label, pattern.position, tag_cache)
             for field_index, (argument, payload_type) in enumerate(
                 zip(pattern.args, _instantiated_payload(expected, constructor), strict=True)
             ):
@@ -893,7 +903,7 @@ class _TypedHirLowerer(HirLowerer):
                 field_type = _ir_type_from(payload_type, pattern.position)
                 self._record(field, field_type, pattern.position)
                 self._emit(AdtField(pattern.position, field, value, field_index))
-                self._lower_pattern(argument, field, payload_type, fail_label, bindings)
+                self._lower_pattern(argument, field, payload_type, fail_label, tag_cache, bindings)
             return
         raise UnsupportedSyntax(
             f"Typed HIR backend does not support pattern {type(pattern).__name__}.",

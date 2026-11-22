@@ -14,7 +14,7 @@ import dataclasses
 from typing import TYPE_CHECKING, Any
 
 from ..diagnostics.runtime_errors import OortNameError, OortRuntimeError, OortTypeError
-from ..hir.typed import AdtType, ContainerType, IrType, IrTypeLike
+from ..hir.typed import AdtType, ContainerType, IrType, IrTypeLike, adt_runtime_name
 from ..runtime.environment import Environment
 from ..runtime.functions import OortNativeFunction
 from ..runtime.objects import (
@@ -86,8 +86,9 @@ class TypedCodeVM:
                 index = decl_index.get(key)
                 if index is None:
                     raise OortTypeError(f"Unknown ADT type {ir_type}.", proto.positions[0])
-                self._adt_types[str(ir_type)] = OortType(str(ir_type))
-                self._adt_by_name[str(ir_type)] = index
+                runtime_name = adt_runtime_name(ir_type)
+                self._adt_types[runtime_name] = OortType(runtime_name)
+                self._adt_by_name[runtime_name] = index
         constructor_id = 0
         for decl_index_value, decl in enumerate(program.adt_decls):
             for ctor_index, _constructor in enumerate(decl.constructors):
@@ -233,7 +234,7 @@ class TypedCodeVM:
                 adt_type = proto.types[type_id]
                 if not isinstance(adt_type, AdtType):
                     raise OortTypeError("Typed ADT target is not an ADT type.", position)
-                type_obj = self._adt_types.get(str(adt_type))
+                type_obj = self._adt_types.get(adt_runtime_name(adt_type))
                 if type_obj is None:
                     raise OortTypeError(f"Unknown ADT type {adt_type}.", position)
                 decl = program.adt_decls[decl_index]
@@ -410,7 +411,7 @@ class TypedCodeVM:
                 or (expected.kind == "Dict" and type(value) is OortDict)
             )
         elif isinstance(expected, AdtType):
-            ok = type(value) is OortADT and value.type.name == str(expected)
+            ok = type(value) is OortADT and value.type.name == adt_runtime_name(expected)
         else:
             ok = (
                 (expected is IrType.INT and type(value) is OortInt)
