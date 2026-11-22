@@ -311,9 +311,9 @@ def render(
     overrides = reference.get("runtime_overrides") or {}
     runtime_args: list[str] = []
     for name in reference_versions:
-        path = overrides.get(name)
-        if path:
-            runtime_args.append(f"--runtime '{name}={path}'")
+        # Never render machine-specific executable paths into public docs.
+        if overrides.get(name):
+            runtime_args.append(f"--runtime '{name}=<path-to-{name}>'")
         else:
             runtime_args.append(f"--runtime {name}")
     command_runtime = " ".join(runtime_args)

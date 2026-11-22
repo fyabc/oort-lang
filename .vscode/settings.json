@@ -3,18 +3,9 @@
   // Cargo.toml), so point rust-analyzer at it explicitly.
   "rust-analyzer.linkedProjects": ["rust/Cargo.toml"],
 
-  // Rust is installed under <tools-dir> (not on the system PATH). Tell the
-  // rust-analyzer server and its cargo invocations where rustup/cargo live.
-  "rust-analyzer.server.extraEnv": {
-    "RUSTUP_HOME": "<rustup-home>",
-    "CARGO_HOME": "<cargo-home>",
-    "PATH": "<cargo-bin-dir>;${env:PATH}"
-  },
-  "rust-analyzer.cargo.extraEnv": {
-    "RUSTUP_HOME": "<rustup-home>",
-    "CARGO_HOME": "<cargo-home>",
-    "PATH": "<cargo-bin-dir>;${env:PATH}"
-  },
+  // Toolchain locations are machine-specific. If rustup/cargo are not on
+  // PATH, set RUSTUP_HOME/CARGO_HOME in your user settings instead of this
+  // shared workspace file.
 
   // Keep rust-analyzer's check command consistent with the spike build.
   "rust-analyzer.check.command": "clippy"

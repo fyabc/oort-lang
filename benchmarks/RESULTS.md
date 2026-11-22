@@ -16,7 +16,7 @@ benchmark 工作流维护。
 
 ```bash
 uv run --frozen pytest benchmarks/ -q --benchmark-json=benchmark-050-clean.json
-uv run --frozen python benchmarks/reference/run.py --repeat 5 --runtime oort --runtime oort-vm --runtime oort-rust --runtime python --runtime node --runtime 'ruby=<path-to-ruby>' --runtime 'lua=<path-to-lua>' --json > ref050.json
+uv run --frozen python benchmarks/reference/run.py --repeat 5 --runtime oort --runtime oort-vm --runtime oort-rust --runtime python --runtime node --runtime ruby --runtime lua --json > ref050.json
 uv run --frozen python benchmarks/report.py --benchmark benchmark-050-clean.json --reference ref050.json
 ```
 

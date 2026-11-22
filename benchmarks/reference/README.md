@@ -20,17 +20,18 @@ runner 会在 `PATH` 中查找 `node`、`ruby`、`lua`；Python 与 Oort 使用�
 ```bash
 uv run --frozen python benchmarks/reference/run.py \
   --runtime oort --runtime oort-vm --runtime oort-rust --runtime python --runtime node \
-  --runtime 'ruby=<path-to-ruby>' \
-  --runtime 'lua=<path-to-lua>'
+  --runtime ruby --runtime lua
+# 需要指定可执行文件时：--runtime 'ruby=/path/to/ruby'
 ```
 
-本机参考环境（非 Oort 工具按约定放在 `<tools-dir>`）：
+参考运行时的版本（安装位置因机器而异；runner 优先在 `PATH` 查找，也可用
+`--runtime name=/path/to/exe` 显式指定）：
 
-- Ruby 4.0.10：`<path-to-ruby>`
-- Lua 5.4.8：`<path-to-lua>`
-- Node 24.15.0：`<path-to-node>`
-- Python 3.12：仓库虚拟环境
-- Rust 1.100：`<cargo-bin-dir>`（oort-rust spike，见下）
+- Ruby 4.0.10
+- Lua 5.4.8
+- Node 24.15.0
+- Python 3.12（仓库虚拟环境）
+- Rust 1.100（oort-rust spike，见下）
 
 ### oort-rust（Rust VM spike）
 
@@ -39,8 +40,10 @@ uv run --frozen python benchmarks/reference/run.py \
 `.ort` 编译成 `.obc`（按 mtime 缓存到 `.obc-cache/`）再交 Rust VM 执行。需先构建：
 
 ```bash
-cargo build --release --manifest-path rust/Cargo.toml   # 工具链在 <rust-toolchain-dir>
+cargo build --release --manifest-path rust/Cargo.toml
 ```
+
+需要 `cargo` 在 `PATH` 上；Rust 工具链的安装位置因机器而异。
 
 二进制位置可用 `OORT_RUST_BIN` 覆盖（默认 `rust/target/release/oort-vm.exe`）。
 
