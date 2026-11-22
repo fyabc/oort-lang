@@ -92,9 +92,9 @@ oort --module-path ./libs main.ort
 - `oort-core` 模块可以导入其他 `oort-core` 模块；导出接口由静态检查器
   读取，支持 `import "m"` / `from "m" import ...` 与再导出。详见
   [11-core-probe.md](11-core-probe.md)。
-- object↔core 双向导入仍被拒绝；加载器在编译后比较导入方与目标模块的
-  方言，不同则提示需要显式 FFI 边界。跨方言调用见
-  [OP 0005](../proposals/0005-type-system.md) 的后续工作。
+- **object → core 导入已允许**：动态模块可以导入 core 库并调用其导出函数；
+  边界按 [OP 0028](../proposals/0028-object-core-boundary.md) 做守卫、复制
+  和错误归责。反向（core → object）仍拒绝。
 - 原生模块（`io`/`math`/`os`/`string`）仍只对 `oort-object` 可用；
   core 导入 native 模块会报错。
 

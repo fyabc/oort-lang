@@ -71,7 +71,8 @@
 ### 1.3 非目标
 
 - 不引入新的语言表面特性（类型标注规则、检查算法保持不变）。
-- 不在 v0 实现动态↔静态边界调用、blame 或 FFI（当前跨方言调用仍拒绝）。
+- 不在 v0 实现动态↔静态边界调用、blame 或 FFI（v0 时跨方言调用仍拒绝；
+  后续 B1 见 [OP 0028](../proposals/0028-object-core-boundary.md)）。
 - 不在 v0 实现 JIT、逃逸分析、SSA 优化或原生代码生成。
 - 不要求动态方言 `oort-object` 获得类型特化；它是擦除路径的基线。
 
@@ -99,7 +100,8 @@
   （design 13、spec 12）。
 - **字节码**：32 位 ABC/ABx/AsBx/Ax；`.obc` 头 `OBC | kind u8 | version u8`，
   `kind=0` 为擦除式，`kind=1+` 已预留给 typed（spec 13）。
-- **边界**：跨方言调用仍显式拒绝；REPL 仍走 `eval`。
+- **边界**：v0 时跨方言调用显式拒绝；B1 之后的 object→core 见
+  [OP 0028](../proposals/0028-object-core-boundary.md)；REPL 仍走 `eval`。
 
 ### 2.2 硬约束
 
@@ -602,9 +604,8 @@ S1 的约束与实现：
 - **Rust**：`TypedValue::Set(Rc<RefCell<Vec<TypedValue>>>)`、
   `TypedValue::Dict(Rc<RefCell<Vec<(TypedValue, TypedValue)>>>)`；键查找与去重
   用 `typed_equal` **线性扫描**；`Value::Set`/`Value::Dict` 仅用于主结果转换；
-- **顺序语义**：**Dict 保证插入顺序**（与 Python dict、现有打印测试一致）；
-  Set 的迭代/打印顺序不属语言保证。Rust Set 当前按插入顺序存储，但不把它写成
-  契约；
+- **顺序语义**：Dict 的实现通常保持插入顺序，但**不是语言保证**；Set 的
+  迭代/打印顺序同样不保证。Rust/ Python 当前存储顺序仅作为实现特性；
 - **不做 `std::HashMap`**：裸 `HashMap` 丢失 Dict 插入顺序，且要求键满足
   `Eq + Hash`；Oort 键语义包含 Float/NaN、Tuple 结构相等与后续的 ADT/类键，
   不能无损压成 `Eq`。S3 以语义对齐为先，使用有序 `Vec` + 线性查找；未来若
@@ -616,7 +617,7 @@ S1 的约束与实现：
   （核心语言表面尚未支持）、ADT/类作为键（S4）、切片；
 - 验收样本 `examples/08_core/08_17_typed_sets_dicts.ort`；typed differential
   新增 `typed_sets_dicts`；Python typed 单测覆盖 OBC round-trip；Rust 单测
-  覆盖插入顺序、键去重与无序相等。
+  覆盖去重、摘要顺序（实现特性）与无序相等。
 
 ## 9. 风险与开放问题
 

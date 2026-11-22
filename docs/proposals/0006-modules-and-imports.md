@@ -75,7 +75,8 @@ from "math" import sqrt, pow as power
 - 本版只保存 AST 与模块环境；接口签名缓存留给 `oort-core` 与类型检查器。
 - `oort-core` 薄探针（OP 0017）已支持同方言 core→core 导入：静态检查器
   通过 `CompiledUnit` 缓存导出类型，支持模块命名空间、`from` 导入与再导出；
-  编译期检测循环导入。object↔core 跨方言导入仍拒绝，FFI 边界待后续设计。
+  编译期检测循环导入。object → core 的 B1 边界见 OP 0028；core → object
+  仍拒绝。
 
 ## 跨语言调研（2026-11-19）
 

@@ -1,6 +1,6 @@
 # OP 0004: 字节码虚拟机（重新实现）
 
-- **状态**：Accepted（第一切片实现中，2026-11-21）
+- **状态**：Implemented（2026-11-22；默认 `-t vm`，后续优化仍在进行）
 - **作者**：Oort 设计讨论
 - **相关**：[设计笔记 02](../design/02-bytecode-vm-design.md)、[HIR 设计 13](../design/13-hir-design.md)、[OP 0001](0001-feature-layers-and-dialects.md)
 

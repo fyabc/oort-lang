@@ -231,7 +231,8 @@ HIR 是 AST 与字节码之间的**线性寄存器中间表示**：指令显式�
   payload 元数），命中后以绑定值为实参调 arm 闭包；全失配抛
   `OortRuntimeError("No match arm matched value ...")`。
 - **模块**：每模块独立全局环境；`IMPORT` 经共享 ModuleLoader（路径解析、缓存、循环
-  检测、跨方言拒绝），两种形式都激活被导入模块的顶层扩展。
+  检测）；object → core 走 B1 边界（OP 0028），core → object 仍拒绝；两种形式都
+  激活被导入模块的顶层扩展。
 - **错误位置**：运行期错误位置 = 当前 pc 的 `positions[pc]`；调用绑定错误优先用调用
   点位置，回退 `proto.positions[0]`，再回退 `<bytecode>` 1:0。
 

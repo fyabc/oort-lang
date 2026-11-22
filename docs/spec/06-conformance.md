@@ -83,7 +83,7 @@ Oort 的语法前端接受一个**语言超集**；运行时只实现其中的�
 | 表达式 | 字面量、名字、块、`if`/`else`、调用、Int/Float 算术与 `/`、数值/String 比较、Bool 逻辑、集合字面量/下标/`len`、`while`/`for`、`match`（字面量/元组/或/守卫/嵌套穷尽性）、lambda、`print` |
 | ADT | 单态与泛型 `enum`（`[T]`、`[out T]`/`[in T]` 声明处变型、构造器类型实参推断、载荷代换）、内建 `Option`/`Result`、字面量/元组/或/守卫模式、嵌套穷尽性（Maranget witness）、结构相等与 key-safe 键 |
 | 类 | 顶层 `class`、固定 `val`/`var` 槽、方法（参数标注、返回可推断、递归方法需标注）、`__init__`、`this`、单继承与覆盖、多接口实现、`super.__init__`/`super.method`、确定赋值与只读槽、子类型赋值、身份相等/键 |
-| 模块 | core→core `import` / `from`、值导出/再导出与独立类型导出（`m.Type`、类双命名空间、接口 type-only）；object↔core 与 native 导入被拒绝 |
+| 模块 | core→core `import` / `from`、值导出/再导出与独立类型导出（`m.Type`、类双命名空间、接口 type-only）；object→core 导入由边界支持；core→object 与 native 导入被拒绝 |
 | 调试 | `-t ast` 跳过检查；`-t astm` 显示推断类型 |
 
 不在子集中的构造会以带位置的 `UnsupportedSyntax` 或 `TypeCheckError` 拒绝；

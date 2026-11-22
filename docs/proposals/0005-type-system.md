@@ -1,6 +1,6 @@
 # OP 0005: 类型系统、泛型、ADT 与模式匹配
 
-- **状态**：Draft
+- **状态**：Accepted（部分实现；泛型 ADT/模式匹配/对象模型/接口见 OP 0022–0026；上界与完整泛型仍待做）
 - **作者**：Oort 设计讨论
 - **相关**：[OP 0001](0001-feature-layers-and-dialects.md)、[设计笔记 03](../design/03-type-system-design.md)、[设计笔记 01](../design/01-runtime-value-representation.md)
 

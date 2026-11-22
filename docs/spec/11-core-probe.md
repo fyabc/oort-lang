@@ -20,8 +20,9 @@ print(add(1, 2))
 ```
 
 - 必须显式写 `#lang oort-core`；省略首行仍是 `oort-object`。
-- core 模块可以导入其他 core 模块（`import` / `from` 均可）；跨方言与
-  native 模块导入会被拒绝。
+- core 模块可以导入其他 core 模块（`import` / `from` 均可）；
+  core → object 与 native 模块导入仍被拒绝；object → core 由
+  [OP 0028](../proposals/0028-object-core-boundary.md) 的边界提供。
 - REPL 固定使用 `oort-object`；在 REPL 输入 `#lang` 会报错。
 
 ## 类型
@@ -568,8 +569,8 @@ print(x)          # 1
 ```
 
 把首行改为 `#lang oort-core` 后，同一个程序会报
-`Expected Bool, got Int.`。core 模块之间可以互相导入；object 与 core
-不能互相导入，跨方言调用需要未来的显式 FFI 边界。
+`Expected Bool, got Int.`。core 模块之间可以互相导入；object 可以导入
+core 并调用其导出函数（OP 0028），但 core 不能导入 object。
 
 ## 执行与调试
 

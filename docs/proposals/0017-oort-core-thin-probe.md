@@ -130,8 +130,8 @@ lambda、嵌套/泛型/运算符定义、`yield`/`await`、宏、编译器属性
   [OP 0025](0025-static-object-model.md) 增量 A 增加了独立类型导出与 `m.Type`。
 - 静态检查器通过编译器注入的 resolver 递归编译目标模块，取得导出类型，
   并缓存 `CompiledUnit`；编译期循环导入显式报错。
-- `ModuleLoader` 在编译后比较目标模块与导入方方言；object↔core 双向导入
-  仍被拒绝，跨方言调用等待 OP 0005 的 FFI trampoline/blame。
+- `ModuleLoader` 在编译后比较目标模块与导入方方言；core → object 仍拒绝，
+  object → core 由 OP 0028 的 B1/B3 边界提供。
 - native 模块（`math` 等）不能从 core 导入。
 - REPL 固定为 `oort-object`；输入 `#lang` 指令时报错，不静默按 object 执行。
 - `-t ast` 跳过语义分析；`-t astm` 与 `eval` 运行检查器。
@@ -163,7 +163,8 @@ lambda、嵌套/泛型/运算符定义、`yield`/`await`、宏、编译器属性
   OP 0025 增量 B 实现；接口由 OP 0026 实现；多继承仍未。）
 - 集合切片/原地修改、`in`、排序、惰性视图。
 - 字面量/元组/列表/守卫/或模式、嵌套穷尽性、ADT 相等与迭代。
-- 跨方言 FFI trampoline/blame；更完整的模块接口版本管理与增量编译。
+- 跨方言 FFI 的完整 trampoline/blame 与模块接口版本管理；B1 原型见
+  OP 0028，typed module ABI 见 OP 0027。
 - REPL 方言切换与持久方言状态。
 - 继承/接口、属性访问器与槽的跨方言边界。
 - HIR 与字节码后端。

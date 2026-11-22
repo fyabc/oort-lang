@@ -199,8 +199,8 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   `Rc<RefCell<Vec<TypedValue>>>`，Tuple 使用 `Rc<[TypedValue]>`，Dict 使用
   `Rc<RefCell<Vec<(TypedValue, TypedValue)>>>`，迭代器使用
   `Rc<RefCell<{ values, index }>>`；只在 native `print`/`len` 与主结果边界转换；
-- **Dict 保持插入顺序**；Set 的迭代/打印顺序不属于语言保证。Rust 参考实现
-  用有序 `Vec` + 线性键查找，不依赖 `std::HashMap`；
+- Dict 的实现通常保持插入顺序，但**顺序不是语言保证**；Set 同样不保证。
+  Rust 参考实现用有序 `Vec` + 线性键查找，不依赖 `std::HashMap`；
 - `Int` 在 Python 参考实现中使用宿主整数（任意精度）；Rust spike 使用
   `i64`，溢出显式报错。这是 spike 的表示限制，不是语言语义；跨实现差分
   测试避免溢出输入。完整数值语义见
@@ -225,10 +225,13 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   作为 ADT 实例身份保留；match 支持 ADT/Int/Float/Bool/String/Tuple
   scrutinee，构造器/通配/变量/守卫/字面量/Tuple/或模式与嵌套组合；
 - 无集合原地修改（`SET_ITEM` 预留；核心检查器尚未允许 `xs[i] = v`）、`in`/
-  集合运算、类/接口/泛型/lambda、模块导入、切片；
+  集合运算、类/接口/泛型/lambda、切片；typed 模块导入由 P1 linker 在编译前
+  解析，不进入 kind=1 字节码；
 - kind=1 **v6 是当前唯一版本**；ADT 模块声明表位于文件头；旧读者遇到未知
   version/opcode/tag 必须报错而不是猜测；破坏既有布局的变更必须提升 version；
-- 无动态↔静态边界、`box`/`unbox`/blame；跨方言调用仍拒绝；
+- kind=1 本身不编码跨方言边界；`oort-object → oort-core` 由 B1
+  边界（OP 0028）处理，反向仍拒绝；`box`/`unbox`/blame 的稳定 ABI
+  尚未定义；
 - 格式版本 `version=6`；不兼容变更必须提升 version，并保持 kind=1 的独立
   命名空间。
 

@@ -4,7 +4,8 @@
 > 导入已实现 Python 侧边界原型；反向调用、类/ADT 边界、C FFI 与性能边界仍未
 > 实现。本文其余部分继续作为架构与语义设计记录。
 >
-> 关联：[design 02](02-bytecode-vm-design.md) 的边界调用指令、
+> 关联：[OP 0028](../proposals/0028-object-core-boundary.md)、
+> [design 02](02-bytecode-vm-design.md) 的边界调用指令、
 > [design 03](03-type-system-design.md) 的渐进类型边界、
 > [design 12](12-host-boundary.md) 的宿主边界、
 > [design 15](15-typed-ir.md) 的 typed IR/VM、

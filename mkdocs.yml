@@ -103,6 +103,9 @@ nav:
       - OP 0024 ADT 相等与槽对象相等: proposals/0024-adt-and-slot-equality.md
       - OP 0025 静态对象模型（单继承与跨模块类型）: proposals/0025-static-object-model.md
       - OP 0026 静态接口: proposals/0026-static-interfaces.md
+      - OP 0027 类型化模块: proposals/0027-typed-modules.md
+      - OP 0028 object→core 边界: proposals/0028-object-core-boundary.md
+      - OP 0029 数值语义: proposals/0029-numeric-semantics.md
   - 设计:
       - 设计索引: design/00-INDEX.md
       - 运行时值表示: design/01-runtime-value-representation.md
@@ -123,6 +126,7 @@ nav:
       - 数值语义: design/16-numeric-semantics.md
       - 跨方言边界与 FFI: design/17-boundary-ffi.md
       - 类型化 ADT（S4）: design/18-typed-adt.md
+      - 类型化模块 ABI: design/19-typed-module-abi.md
   - 实现:
       - 实现笔记: implementation/index.md
       - 参考资料: implementation/00-references.md

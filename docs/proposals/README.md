@@ -25,8 +25,8 @@
 | [0001](0001-feature-layers-and-dialects.md) | 特性分层与语言方言（防止 C++ 化） | Accepted |
 | [0002](0002-dsl-support.md) | 嵌入式 DSL 支持 | Proposed |
 | [0003](0003-grammar-cleanup.md) | 文法清理与语义收紧 | Implemented |
-| [0004](0004-bytecode-vm.md) | 字节码虚拟机（重新实现） | Accepted（第一切片实现中） |
-| [0005](0005-type-system.md) | 类型系统、泛型、ADT 与模式匹配 | Draft |
+| [0004](0004-bytecode-vm.md) | 字节码虚拟机（重新实现） | Implemented |
+| [0005](0005-type-system.md) | 类型系统、泛型、ADT 与模式匹配 | Accepted（部分实现） |
 | [0006](0006-modules-and-imports.md) | 模块与导入系统 | Implemented |
 | [0007](0007-oort-object-object-model.md) | `oort-object` 动态对象模型 | Implemented |
 | [0008](0008-lexer-postprocessing-and-repl.md) | 词法后处理层与 REPL 重构 | Implemented |
@@ -44,10 +44,13 @@
 | [0020](0020-diagnostic-quality.md) | 诊断消息质量（词法分类、定界符诊断，效仿 Python） | Implemented |
 | [0021](0021-float-integer-part.md) | 浮点字面量要求整数部分（禁止 `.5`） | Implemented |
 | [0022](0022-generic-adts.md) | 泛型 ADT 与内建 `Option`/`Result` | Implemented |
-| [0023](0023-full-pattern-matching.md) | 完整模式匹配（字面量/元组/或/守卫/嵌套穷尽性） | Accepted（语义切片已实现） |
+| [0023](0023-full-pattern-matching.md) | 完整模式匹配（字面量/元组/或/守卫/嵌套穷尽性） | Implemented（决策树待做） |
 | [0024](0024-adt-and-slot-equality.md) | ADT 相等与槽对象相等 | Implemented |
 | [0025](0025-static-object-model.md) | 静态对象模型：单继承与跨模块类型标注 | Implemented |
 | [0026](0026-static-interfaces.md) | 静态接口：显式契约、多接口实现与接口继承 | Implemented |
+| [0027](0027-typed-modules.md) | `oort-core` typed modules 与模块 ABI | Draft |
+| [0028](0028-object-core-boundary.md) | object → core 跨方言边界 | Proposed（B1 原型已实现） |
+| [0029](0029-numeric-semantics.md) | Int / Float 数值语义 | Accepted（D1–D6 已定） |
 
 ## 流程
 
@@ -91,6 +94,10 @@
 | 2026-11-20 | core 同方言模块导入：`import` / `from`、模块命名空间只读、导出顶层名字与再导出、编译期循环检测；仍拒绝 object↔core 与 native 导入 | [OP 0017](0017-oort-core-thin-probe.md)（Implemented） |
 | 2026-11-21 | core 单态 ADT 第一切片：模块顶层 `enum`、构造器、`match`、`_`/绑定/嵌套构造器模式、顶层构造器穷尽性；泛型 ADT、`Option[T]`/`Result[T,E]`、字面量/守卫/或模式与嵌套穷尽性留后 | [OP 0017](0017-oort-core-thin-probe.md)（Implemented） |
 | 2026-11-21 | core 函数类型与函数值：`(Int, Bool) -> Int` 注解、显式参数 lambda、函数值/高阶函数；匿名/泛型/默认值 lambda 拒绝；expected-type 下推到 if/块/match 与实参 | [OP 0017](0017-oort-core-thin-probe.md)（Implemented） |
+| 2026-11-23 | object→core 导入由 B1 边界支持；core→object 仍拒绝；边界规范见 OP 0028 | [OP 0028](0028-object-core-boundary.md)（Proposed） |
+| 2026-11-23 | Int 任意精度、Float binary64、混合比较精确、Float 显示对齐 Python；Rust i64 仅为 spike | [OP 0029](0029-numeric-semantics.md)（Accepted） |
+| 2026-11-23 | typed core 模块进入 module artifact/loader 设计；P1a/P1b 先以编译期 linker 过渡 | [OP 0027](0027-typed-modules.md)（Draft） |
+| 2026-11-23 | Dict 插入顺序仅作为实现特性，不是语言保证；Set 顺序未定义 | [spec 09](../spec/09-iterators.md) |
 
 ## 设计原则（所有提案必须满足）
 

@@ -4,7 +4,8 @@
 > prelude `Option`）已进入 typed HIR / kind=1 v6 / Python typed VM / Rust typed
 > VM；泛型实例类型参数已保留，字面量/Tuple/或模式已支持。**不改变语言表面**。
 >
-> 关联：[design 15](15-typed-ir.md) 的 S4 扩展；[design 03](03-type-system-design.md)
+> 关联：[OP 0027](../proposals/0027-typed-modules.md) 的 typed modules、
+> [design 19](19-typed-module-abi.md) 的模块 ABI；[design 15](15-typed-ir.md) 的 S4 扩展；[design 03](03-type-system-design.md)
 > 的泛型表示；[design 14](14-core-typechecking.md) 的 ADT 检查；[spec 14](../spec/14-typed-bytecode.md)
 > 的 typed 字节码格式；[design 16](16-numeric-semantics.md) 的值相等语义。
 
@@ -350,6 +351,9 @@ S4b 原型的限制与备注：
 - 跨模块 ADT、边界转换仍留后续。
 
 ## 11.2 P1 类型化模块链接（2026-11-23）
+
+> 模块语义/ABI 的正式提案见 [OP 0027](../proposals/0027-typed-modules.md)；
+> artifact/loader 设计见 [design 19](19-typed-module-abi.md)。
 
 第一个 P1 切片支持 core→core 的 `from "./lib" import f` 和
 `import "./lib"` 的函数访问：

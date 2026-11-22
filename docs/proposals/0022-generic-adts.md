@@ -237,7 +237,8 @@ Type parameter defaults are not supported in oort-core yet.
 - **`.obc`**：格式不变（spec 13）；逐字节 round-trip 测试不受影响。
 - **运行时**：解释器与 VM 的 `EnumDef`/`BuildEnum` 不读类型参数；构造器名 +
   payload 即全部语义。
-- **边界擦除**：跨方言导入仍显式拒绝；未来 trampoline 落地时，泛型实参不越过
+- **边界擦除**：当时跨方言导入显式拒绝；B1 object→core 见 OP 0028；未来
+  trampoline 落地时，泛型实参不越过
   边界，动态侧只看到不透明 ADT 值（tag + payload）。本切片**不做** reified
   泛型或运行时类型实参。
 

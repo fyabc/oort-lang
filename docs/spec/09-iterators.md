@@ -57,7 +57,7 @@ for value in Countdown(3) { print(value) }   # 3 2 1
 | List | 元素 |
 | Tuple | 元素 |
 | Set | 元素（顺序未定义） |
-| Dict | 键 |
+| Dict | 键（顺序未定义；实现当前通常保持插入顺序） |
 | String | 字符 |
 
 - 迭代器在创建时快照；循环期间修改容器不影响当前循环。

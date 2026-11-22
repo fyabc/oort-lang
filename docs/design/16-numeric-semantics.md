@@ -3,7 +3,8 @@
 > **状态**：设计决策（2026-11-22，D1–D6 已定；实现随 M4 U1 推进）。
 > 本文定义语义与实现约束，不改变当前已实现的行为；
 > [spec 11](../spec/11-core-probe.md) 仍是已实现行为的规范。
-> 关联：[design 01](01-runtime-value-representation.md) 的整数阶梯、
+> 关联：[OP 0029](../proposals/0029-numeric-semantics.md)、
+> [design 01](01-runtime-value-representation.md) 的整数阶梯、
 > [design 15](15-typed-ir.md) 的 typed 字节码与 M4、[spec 13](../spec/13-bytecode-serialization.md)
 > 的常量编码。
 

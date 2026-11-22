@@ -156,7 +156,8 @@ class RankedPoint < Point, Comparable, Named {
 
 - 本切片接口只在 `oort-core` 可用；`oort-object` 中出现 `interface` 声明报
   `Interfaces are only supported in oort-core yet.`。
-- 跨方言导入仍被拒绝；接口不会成为 FFI 边界的一部分。
+- 当时跨方言导入被拒绝；B1 object→core 见 OP 0028；接口不会成为 FFI
+  边界的一部分。
 
 ### 8. 诊断
 
