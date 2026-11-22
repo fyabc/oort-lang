@@ -34,9 +34,10 @@ source
 
 - `PrimitiveType("Int"|"Float"|"Bool"|"String"|"Unit")`；
 - `ListType`/`SetType`/`DictType`/`TupleType`：结构相等的集合类型；
-- `ClassType(origin, name, slots, methods)`：名义相等，槽/方法在注册后填充；
+- `ClassType(origin, name, slots, methods, bases)`：名义相等，槽/方法/基类在注册
+  后填充；`mro`/`slot`/`method`/`all_slots` 实现单继承查找；
 - `SlotInfo(name, slot_type, mutable, has_initializer)`；
-- `FunctionType(params, ret)`、`ModuleType(name, exports)`；
+- `FunctionType(params, ret)`、`ModuleType(name, exports, type_exports)`；
 - `AdtTemplate(origin, name, params, constructors)`：enum 声明（类型构造器），
   `constructors` 在声明注册后填充，以支持自递归 payload；
 - `AdtType(template, args)`：应用后的类型（`Option[Int]`）；名义相等看
@@ -86,11 +87,16 @@ source
   （Tuple 可异构）；空字面量用期望类型；下标、`len`、集合相等。
 - 循环：`while` 条件 Bool；`for` 遍历 List/Set/Dict 键/String/同质 Tuple；
   循环变量单目标且不可变；`break`/`continue` 走 `Never`，`break value` 拒绝。
-- 类：两遍处理——先收集槽/方法签名并注册 `ClassType`，再检查槽初始化器与
-  方法体；方法体作用域绑定 `this: ClassType`；槽赋值按 `val`/`var` 检查。
+- 类：先解析并注册基类（`bases`），再收集槽/方法签名并注册 `ClassType`，最后
+  检查槽初始化器与方法体；方法体作用域绑定 `this: ClassType`；槽赋值按
+  `val`/`var` 检查。继承槽禁止重声明；方法覆盖参数精确、返回协变；`super`
+  通过 `visit_attribute` 特殊解析（不新增静态值类型）。
 - 构造器确定赋值：`semantics/core/definite_assignment.py` 用 (definite, maybe)
   集合分析 `__init__`，处理分支交集、循环保守、提前 return、赋值前读取与
-  `val` 单次赋值；运行时另有槽初始化与缺失槽兜底。
+  `val` 单次赋值；`SlotFact.from_base` 纳入继承槽，`super.__init__(...)` 视为
+  初始化基类未赋值槽。运行时另有槽初始化与缺失槽兜底。
+- 子类型：`is_assignable` 对类沿 `bases` 判定，`join_types` 取最近公共基类；
+  函数类型参数逆变、返回协变。
 - `print`：特殊内建，返回 Unit；用户绑定优先；ADT 值可打印，函数值不可打印。
 - expected-type 传播：标注、赋值、返回、函数体与调用实参的期望类型会下推到
   `if` 分支、块最后表达式和 `match` arm；不匹配时定位到具体分支/实参。
@@ -234,7 +240,10 @@ Checker.visit_import -> Compiler._resolve_core_module
   命名空间分离）。
 - `tests/integration/test_core_cross_module.py`：跨模块类/enum/泛型 enum 标注、
   `from` 类双命名空间导入、enum type-only 拒绝、缺失/非法类型导出、两个后端
-  的跨模块类执行。
+  的跨模块类执行与跨模块基类。
+- `tests/unit/frontend/test_core_inheritance.py`：槽/方法继承、`super`、
+  子类型赋值、覆盖协变、继承槽确定赋值、无 `__init__` 派生类规则与误用拒绝；
+  `test_core_types.py` 覆盖类子类型、LUB、槽/方法查找与函数参数逆变。
 - `tests/unit/frontend/test_core_checker.py`：正向/拒绝/错误恢复矩阵。
 - `tests/unit/frontend/test_analyzer_dispatch.py`：分析器选择。
 - `tests/unit/runtime/test_core_execution.py`：检查后执行与 Unit/null 映射。

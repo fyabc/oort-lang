@@ -73,6 +73,8 @@
 - 顶层 `enum`：单态、非空；构造器与字段；字段类型为 Int/Float/Bool/String/本地 enum。
 - 顶层 `class`：固定 `val`/`var` 槽（标注）、方法、`__init__`；无继承/元类/
   类方法/运算符方法。槽初始化器在构造时、`__init__` 前按声明顺序求值。
+  （后续 [OP 0025](0025-static-object-model.md) 增量 B 已加入单继承与 `super`；
+  本条描述探针第一切片。）
 - 构造器确定赋值：无初始化器的槽必须在 `__init__` 所有落空路径赋值；
   赋值前读取、提前 return、分支遗漏均报错；`val` 只读且最多赋值一次。
 - 函数体、块、`if`/`else`、`match`、表达式语句、`return`。
@@ -157,7 +159,8 @@ lambda、嵌套/泛型/运算符定义、`yield`/`await`、宏、编译器属性
 - ~~函数返回类型推断~~（2026-11-22 已实现顶层 def + lambda + 类方法，递归仍需
   标注，类方法按依赖序推断，见 [design 14](../design/14-core-typechecking.md)）；
   更强的 expected-type 传播仍待做。
-- null、类继承/元类、泛型 ADT/HKT、`Option[T]`/`Result[T,E]`。
+- null、类继承/元类、泛型 ADT/HKT、`Option[T]`/`Result[T,E]`。（类单继承已由
+  OP 0025 增量 B 实现；多继承/接口仍未。）
 - 集合切片/原地修改、`in`、排序、惰性视图。
 - 字面量/元组/列表/守卫/或模式、嵌套穷尽性、ADT 相等与迭代。
 - 跨方言 FFI trampoline/blame；更完整的模块接口版本管理与增量编译。

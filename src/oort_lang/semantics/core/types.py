@@ -124,14 +124,16 @@ class SlotInfo:
 class ClassType(Type):
     """A nominal static class with fixed slots and methods.
 
-    Equality and hashing use `(origin, name)` only; slots and methods are
-    filled after the declaration is registered so recursive types work.
+    Equality and hashing use `(origin, name)` only; slots, methods and bases
+    are filled after the declaration is registered so recursive types work.
+    Single inheritance is represented by at most one entry in ``bases``.
     """
 
     origin: str
     name: str
     slots: tuple[SlotInfo, ...] = ()
     methods: tuple[tuple[str, FunctionType], ...] = ()
+    bases: tuple[ClassType, ...] = ()
 
     def __eq__(self, other: object) -> bool:
         return (
@@ -144,17 +146,42 @@ class ClassType(Type):
     def __repr__(self) -> str:
         return f"<ClassType {self.name!r} @ {self.origin!r}>"
 
+    def mro(self) -> tuple[ClassType, ...]:
+        """This class followed by its single-inheritance ancestor chain."""
+        chain: list[ClassType] = []
+        seen: set[tuple[str, str]] = set()
+        current: ClassType | None = self
+        while current is not None and (current.origin, current.name) not in seen:
+            chain.append(current)
+            seen.add((current.origin, current.name))
+            current = current.bases[0] if current.bases else None
+        return tuple(chain)
+
+    def is_subclass_of(self, other: ClassType) -> bool:
+        return other in self.mro()
+
     def slot(self, name: str) -> SlotInfo | None:
-        for slot in self.slots:
-            if slot.name == name:
-                return slot
+        """Look up a slot on this class or an ancestor; derived classes win."""
+        for class_type in self.mro():
+            for slot in class_type.slots:
+                if slot.name == name:
+                    return slot
         return None
 
     def method(self, name: str) -> FunctionType | None:
-        for method_name, method_type in self.methods:
-            if method_name == name:
-                return method_type
+        """Look up a method on this class or an ancestor; overrides win."""
+        for class_type in self.mro():
+            for method_name, method_type in class_type.methods:
+                if method_name == name:
+                    return method_type
         return None
+
+    def all_slots(self) -> tuple[SlotInfo, ...]:
+        """Inherited slots in base-to-derived declaration order."""
+        slots: list[SlotInfo] = []
+        for class_type in reversed(self.mro()):
+            slots.extend(class_type.slots)
+        return tuple(slots)
 
 
 @dataclasses.dataclass(eq=False, slots=True)
@@ -316,8 +343,10 @@ def is_assignable(expected: Type, actual: Type) -> bool:
     if isinstance(expected, FunctionType) and isinstance(actual, FunctionType):
         return (
             len(expected.params) == len(actual.params)
+            # Function parameters are contravariant: the provided function
+            # must accept everything the expected signature can pass it.
             and all(
-                is_assignable(expected_param, actual_param)
+                is_assignable(actual_param, expected_param)
                 for expected_param, actual_param in zip(expected.params, actual.params)
             )
             and is_assignable(expected.ret, actual.ret)
@@ -343,7 +372,7 @@ def is_assignable(expected: Type, actual: Type) -> bool:
                 return False
         return True
     if isinstance(expected, ClassType) and isinstance(actual, ClassType):
-        return expected == actual
+        return actual.is_subclass_of(expected)
     if isinstance(expected, ForallType) and isinstance(actual, ForallType):
         return expected == actual
     return False
@@ -369,6 +398,12 @@ def join_types(left: Type, right: Type) -> Type | None:
                 return None
             joined_args.append(joined)
         return AdtType(left.template, tuple(joined_args))
+    if isinstance(left, ClassType) and isinstance(right, ClassType):
+        if left.is_subclass_of(right):
+            return right
+        if right.is_subclass_of(left):
+            return left
+        return None
     return None
 
 

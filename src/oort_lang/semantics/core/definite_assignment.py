@@ -28,6 +28,8 @@ class SlotFact:
     mutable: bool
     has_initializer: bool
     position: SourcePosition
+    # Inherited slots can be initialized by `super.__init__(...)`.
+    from_base: bool = False
 
 
 @dataclasses.dataclass(slots=True)
@@ -85,6 +87,11 @@ class DefiniteAssignmentAnalyzer:
             return state
         if isinstance(node, nodes.Assignment):
             return self._assignment(node, state)
+        if isinstance(node, nodes.Call) and self._is_super_init_call(node):
+            next_state = self._children(node, state)
+            if next_state is None:
+                return None
+            return self._mark_base_initialized(next_state, node.position)
         if isinstance(node, nodes.IfExpr):
             return self._if(node, state)
         if isinstance(node, nodes.MatchExpr):
@@ -125,6 +132,9 @@ class DefiniteAssignmentAnalyzer:
                 return state
             return self._expr(node.value, state)
 
+        return self._children(node, state)
+
+    def _children(self, node: nodes.ASTNode, state: AssignState) -> AssignState | None:
         for _, child in node.named_children():
             if child is None:
                 continue
@@ -132,6 +142,31 @@ class DefiniteAssignmentAnalyzer:
             if next_state is None:
                 return None
             state = next_state
+        return state
+
+    @staticmethod
+    def _is_super_init_call(node: nodes.Call) -> bool:
+        func = node.func
+        return (
+            isinstance(func, nodes.Attribute)
+            and isinstance(func.value, nodes.ImplicitSuperExpr)
+            and func.attribute == "__init__"
+        )
+
+    def _mark_base_initialized(self, state: AssignState, position: SourcePosition) -> AssignState:
+        """`super.__init__(...)` initializes inherited slots that lack initializers."""
+        for slot in self.slots.values():
+            if not slot.from_base or slot.has_initializer:
+                continue
+            if not slot.mutable and slot.name in state.maybe:
+                self.report(
+                    f"Read-only slot '{slot.name}' may already be assigned; "
+                    "it can be assigned only once.",
+                    position,
+                )
+                continue
+            state.definite.add(slot.name)
+            state.maybe.add(slot.name)
         return state
 
     def _assignment(self, node: nodes.Assignment, state: AssignState) -> AssignState | None:

@@ -6,14 +6,17 @@ from oort_lang.semantics.core.types import (
     BOOL,
     INT,
     NEVER,
+    STRING,
     UNIT,
     UNKNOWN,
     AdtTemplate,
     AdtType,
+    ClassType,
     ConstructorInfo,
     FunctionType,
     ListType,
     ModuleType,
+    SlotInfo,
     TypeParameterType,
     UnknownType,
     Variance,
@@ -187,3 +190,40 @@ def test_unify_binds_and_detects_conflicts():
     mismatch = unify(list_param, INT, bindings)
     assert mismatch is not None
     assert mismatch.kind == "mismatch"
+
+
+def _class(name: str, bases: tuple[ClassType, ...] = ()) -> ClassType:
+    return ClassType("main.ort", name, bases=bases)
+
+
+def test_class_subtyping_and_join():
+    base = _class("Base")
+    derived = _class("Derived", (base,))
+    assert derived.is_subclass_of(base)
+    assert not base.is_subclass_of(derived)
+    assert is_assignable(base, derived)
+    assert not is_assignable(derived, base)
+    assert join_types(base, derived) is base
+    assert join_types(derived, base) is base
+    assert join_types(derived, _class("Other")) is None
+
+
+def test_inherited_slot_and_method_lookup():
+    base = _class("Base")
+    base.slots = (SlotInfo("id", INT, False, True),)
+    base.methods = (("describe", FunctionType((), STRING)),)
+    derived = _class("Derived", (base,))
+    derived.slots = (SlotInfo("extra", BOOL, True, False),)
+    derived.methods = (("describe", FunctionType((), BOOL)),)
+    assert derived.slot("id") == base.slots[0]
+    assert derived.slot("extra") == derived.slots[0]
+    assert derived.method("describe") == derived.methods[0][1]
+    assert derived.all_slots() == (base.slots[0], derived.slots[0])
+
+
+def test_function_parameters_are_contravariant():
+    base = _class("Base")
+    derived = _class("Derived", (base,))
+    assert is_assignable(FunctionType((derived,), INT), FunctionType((base,), INT))
+    assert not is_assignable(FunctionType((base,), INT), FunctionType((derived,), INT))
+    assert is_assignable(FunctionType((base,), base), FunctionType((base,), derived))

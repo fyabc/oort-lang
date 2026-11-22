@@ -2,8 +2,8 @@
 
 本页描述 `#lang oort-core` 当前**已实现**的最小静态子集。它不是完整的
 `oort-core` v1：已实现 Int/Float/Bool/String、集合与循环、函数、泛型 ADT
-（`enum E[T]`，含声明处变型）、内建 `Option`/`Result` 与 `match`、静态类
-与固定槽，但跨方言 FFI 尚未实现。
+（`enum E[T]`，含声明处变型）、内建 `Option`/`Result` 与 `match`、静态类、
+单继承与固定槽，但跨方言 FFI 尚未实现。
 设计取舍见 [OP 0017](../proposals/0017-oort-core-thin-probe.md) 与
 [OP 0022](../proposals/0022-generic-adts.md)。
 
@@ -36,7 +36,7 @@ print(add(1, 2))
 | `enum` 类型 | 参数、变量、返回值、字段类型；单态 `Shape` 或泛型 `Option[Int]`，本模块内名称唯一 |
 | 内建 ADT | `Option[T]`（`Some`/`None`）与 `Result[T,E]`（`Ok`/`Err`）；每个 core 模块隐式可用 |
 | 集合类型 | `List[T]`、`Set[T]`、`Dict[K, V]`、`Tuple[T1, ...]`；参数/变量/返回值/字段 |
-| 类类型 | 类名；参数、变量、返回值、槽类型；名义相等 |
+| 类类型 | 类名；参数、变量、返回值、槽类型；名义子类型（单继承） |
 | 跨模块类型 | `m.Shape`、`m.Color`、`m.Tree[Int]`；仅类型标注，检查后擦除 |
 | 函数类型 | `Int -> Bool`、`(Int, Bool) -> Int`、`() -> Unit`；参数/变量/返回值/字段 |
 
@@ -232,10 +232,14 @@ class Point {
 }
 ```
 
-- `class` 只能声明在模块顶层；第一切片不支持继承、元类、泛型类、类方法、
-  运算符方法与扩展方法，类体只允许槽（`val`/`var`）和方法声明。
-- 槽是**固定布局**：每个槽必须在类体中声明且带类型标注；给未声明槽或方法
-  赋值会报错，不存在动态字段。
+- `class` 只能声明在模块顶层；支持**单继承**（至多一个基类），不支持元类、
+  泛型类、类方法、运算符方法与扩展方法，类体只允许槽（`val`/`var`）和方法
+  声明。多基类显式拒绝。
+- 基类必须是此前已声明的类（本模块或导入模块均可），不能是 enum/集合/标量，
+  也不支持自继承或前向引用。
+- 槽是**固定布局**：每个槽必须在类体中声明且带类型标注；子类不能重新声明
+  基类槽，槽名也不能与继承来的方法同名；给未声明槽或方法赋值会报错，
+  不存在动态字段。
 - 槽初始化器可选；有初始化器的槽在**每个实例**构造时、`__init__` 之前按
   声明顺序求值（无继承时就是类体顺序）。初始化器不能引用 `this`。
 - `var` 槽可在任意方法中赋值；`val` 槽只能由初始化器赋值，或在 `__init__`
@@ -249,8 +253,41 @@ class Point {
   [design 14](../design/14-core-typechecking.md)）；**递归环上的方法需显式返回
   标注**。`this` 的类型是当前类。方法可读取槽、调用其他方法、返回 `this`，
   方法引用可作为函数值传递。
+- **继承**：`class Derived < Base`；子类沿基类链继承槽与方法。方法可覆盖基类
+  方法：参数类型必须与基类完全一致，返回类型可协变（子类返回基类返回的子类型）。
+  不加 `override`/`open` 关键字。
+- `super.method(...)` 从基类开始查找方法（跳过当前类覆盖）；
+  `super.__init__(...)` 只允许在子类 `__init__` 中，按基类构造器签名检查参数。
+  基类不存在或无该方法、把 `super` 当普通值时均报错。
+- 派生类 `__init__` 必须初始化基类中**没有初始化器**的槽，可通过
+  `super.__init__(...)` 或直接赋值；确定赋值分析把继承槽纳入，并把
+  `super.__init__` 视为已初始化这些槽。无 `__init__` 的派生类要求继承槽都有
+  初始化器，且继承的构造器不接受参数（否则请显式写 `__init__`）。
+- **子类型**：`Derived` 可赋给 `Base`（反向不可）；`if`/分支合并到最近的
+  公共基类；函数参数逆变、返回协变。类实例仍按身份相等/作键，子类型不改变
+  哈希身份。
 - 类实例按**身份**相等（`a == a` 为真，不同实例为假），可用于容器与 Dict/Set 键；
   类实例仍不可打印。类类型可用于参数/变量/返回值与槽类型。
+
+```oort
+class Base {
+    val id: Int
+    def __init__(id: Int) { this.id = id }
+    def describe() -> String { "base" }
+}
+
+class Derived < Base {
+    val extra: Int
+    def __init__(id: Int, extra: Int) {
+        super.__init__(id)
+        this.extra = extra
+    }
+    def describe() -> String { super.describe() + "+derived" }
+}
+
+val d: Base = Derived(1, 2)
+print(d.describe())          # base+derived（运行时派发到 Derived）
+```
 
 ## ADT（`enum`）与 `match`
 
@@ -358,8 +395,8 @@ def at_origin(p: Tuple[Int, Int]) -> Bool {
   保持协变；嵌套 ADT 按其实参的声明变型复合，不变型实参使出现位置变为不变。
   `out T` 只能出现在协变位置，`in T` 只能逆变；违反时定位到字段：
   `Type parameter 'T' is declared covariant ('out') but appears in a
-  contravariant position in constructor 'B'.` 当前没有子类型（无继承/接口/顶
-  类型），变型关系尚不可观察，但检查已启用，为后续对象模型预置健全性。
+  contravariant position in constructor 'B'.` 类单继承落地后，变型关系在
+  类实参之间可观察；接口仍未实现。
 - **类型应用**：`Option[Int]`、`Pair[Int, String]`，可嵌套（`Option[List[Int]]`）；
   实参个数必须匹配；裸 `Option` 报“requires N type argument(s)”；单态 enum
   不接受实参。
@@ -410,7 +447,12 @@ enum Result[out T, out E] {
 
 | 类别 | 示例 | 诊断 |
 |------|------|------|
-| 类继承/元类/泛型类 | `class B < A`、`class C :: M`、`class C[T]` | 对应 "not supported" 诊断 |
+| 多基类/元类/泛型类 | `class C < A, B`、`class C :: M`、`class C[T]` | 对应 "not supported / single base" 诊断 |
+| 非类基类/自继承/前向基类 | `class D < E`（E 为 enum）、`class D < D`、`class D < Later` | `Base class must be a class type...` / `Unknown type...` |
+| 继承槽冲突 | 子类重声明基类槽、槽与方法同名 | `Slot ... already declared in base class` / `... conflicts with inherited ...` |
+| 覆盖签名 | 参数不同、返回不是基类返回的子类型 | `Overriding method ... must use the base parameter types` / `... must return ...` |
+| 未初始化继承槽 | 派生类 `__init__` 不赋值/不调用 `super.__init__` | `Constructor must initialize slot(s)...` |
+| `super` 误用 | 无基类、基类无方法、`super.__init__` 不在 `__init__` | 对应 `super ...` 诊断 |
 | 类方法/运算符方法 | `def class.f`、类体内 `def operator` | `Only plain instance methods...` |
 | 类体其他语句 | 类体中的 `print(1)` | `Only slot and method declarations...` |
 | 槽未标注/重名 | `val x = 1`、重复成员 | `Slot ... requires a type annotation` / 重复诊断 |
@@ -485,5 +527,5 @@ print(x)          # 1
 
 ## 尚未实现
 
-null、类继承与元类、泛型类/函数/lambda、匿名 $n lambda、跨方言 FFI、
-REPL 方言切换。
+null、多继承/接口/属性访问器、元类、泛型类/函数/lambda、匿名 $n lambda、
+跨方言 FFI、REPL 方言切换。

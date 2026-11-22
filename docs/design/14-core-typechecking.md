@@ -43,7 +43,7 @@ Dunfield & Krishnaswami 的 *bidirectional typing* 综述都支持「局部双�
 - `PrimitiveType`：`Int`/`Float`/`Bool`/`String`/`Unit`；
 - 集合：`ListType`/`SetType`/`DictType`/`TupleType`（结构相等）；
 - `FunctionType(params, ret)`（frozen）、`ClassType`/`AdtType`（名义相等，
-  注册后填充以支持递归）、`ModuleType`；
+  注册后填充以支持递归；`ClassType.bases` 表示单继承，见 §11）、`ModuleType`；
 - **`UnknownType`**：错误恢复类型，与任何类型双向兼容（`is_assignable` 恒真），
   用于抑制级联诊断；
 - **`NeverType`**：底类型（bottom），表示不能正常落到的表达式（`return`、
@@ -52,19 +52,20 @@ Dunfield & Krishnaswami 的 *bidirectional typing* 综述都支持「局部双�
 两个关键运算：
 
 - `is_assignable(expected, actual)`：Unknown 双向兼容；Never 可赋给任何类型；
-  其余 Primitive **严格相等，无 Int→Float 提升**；函数类型逐参数/返回递归比较。
+  其余 Primitive **严格相等，无 Int→Float 提升**；类沿 `bases` 判定名义子类型；
+  函数类型参数**逆变**、返回**协变**；ADT 按声明处变型逐参比较。
 - `join_types(left, right)`：分支/返回类型的最小上界（LUB）。Unknown 吸收一切、
-  Never 是单位元、相等取自身、**其余（含 Int/Float）返回 None 表示不兼容**。
-  不做数值提升、不做子类型 join——混合分支报错而非隐式转换。
+  Never 是单位元、相等取自身、同类沿基类链取最近公共祖先；**没有公共上界的
+  组合（含 Int/Float）返回 None**。不做数值提升——混合分支报错而非隐式转换。
 
 ### 为什么 join 不合并到 Object？
 
 直觉上 `if c { 1 } else { "s" }` 类似乎可以推成「Object」，但当前刻意不这么做：
 
-- **静态模型没有顶类型，也没有子类型**。类型只有上述那些，没有一个可持有/使用的
-  静态 `Object`/`Any`；`is_assignable` 对 Primitive 是严格相等、对类/ADT 是名义相等，
-  不做子类型判断（运行时虽有 `object_type` 作为类继承的根，但静态检查器不建模它）。
-  没有子类型，「最小上界」就只剩「相等」一种情形，故只能返回 None。
+- **静态模型没有顶类型**。类有名义子类型与基类 LUB，但 Primitive/集合/ADT
+  之间没有统一的静态 `Object`/`Any`；`is_assignable` 对 Primitive 严格相等，
+  对类沿 `bases`，对 ADT 按变型。运行时虽有 `object_type` 作为类继承的根，
+  静态检查器刻意不建模它。没有公共上界的组合只能返回 None。
 - **即便推出 Object 也是死胡同**。静态子集没有向下转型/类型测试/按类型匹配，
   Object 值既不能调 Int 也不能调 String 的方法，什么都做不了；只会把错误从分支处
   推迟到使用处（`v + 1` 才报「Object 不支持 +」），更难定位。在分支处直接报
@@ -216,8 +217,8 @@ payload，解释器与 VM 均不读类型参数。
 `AdtType.variance_at(i)` 复合（协变保持、逆变取反、不变型把极性压成 0）。
 `_variance_violation` 返回第一个非法出现的极性：`out` 要求 +1，`in` 要求 −1，
 0 表示不变位置（对两者都非法）。`is_assignable` 对同模板实参按变型逐参比较
-（协变正向、逆变反向、不变双向）；当前没有子类型，关系实际退化为相等，但
-检查已启用，为继承/接口落地预置健全性。
+（协变正向、逆变反向、不变双向）。类子类型落地后，变型关系在 `Derived` 与
+`Base` 的实参之间可观察；接口仍未实现。
 
 **与内建容器的关系（非显然）**。`List[T]`/`Set[T]`/`Dict[K, V]`/`Tuple[...]`
 **不是**这套模板机制的实例：它们是 `ListType` 等硬编码的结构化静态类型，
@@ -309,9 +310,40 @@ OP 0022 的路径）；非泛型类型加实参、值导出当类型、缺失类
 `.obc` 格式不变。
 
 **与对象模型的关系**。这是 OP 0025 的 A 增量；单继承（`bases`、子类型、
-`super`、函数参数逆变）是 B 增量，接口/访问器仍留后续。
+`super`、函数参数逆变）是 B 增量（见 §11），接口/访问器仍留后续。
 
-## 11. 边界与后续
+## 11. 单继承（OP 0025 增量 B，2026-11-22）
+
+**类型模型**。`ClassType` 增加 `bases: tuple[ClassType, ...]`（本切片至多一个）、
+`mro()` 迭代祖先链、`slot()`/`method()` 沿链查找（方法覆盖由派生类优先）、
+`all_slots()` 基类优先。名义相等仍按 `(origin, name)`；`is_subclass_of` 按
+祖先链。`is_assignable(Base, Derived)`、`join_types` 取最近公共基类；函数参数
+同时改为逆变（有子类型后 `(Derived)->R` 不能赋给 `(Base)->R`）。
+
+**检查顺序**。基类在注册新类**之前**解析，因此自继承/前向基类得到
+`Unknown type`；基类必须是 `ClassType`（enum/集合/标量给专用诊断）。槽在
+派生类中禁止重声明且不得与继承方法同名；方法不得与继承槽同名。
+
+**覆盖**。方法覆盖要求参数元组精确相同；返回允许协变
+（`is_assignable(base_ret, derived_ret)`）。覆盖检查在方法返回推断完成后运行，
+因此未标注返回的派生方法也参与比较。
+
+**构造与确定赋值**。基类槽先按运行时 MRO 执行初始化器；派生类 `__init__` 的
+`SlotFact` 同时包含继承槽（`from_base=True`）和自身槽。继承槽若没有初始化器，
+必须由 `this.slot = ...` 或 `super.__init__(...)` 覆盖；分析器把
+`super.__init__` 调用视为对所有基类未初始化槽赋值（重复调用对只读槽报错）。
+无 `__init__` 的派生类要求继承槽都有初始化器，且禁止继承带参数的构造器
+（运行时 `Class()` 会沿 MRO 调用该构造器，静态构造签名必须一致）。
+
+**`super`**。检查器在 `visit_attribute` 中识别 `super.attr` 的 AST 形态，
+不构造新的静态值类型：`super.method` 查基类方法签名，`super.__init__` 只在
+子类 `__init__` 中合法并按基类 `__init__` 签名检查；slot 访问、无基类、缺方法
+都有专用诊断。HIR/VM 的 `SUPER` 与运行时 MRO 无需改动。
+
+**与对象模型其余部分**。多继承、接口、属性访问器仍显式拒绝；类实例身份相等
+和键语义不变。
+
+## 12. 边界与后续
 
 - **决策树编译 / 对象模型 / FFI 边界**：OP 0005/0023 后续切片，建立在本文的
   双向检查 + 局部推断基线上。

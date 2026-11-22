@@ -2002,11 +2002,11 @@ class TestCoreClasses:
         )
         assert result.stdout == "1 2\n"
 
-    def test_inheritance_is_rejected(self, caplog):
+    def test_multiple_bases_are_rejected(self, caplog):
         check_error(
             caplog,
-            "class A {}\nclass B < A {}\n",
-            "Class inheritance is not supported",
+            "class A {}\nclass B {}\nclass C < A, B {}\n",
+            "Only a single base class is supported",
         )
 
     def test_metaclass_is_rejected(self, caplog):

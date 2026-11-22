@@ -1,6 +1,6 @@
 # OP 0025: 静态对象模型——单继承与跨模块类型标注
 
-- **状态**：Draft（增量 A 已实现；增量 B 单继承待实现）
+- **状态**：Implemented（2026-11-22，增量 A/B）
 - **作者**：fyabc
 - **创建日期**：2026-11-22
 - **相关提案**：[OP 0005](0005-type-system.md)（类型系统主线）、
@@ -217,7 +217,9 @@ class Derived < Base {
 - 派生类 `__init__` 若基类存在未初始化槽，必须通过 `super.__init__(...)`
   或直接赋值覆盖；确定赋值分析纳入继承槽，并把 `super.__init__(...)`
   视为“已初始化基类未赋值槽”（基类 `__init__` 自身已通过检查）。
-- 无 `__init__` 的派生类：基类槽必须全部有初始化器，否则报错。
+- 无 `__init__` 的派生类：基类槽必须全部有初始化器，否则报错；若继承的
+  构造器带参数，也要求显式声明 `__init__`（运行时 `Class()` 会沿 MRO 调用
+  继承构造器，静态构造签名必须一致）。
 - `super.__init__(...)` 只允许在派生类 `__init__` 中；参数按基类
   `__init__` 签名检查。
 
@@ -249,8 +251,8 @@ class Derived < Base {
 
 ### 4. 子类型引入后的必要修正
 
-当前 `is_assignable` 对函数参数是**协变**比较（没有子类型时等价于相等）。
-一旦类出现子类型，必须改为：
+本提案落地前 `is_assignable` 对函数参数是**协变**比较（没有子类型时等价于
+相等）。引入类子类型后已改为：
 
 - 参数：**逆变**（`is_assignable(actual_param, expected_param)`）；
 - 返回：协变（`is_assignable(expected_ret, actual_ret)`）。
@@ -330,9 +332,10 @@ class Derived < Base {
    `_resolve_container_type` 支持 `m.Tree[...]`；`from` 导入 enum 类型名给
    专用诊断；值上下文仍走值导出；诊断与测试。实现说明见
    [design 14 §10](../design/14-core-typechecking.md)。
-2. **B 单继承**：`ClassType.bases`、MRO 查找、子类型/`join_types`；
-   `visit_class_def` 单基类、槽禁止遮蔽、覆盖检查；`super` 类型与调用；
-   确定赋值纳入继承槽与 `super.__init__`；函数参数逆变修正。
+2. **B 单继承（已实现，2026-11-22）**：`ClassType.bases`、MRO 查找、
+   子类型/`join_types`；`visit_class_def` 单基类、槽禁止遮蔽、覆盖检查；
+   `super` 类型与调用；确定赋值纳入继承槽与 `super.__init__`；函数参数逆变
+   修正。实现说明见 [design 14 §11](../design/14-core-typechecking.md)。
 3. **C 后端验证**：eval/vm 差分（继承槽初始化、super init/method、覆盖、
    跨模块基类）；`.obc` round-trip 不变。
 4. **D 文档/测试**：spec 05/07/11/06、design 04/14、implementation 09、
@@ -344,9 +347,8 @@ class Derived < Base {
   `m.E`，未来可加。
 - 类型再导出：`from "./a" import Shared` 后，模块 `m` 是否能把 `Shared` 作为
   类型再导出？本切片暂不做。
-- 方法覆盖是否要求返回类型**精确相同**（更简单）还是允许协变（本提案倾向
-  协变）。
-- `super.__init__` 视为初始化基类槽的确定赋值规则是否足够（基类 `__init__`
-  可能通过条件分支初始化，但自身检查已保证所有路径）。
+- ~~方法覆盖是否要求返回类型精确相同还是允许协变~~（已决：参数精确、返回协变）。
+- ~~`super.__init__` 视为初始化基类槽的确定赋值规则是否足够~~（已实现：基类
+  `__init__` 自身已通过全路径检查）。
 - 接口的语法（`interface` 关键字 vs 基类列表 vs `implements`）与运行期表示。
 - 属性访问器的语法（Kotlin 风格 `get()`/`set()` vs 独立 `def name`）。

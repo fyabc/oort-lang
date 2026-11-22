@@ -1,0 +1,74 @@
+#lang oort-core
+
+# 静态单继承（OP 0025 增量 B）：
+# - 一个类至多一个基类；子类继承槽与方法，并可覆盖方法。
+# - `super.__init__(...)` 调用基类构造器，`super.method(...)` 跳过本类覆盖，
+#   从基类开始查找。
+# - 子类可赋给基类类型（名义子类型）；`if` 两分支也会合并到最近的公共基类。
+# - 槽是固定布局：子类不能重新声明基类槽，也不能与继承来的方法重名。
+
+class Shape {
+    val name: String
+    var kind: String = "shape"
+
+    def __init__(name: String) {
+        this.name = name
+    }
+
+    def describe() -> String {
+        this.kind
+    }
+
+    def area() -> Int {
+        0
+    }
+}
+
+class Rect < Shape {
+    val width: Int
+    val height: Int
+
+    def __init__(name: String, width: Int, height: Int) {
+        # 基类槽 name 没有初始化器，必须通过 super.__init__ 或直接赋值覆盖。
+        super.__init__(name)
+        this.width = width
+        this.height = height
+    }
+
+    def describe() -> String {
+        # 从 Rect 的基类（Shape）开始查找 describe，跳过本类覆盖。
+        super.describe() + "+rect"
+    }
+
+    def area() -> Int {
+        this.width * this.height
+    }
+}
+
+class Square < Rect {
+    def __init__(name: String, side: Int) {
+        # 多级 super：Square -> Rect -> Shape。
+        super.__init__(name, side, side)
+    }
+
+    def describe() -> String {
+        super.describe() + "+square"
+    }
+}
+
+class Version {
+    val major: Int = 1
+}
+
+# 无 __init__ 的派生类：基类槽都有初始化器，且继承的构造器不接受参数。
+class Feature < Version {
+    val name: String = "feature"
+}
+
+# 子类值可以放进基类类型；方法调用按运行时类型派发。
+val r: Shape = Rect("r", 3, 4)
+val s: Shape = Square("s", 5)
+
+print(r.describe(), r.area())
+print(s.describe(), s.area())
+print(Feature().major, Feature().name)

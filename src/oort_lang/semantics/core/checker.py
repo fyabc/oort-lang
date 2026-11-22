@@ -710,8 +710,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
             )
         if node.type_params:
             return self._unsupported(node, "Generic classes are not supported in oort-core yet.")
-        if node.bases:
-            return self._unsupported(node, "Class inheritance is not supported in oort-core yet.")
+        if len(node.bases) > 1:
+            return self._unsupported(
+                node, "Only a single base class is supported in oort-core yet."
+            )
         if node.meta is not None:
             return self._unsupported(node, "Metaclasses are not supported in oort-core yet.")
         if len(node.names) != 1:
@@ -731,7 +733,24 @@ class CoreTypeChecker(ASTVisitor[Type]):
             self._error(f"Type name '{name}' is already declared or reserved.", node.name_position)
             return UNIT
 
-        class_type = ClassType(self._module_origin(), name)
+        # Resolve the base before registering this class, so a class cannot
+        # inherit from itself or from a class declared later in the module.
+        base: ClassType | None = None
+        if node.bases:
+            base_type = self.resolve_annotation(node.bases[0], allow_unit=False)
+            if isinstance(base_type, UnknownType):
+                pass
+            elif isinstance(base_type, ClassType):
+                base = base_type
+            else:
+                self._error(
+                    f"Base class must be a class type, got {describe_type(base_type)}.",
+                    node.bases[0].position,
+                )
+
+        class_type = ClassType(
+            self._module_origin(), name, bases=(base,) if base is not None else ()
+        )
         self.classes[name] = class_type
 
         slot_infos: list[SlotInfo] = []
@@ -761,6 +780,21 @@ class CoreTypeChecker(ASTVisitor[Type]):
                         target.position,
                     )
                     continue
+                if base is not None:
+                    if base.slot(target.name) is not None:
+                        self._error(
+                            f"Slot '{target.name}' is already declared in base "
+                            f"class '{base.name}'.",
+                            target.position,
+                        )
+                        continue
+                    if base.method(target.name) is not None:
+                        self._error(
+                            f"Slot '{target.name}' conflicts with inherited method "
+                            f"'{base.name}.{target.name}'.",
+                            target.position,
+                        )
+                        continue
                 if target.type_expr is None:
                     self._error(
                         f"Slot '{target.name}' requires a type annotation in oort-core.",
@@ -812,6 +846,13 @@ class CoreTypeChecker(ASTVisitor[Type]):
                         stmt.name_position,
                     )
                     continue
+                if base is not None and base.slot(method_name) is not None:
+                    self._error(
+                        f"Method '{method_name}' conflicts with inherited slot "
+                        f"'{base.name}.{method_name}'.",
+                        stmt.name_position,
+                    )
+                    continue
                 display_name = f"{name}.{method_name}"
                 if method_name == "__init__":
                     signature = self._check_init_signature(stmt, display_name)
@@ -853,12 +894,26 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 self._check_expr(declaration.init_value, info.slot_type)
 
         self._infer_and_check_methods(methods, class_type, name, method_names)
+        self._check_overrides(methods, class_type, base)
 
+        inherited_slots = base.all_slots() if base is not None else ()
         slot_facts = [
+            SlotFact(
+                info.name,
+                info.mutable,
+                info.has_initializer,
+                node.name_position,
+                from_base=True,
+            )
+            for info in inherited_slots
+        ]
+        slot_facts.extend(
             SlotFact(info.name, info.mutable, info.has_initializer, target.position)
             for info, _, target in slot_decls
+        )
+        uninitialized = [
+            info.name for info in (*inherited_slots, *slot_infos) if not info.has_initializer
         ]
-        uninitialized = [info.name for info in slot_infos if not info.has_initializer]
         if init_method is None:
             if uninitialized:
                 self._error(
@@ -866,9 +921,49 @@ class CoreTypeChecker(ASTVisitor[Type]):
                     f"__init__: {', '.join(uninitialized)}.",
                     node.name_position,
                 )
+            inherited_init = base.method("__init__") if base is not None else None
+            if inherited_init is not None and inherited_init.params:
+                self._error(
+                    f"Class '{name}' has no __init__ but inherits an initializer "
+                    f"requiring {len(inherited_init.params)} argument(s); declare "
+                    f"__init__ and call super.__init__(...).",
+                    node.name_position,
+                )
         else:
             DefiniteAssignmentAnalyzer(slot_facts, self._error).check(init_method[1])
         return UNIT
+
+    def _check_overrides(
+        self,
+        methods: list[tuple[str, FunctionType, nodes.FunctionDef]],
+        class_type: ClassType,
+        base: ClassType | None,
+    ) -> None:
+        if base is None:
+            return
+        for method_name, _, function in methods:
+            if method_name == "__init__":
+                continue
+            base_signature = base.method(method_name)
+            if base_signature is None:
+                continue
+            derived_signature = class_type.method(method_name)
+            assert derived_signature is not None
+            if derived_signature.params != base_signature.params:
+                expected = ", ".join(describe_type(param) for param in base_signature.params)
+                self._error(
+                    f"Overriding method '{class_type.name}.{method_name}' must use the "
+                    f"base parameter types ({expected}); got "
+                    f"({', '.join(describe_type(param) for param in derived_signature.params)}).",
+                    function.name_position,
+                )
+            elif not is_assignable(base_signature.ret, derived_signature.ret):
+                self._error(
+                    f"Overriding method '{class_type.name}.{method_name}' must return "
+                    f"{describe_type(base_signature.ret)} or a subtype, got "
+                    f"{describe_type(derived_signature.ret)}.",
+                    function.name_position,
+                )
 
     def _check_init_signature(self, node: nodes.FunctionDef, display_name: str) -> FunctionType:
         if node.ret_type is not None:
@@ -2578,6 +2673,8 @@ class CoreTypeChecker(ASTVisitor[Type]):
         return name if name.isidentifier() else None
 
     def visit_attribute(self, node: nodes.Attribute) -> Type:
+        if isinstance(node.value, nodes.ImplicitSuperExpr):
+            return self._resolve_super_member(node)
         value_type = node.value.accept(self)
         if isinstance(value_type, UnknownType):
             return self._record(node, UNKNOWN)
@@ -2978,4 +3075,56 @@ class CoreTypeChecker(ASTVisitor[Type]):
         return self._unsupported(node, "Compiler attributes are not supported in oort-core yet.")
 
     def visit_implicit_super_expr(self, node: nodes.ImplicitSuperExpr) -> Type:
-        return self._unsupported(node, "super is not supported in oort-core yet.")
+        self._error(
+            "super must be followed by a base method, for example super.describe().",
+            node.position,
+        )
+        return self._record(node, UNKNOWN)
+
+    def _current_base_class(self, node: nodes.ASTNode) -> ClassType | None:
+        if self.current_class is None:
+            self._error("super is only allowed inside a class method.", node.position)
+            return None
+        if not self.current_class.bases:
+            self._error(
+                f"Class '{self.current_class.name}' has no base class; super is not available.",
+                node.position,
+            )
+            return None
+        return self.current_class.bases[0]
+
+    def _resolve_super_member(self, node: nodes.Attribute) -> Type:
+        base = self._current_base_class(node)
+        if base is None:
+            return self._record(node, UNKNOWN)
+        method_name = node.attribute
+        if method_name == "__init__":
+            if not self._in_initializer:
+                self._error(
+                    "super.__init__() is only allowed inside a subclass __init__.",
+                    node.position,
+                )
+                return self._record(node, UNKNOWN)
+            signature = base.method("__init__")
+            if signature is None:
+                self._error(
+                    f"Base class '{base.name}' has no __init__ method to call.",
+                    node.position,
+                )
+                return self._record(node, UNKNOWN)
+            return self._record(node, signature)
+        signature = base.method(method_name)
+        if signature is not None:
+            return self._record(node, signature)
+        if base.slot(method_name) is not None:
+            self._error(
+                f"Cannot access inherited slot '{method_name}' through super; "
+                "super only dispatches base methods.",
+                node.position,
+            )
+        else:
+            self._error(
+                f"Base class '{base.name}' has no method '{method_name}'.",
+                node.position,
+            )
+        return self._record(node, UNKNOWN)

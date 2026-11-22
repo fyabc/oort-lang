@@ -23,6 +23,15 @@ class Shape {
     }
 }
 
+class Labeled < Shape {
+    val extra: Int
+
+    def __init__(name: String, extra: Int) {
+        super.__init__(name)
+        this.extra = extra
+    }
+}
+
 enum Color { Red, Green }
 
 enum Tree[T] {
@@ -140,6 +149,45 @@ print(describe(Shape("both")))
         target=target,
     )
     assert capsys.readouterr().out == "both\n"
+
+
+@pytest.mark.parametrize("target", ["eval", "vm"])
+def test_cross_module_base_class(tmp_path: Path, capsys, target: str) -> None:
+    _run_main(
+        tmp_path,
+        """\
+import "./shapes" as shapes
+
+class Labeled < shapes.Shape {
+    val extra: Int
+
+    def __init__(name: String, extra: Int) {
+        super.__init__(name)
+        this.extra = extra
+    }
+
+    def total() -> Int { this.extra }
+}
+
+val s: shapes.Shape = Labeled("cross", 3)
+print(s.label(), Labeled("x", 2).total())
+""",
+        target=target,
+    )
+    assert capsys.readouterr().out == "cross 2\n"
+
+
+def test_imported_derived_class_keeps_inherited_members(tmp_path: Path, capsys) -> None:
+    _run_main(
+        tmp_path,
+        """\
+import "./shapes" as shapes
+
+val item: shapes.Labeled = shapes.Labeled("tag", 4)
+print(item.label(), item.extra)
+""",
+    )
+    assert capsys.readouterr().out == "tag 4\n"
 
 
 def test_enum_type_name_cannot_be_imported_as_a_value(
