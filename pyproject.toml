@@ -86,7 +86,9 @@ exclude = [
 log_level = "WARNING"
 log_format = "%(message)s"
 log_date_format = ""
-testpaths = ["tests", "benchmarks"]
+# Benchmarks are opt-in: `pytest` is the fast test suite, `pytest benchmarks/`
+# runs the benchmark suite (and `make benchmark` documents the workflow).
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
