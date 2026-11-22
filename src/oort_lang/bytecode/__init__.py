@@ -27,6 +27,11 @@ from .opcodes import (
     encode_asbx,
     encode_ax,
 )
+from .typed_compile import TypedProgram, TypedProto, compile_typed_module
+from .typed_disasm import disassemble_typed_program
+from .typed_opcodes import TypedOp
+from .typed_serialize import read_typed_obc, write_typed_obc
+from .typed_vm import TypedCodeFunction, TypedCodeVM
 
 __all__ = [
     "BINARY_OPCODES",
@@ -43,12 +48,21 @@ __all__ = [
     "Op",
     "PatternSpec",
     "Proto",
+    "TypedCodeFunction",
+    "TypedCodeVM",
+    "TypedOp",
+    "TypedProgram",
+    "TypedProto",
     "compile_module",
+    "compile_typed_module",
     "decode",
     "disassemble_module",
     "disassemble_proto",
+    "disassemble_typed_program",
     "encode_abc",
     "encode_abx",
     "encode_asbx",
     "encode_ax",
+    "read_typed_obc",
+    "write_typed_obc",
 ]

@@ -369,6 +369,26 @@ TypedFunction
   慢）。typed HIR 在 Python 宿主上不带来性能收益——这符合预期，M2 只验证
   语义与类型来源；真正的收益需要 M3 的 typed 字节码与 M4 的未装箱/Rust 值表示。
 
+### M3 实现状态（2026-11-22，第一切片）
+
+- 新增 typed 字节码：`bytecode/typed_opcodes.py`（独立 opcode 命名空间）、
+  `typed_compile.py`（`TypedModule` → `TypedProgram`）、`typed_vm.py`（boxed
+  值的 typed VM）、`typed_disasm.py`；
+- 类型化操作码：`ADD_I/F`、`SUB_I/F`、`MUL_I/F`、`DIV_F`、`FLOORDIV_I/F`、
+  `MOD_I/F`、比较/相等（`EQ_I/F/B` 等）、`NEG_I/F`、`POS_I/F`、`NOT_B`、
+  `TO_FLOAT`；混合 Int/Float 运算插入 `TO_FLOAT`；`CALL` 使用 base/args/dst
+  窗口；函数入口按 `param_types` 做守卫；
+- CLI：`-t tbc` 打印 typed 反汇编；`-t tvm` 改为执行 typed 字节码；typed HIR
+  解释器保留用于差分测试；
+- `.obc` **kind=1** 序列化/读回（`bytecode/typed_serialize.py`）：携带常量、
+  字/位置表、寄存器类型、参数/返回类型；kind 0 与 kind 1 互斥拒绝；
+- 验证：typed 字节码、typed HIR 解释器与现有 VM 在示例及内联 fib/while/
+  早返回程序上输出一致；round-trip 后再执行结果一致；
+- **尚未做**：Rust VM 消费 kind=1、动态边界守卫、格式稳定化并纳入 spec；
+- 初步测量（本机，5 次中位数）：fib(20) **560.0 ms** vs VM **345.1 ms**
+  （1.62× 慢）；loop 20000 **382.1 ms** vs **162.0 ms**（2.36× 慢）。typed
+  字节码比 typed HIR 略慢（解码 + 类型断言），符合 M3 只验证 ABI 的定位。
+
 ## 9. 风险与开放问题
 
 1. **类型来源漂移**：若 lowering 重新推断或解析字符串，规则必然与检查器分叉。

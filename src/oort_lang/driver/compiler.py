@@ -153,13 +153,13 @@ class Compiler:
 
             assert isinstance(ast, nodes.ModuleNode)
             try:
-                typed_program = lower_typed_module(ast)
+                typed_hir = lower_typed_module(ast)
             except OortException as e:
                 matched = self.error_handler.input_info_for(e.position) or input_info
                 self.error_handler.add(e, matched)
                 self.error_handler.report(exit_on_error=False, clear=True)
                 raise CompilerError() from None
-            print(format_typed_module(typed_program))
+            print(format_typed_module(typed_hir))
             return None
 
         if self.args.target == "bc":
@@ -177,9 +177,24 @@ class Compiler:
             print(disassemble_module(program))
             return None
 
-        if self.args.target == "tvm":
+        if self.args.target == "tbc":
+            from ..bytecode import compile_typed_module, disassemble_typed_program
             from ..hir import lower_typed_module
-            from ..hir.typed_exec import TypedInterpreter
+
+            assert isinstance(ast, nodes.ModuleNode)
+            try:
+                typed_bytecode = compile_typed_module(lower_typed_module(ast))
+            except OortException as e:
+                matched = self.error_handler.input_info_for(e.position) or input_info
+                self.error_handler.add(e, matched)
+                self.error_handler.report(exit_on_error=False, clear=True)
+                raise CompilerError() from None
+            print(disassemble_typed_program(typed_bytecode))
+            return None
+
+        if self.args.target == "tvm":
+            from ..bytecode import TypedCodeVM, compile_typed_module
+            from ..hir import lower_typed_module
 
             interpreter = ASTInterpreter(self.error_handler)
             interpreter.script_args = tuple(getattr(self.args, "script_args", ()) or ())
@@ -188,8 +203,8 @@ class Compiler:
             )
             assert isinstance(ast, nodes.ModuleNode)
             try:
-                typed_program = lower_typed_module(ast)
-                result = TypedInterpreter(interpreter).run(typed_program)
+                typed_bytecode = compile_typed_module(lower_typed_module(ast))
+                result = TypedCodeVM(interpreter).run(typed_bytecode)
             except OortException as e:
                 matched = self.error_handler.input_info_for(e.position) or input_info
                 self.error_handler.add(e, matched)

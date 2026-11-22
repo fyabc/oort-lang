@@ -1,0 +1,370 @@
+#! /usr/bin/env python
+
+"""Typed bytecode VM (design 15, M3).
+
+Executes ``TypedProgram`` words with typed opcodes. Values are still boxed
+Oort objects in this slice; the point is to validate the typed ABI (register
+types, typed arithmetic, TO_FLOAT, entry guards) before M4 moves to unboxed
+registers and the Rust VM.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+from typing import TYPE_CHECKING, Any
+
+from ..diagnostics.runtime_errors import OortNameError, OortRuntimeError, OortTypeError
+from ..hir.typed import IrType
+from ..runtime.environment import Environment
+from ..runtime.functions import OortNativeFunction
+from ..runtime.objects import OortBool, OortFloat, OortInt, OortObject
+from .typed_opcodes import TypedOp, decode_a, decode_b, decode_bx, decode_c, decode_op
+
+if TYPE_CHECKING:
+    from ..runtime.interpreter import ASTInterpreter
+    from ..source.source_position import SourcePosition
+    from .typed_compile import TypedProgram, TypedProto
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class TypedCodeFunction:
+    """A typed bytecode function bound in globals."""
+
+    proto: TypedProto
+
+
+class TypedCodeVM:
+    def __init__(self, interpreter: ASTInterpreter):
+        self.interpreter = interpreter
+        self.runtime = interpreter.runtime
+        self.globals: dict[str, TypedCodeFunction] = {}
+        self.env = Environment(
+            outer=interpreter.builtins_env,
+            name="<typed-bytecode>",
+            allow_redefine=True,
+            is_module_root=True,
+        )
+
+    def run(self, program: TypedProgram) -> OortObject:
+        registers: list[Any] = [self.runtime.null] * program.main.register_count
+        with self.runtime.activate():
+            return self._execute(program, program.main, registers)
+
+    # ------------------------------------------------------------------
+    # Execution
+    # ------------------------------------------------------------------
+
+    def _execute(
+        self,
+        program: TypedProgram,
+        proto: TypedProto,
+        registers: list[Any],
+    ) -> OortObject:
+        code = proto.code
+        pc = 0
+        while pc < len(code):
+            word = code[pc]
+            op = decode_op(word)
+            a = decode_a(word)
+            b = decode_b(word)
+            c = decode_c(word)
+            bx = decode_bx(word)
+            position = proto.positions[pc]
+
+            if op is TypedOp.LOAD_K:
+                registers[a] = self._wrap_constant(proto.constants[bx])
+            elif op is TypedOp.LOAD_L or op is TypedOp.STORE_L:
+                registers[a] = registers[b]
+            elif op is TypedOp.LOAD_G:
+                registers[a] = self._load_global(proto, bx, position)
+            elif op is TypedOp.DEF_FUN:
+                name = proto.constants[a]
+                if not isinstance(name, str):
+                    raise OortTypeError("Invalid function name constant.", position)
+                if not 0 <= bx < len(program.functions):
+                    raise OortTypeError("Invalid typed function index.", position)
+                self.globals[name] = TypedCodeFunction(program.functions[bx])
+            elif op is TypedOp.MOVE:
+                registers[a] = registers[b]
+            elif op in (
+                TypedOp.ADD_I,
+                TypedOp.SUB_I,
+                TypedOp.MUL_I,
+                TypedOp.FLOORDIV_I,
+                TypedOp.MOD_I,
+            ):
+                registers[a] = self._int_binary(op, registers[b], registers[c], position)
+            elif op in (
+                TypedOp.ADD_F,
+                TypedOp.SUB_F,
+                TypedOp.MUL_F,
+                TypedOp.FLOORDIV_F,
+                TypedOp.MOD_F,
+                TypedOp.DIV_F,
+            ):
+                registers[a] = self._float_binary(op, registers[b], registers[c], position)
+            elif op in (
+                TypedOp.EQ_I,
+                TypedOp.NE_I,
+                TypedOp.LT_I,
+                TypedOp.LE_I,
+                TypedOp.GT_I,
+                TypedOp.GE_I,
+            ):
+                registers[a] = self._int_compare(op, registers[b], registers[c], position)
+            elif op in (
+                TypedOp.EQ_F,
+                TypedOp.NE_F,
+                TypedOp.LT_F,
+                TypedOp.LE_F,
+                TypedOp.GT_F,
+                TypedOp.GE_F,
+            ):
+                registers[a] = self._float_compare(op, registers[b], registers[c], position)
+            elif op in (TypedOp.EQ_B, TypedOp.NE_B):
+                registers[a] = self._bool_compare(op, registers[b], registers[c], position)
+            elif op in (TypedOp.POS_I, TypedOp.NEG_I):
+                registers[a] = self._int_unary(op, registers[b], position)
+            elif op in (TypedOp.POS_F, TypedOp.NEG_F):
+                registers[a] = self._float_unary(op, registers[b], position)
+            elif op is TypedOp.NOT_B:
+                operand = self._bool(registers[b], position)
+                registers[a] = OortBool.get_bool_value(not operand.value)
+            elif op is TypedOp.TO_FLOAT:
+                registers[a] = self._to_float(registers[b], position)
+            elif op is TypedOp.JMP:
+                pc = bx
+                continue
+            elif op is TypedOp.JMP_FALSE:
+                if not self._bool(registers[a], position).value:
+                    pc = bx
+                    continue
+            elif op is TypedOp.JMP_TRUE:
+                if self._bool(registers[a], position).value:
+                    pc = bx
+                    continue
+            elif op is TypedOp.CALL:
+                arguments = registers[a + 1 : a + 1 + b]
+                registers[c] = self._call(program, registers[a], arguments, position)
+            elif op is TypedOp.RET:
+                return registers[a]
+            else:  # pragma: no cover - exhaustive TypedOp set
+                raise OortTypeError(f"Unknown typed opcode {op}.", position)
+            pc += 1
+
+        raise OortTypeError(
+            f"Typed bytecode function '{proto.name}' fell off the end.", proto.positions[0]
+        )
+
+    # ------------------------------------------------------------------
+    # Values and calls
+    # ------------------------------------------------------------------
+
+    def _wrap_constant(self, value: object) -> OortObject:
+        if value is None:
+            return self.runtime.null
+        if type(value) is int:
+            return OortInt(value)
+        if isinstance(value, bool):
+            return self.runtime.true if value else self.runtime.false
+        if isinstance(value, float):
+            return OortFloat(value)
+        return self.runtime.host.from_host(value)
+
+    def _load_global(self, proto: TypedProto, index: int, position: SourcePosition) -> Any:
+        name = proto.constants[index]
+        if not isinstance(name, str):
+            raise OortTypeError("Invalid global name constant.", position)
+        function = self.globals.get(name)
+        if function is not None:
+            return function
+        entry = self.env.get(name)
+        if entry is None:
+            raise OortNameError(f"Unknown name '{name}'.", position)
+        return entry.value
+
+    def _call(
+        self,
+        program: TypedProgram,
+        callee: Any,
+        arguments: list[Any],
+        position: SourcePosition,
+    ) -> OortObject:
+        if isinstance(callee, TypedCodeFunction):
+            return self._invoke(program, callee.proto, arguments, position)
+        if isinstance(callee, OortNativeFunction):
+            return callee(self.interpreter, arguments, position)
+        raise OortTypeError("Typed bytecode call target is not callable.", position)
+
+    def _invoke(
+        self,
+        program: TypedProgram,
+        proto: TypedProto,
+        arguments: list[Any],
+        position: SourcePosition,
+    ) -> OortObject:
+        if len(arguments) != len(proto.param_types):
+            raise OortTypeError(
+                f"Typed function '{proto.name}' expects {len(proto.param_types)} "
+                f"arguments, got {len(arguments)}.",
+                position,
+            )
+        registers: list[Any] = [self.runtime.null] * proto.register_count
+        for index, (expected, value) in enumerate(zip(proto.param_types, arguments)):
+            self._guard(expected, value, proto.name, index, position)
+            registers[index] = value
+        return self._execute(program, proto, registers)
+
+    @staticmethod
+    def _guard(
+        expected: IrType,
+        value: Any,
+        name: str,
+        index: int,
+        position: SourcePosition,
+    ) -> None:
+        ok = (
+            (expected is IrType.INT and type(value) is OortInt)
+            or (expected is IrType.FLOAT and type(value) is OortFloat)
+            or (expected is IrType.BOOL and type(value) is OortBool)
+            or (expected is IrType.UNIT and value is None)
+        )
+        if not ok:
+            raise OortTypeError(
+                f"Typed bytecode guard failed for '{name}' argument {index}: expected {expected}.",
+                position,
+            )
+
+    # ------------------------------------------------------------------
+    # Typed operations (boxed values, exact static types)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _int(value: Any, position: SourcePosition) -> OortInt:
+        if type(value) is not OortInt:
+            raise OortTypeError("Typed opcode expected Int.", position)
+        return value
+
+    @staticmethod
+    def _float(value: Any, position: SourcePosition) -> OortFloat:
+        if type(value) is not OortFloat:
+            raise OortTypeError("Typed opcode expected Float.", position)
+        return value
+
+    @staticmethod
+    def _bool(value: Any, position: SourcePosition) -> OortBool:
+        if type(value) is not OortBool:
+            raise OortTypeError("Typed opcode expected Bool.", position)
+        return value
+
+    def _int_binary(
+        self,
+        op: TypedOp,
+        lhs: Any,
+        rhs: Any,
+        position: SourcePosition,
+    ) -> OortObject:
+        left = self._int(lhs, position).value
+        right = self._int(rhs, position).value
+        try:
+            if op is TypedOp.ADD_I:
+                return OortInt(left + right)
+            if op is TypedOp.SUB_I:
+                return OortInt(left - right)
+            if op is TypedOp.MUL_I:
+                return OortInt(left * right)
+            if op is TypedOp.FLOORDIV_I:
+                return OortInt(left // right)
+            return OortInt(left % right)
+        except ZeroDivisionError as exc:
+            raise OortRuntimeError(str(exc), position) from exc
+
+    def _float_binary(
+        self,
+        op: TypedOp,
+        lhs: Any,
+        rhs: Any,
+        position: SourcePosition,
+    ) -> OortObject:
+        left = self._float(lhs, position).value
+        right = self._float(rhs, position).value
+        try:
+            if op is TypedOp.ADD_F:
+                return OortFloat(left + right)
+            if op is TypedOp.SUB_F:
+                return OortFloat(left - right)
+            if op is TypedOp.MUL_F:
+                return OortFloat(left * right)
+            if op is TypedOp.DIV_F:
+                return OortFloat(left / right)
+            if op is TypedOp.FLOORDIV_F:
+                return OortFloat(left // right)
+            return OortFloat(left % right)
+        except ZeroDivisionError as exc:
+            raise OortRuntimeError(str(exc), position) from exc
+
+    def _int_compare(
+        self,
+        op: TypedOp,
+        lhs: Any,
+        rhs: Any,
+        position: SourcePosition,
+    ) -> OortBool:
+        left = self._int(lhs, position).value
+        right = self._int(rhs, position).value
+        result = {
+            TypedOp.EQ_I: left == right,
+            TypedOp.NE_I: left != right,
+            TypedOp.LT_I: left < right,
+            TypedOp.LE_I: left <= right,
+            TypedOp.GT_I: left > right,
+            TypedOp.GE_I: left >= right,
+        }[op]
+        return OortBool.get_bool_value(result)
+
+    def _float_compare(
+        self,
+        op: TypedOp,
+        lhs: Any,
+        rhs: Any,
+        position: SourcePosition,
+    ) -> OortBool:
+        left = self._float(lhs, position).value
+        right = self._float(rhs, position).value
+        result = {
+            TypedOp.EQ_F: left == right,
+            TypedOp.NE_F: left != right,
+            TypedOp.LT_F: left < right,
+            TypedOp.LE_F: left <= right,
+            TypedOp.GT_F: left > right,
+            TypedOp.GE_F: left >= right,
+        }[op]
+        return OortBool.get_bool_value(result)
+
+    def _bool_compare(
+        self,
+        op: TypedOp,
+        lhs: Any,
+        rhs: Any,
+        position: SourcePosition,
+    ) -> OortBool:
+        left = self._bool(lhs, position).value
+        right = self._bool(rhs, position).value
+        result = left == right if op is TypedOp.EQ_B else left != right
+        return OortBool.get_bool_value(result)
+
+    def _int_unary(self, op: TypedOp, operand: Any, position: SourcePosition) -> OortInt:
+        value = self._int(operand, position).value
+        return OortInt(-value if op is TypedOp.NEG_I else value)
+
+    def _float_unary(self, op: TypedOp, operand: Any, position: SourcePosition) -> OortFloat:
+        value = self._float(operand, position).value
+        return OortFloat(-value if op is TypedOp.NEG_F else value)
+
+    def _to_float(self, operand: Any, position: SourcePosition) -> OortFloat:
+        if type(operand) is OortFloat:
+            return operand
+        return OortFloat(float(self._int(operand, position).value))
+
+
+__all__ = ["TypedCodeFunction", "TypedCodeVM"]
