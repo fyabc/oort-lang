@@ -147,12 +147,13 @@ def test_imported_core_module_type_error_is_reported(tmp_path, caplog):
     assert "TypeCheckError" in caplog.text
 
 
-def test_object_cannot_import_core_module(tmp_path, caplog):
+def test_object_import_of_core_module_requires_typed_subset(tmp_path, caplog):
+    # `_library` has a top-level `val`, which the typed boundary does not carry.
     _library(tmp_path)
     main = _write(tmp_path, "main.ort", 'import "./lib"\n')
     with pytest.raises(CompilerError):
         _run(main)
-    assert "Cannot import a 'oort-core' module from an 'oort-object' module" in caplog.text
+    assert "does not support top-level declarations or assignments" in caplog.text
 
 
 def test_class_with_inferred_methods_exported(tmp_path, run_file):

@@ -199,13 +199,12 @@ def test_imported_module_runtime_error_points_at_module(tmp_path, caplog):
     assert "OortNameError" in caplog.text
 
 
-def test_cross_dialect_imports_are_rejected(tmp_path, caplog):
+def test_object_can_import_core_module(tmp_path, capsys):
     _write(tmp_path, "core.ort", "#lang oort-core\nprint(1)\n")
     main = _write(tmp_path, "main.ort", 'import "./core"\n')
 
-    with pytest.raises(CompilerError):
-        _run(main)
-    assert "Cannot import a 'oort-core' module from an 'oort-object' module" in caplog.text
+    _run(main)
+    assert capsys.readouterr().out == "1\n"
 
 
 def test_core_entry_rejects_object_imports(tmp_path, caplog):

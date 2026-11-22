@@ -353,9 +353,15 @@ class Compiler:
             with interpreter.runtime.activate():
                 return vm.run_module(compile_bytecode(lower_module(ast)), env)
 
+        def execute_core_module(ast: nodes.ModuleNode, env: Environment) -> None:
+            from ..bytecode.typed_boundary import execute_core_module as run_core
+
+            run_core(ast, env, interpreter)
+
         return ModuleLoader(
             compile_module=compile_module,
             execute_module=execute_module,
+            execute_core_module=execute_core_module,
             make_environment=interpreter.create_module_env,
             make_module=interpreter.new_module,
             entry_dir=entry_dir,
@@ -372,9 +378,15 @@ class Compiler:
                 return None
             return CompiledModule(result.ast, result.dialect.name)
 
+        def execute_core_module(ast: nodes.ModuleNode, env: Environment) -> None:
+            from ..bytecode.typed_boundary import execute_core_module as run_core
+
+            run_core(ast, env, interpreter)
+
         return ModuleLoader(
             compile_module=compile_module,
             execute_module=interpreter.run_module,
+            execute_core_module=execute_core_module,
             make_environment=interpreter.create_module_env,
             make_module=interpreter.new_module,
             entry_dir=entry_dir,

@@ -1,0 +1,25 @@
+#lang oort-core
+
+# 被 oort-object 脚本导入的静态库。函数参数/返回值在边界处做守卫与复制。
+
+def total(values: List[Int]) -> Int {
+    var sum: Int = 0
+    for value in values { sum = sum + value }
+    sum
+}
+
+def normalize(value: Int, scale: Int) -> Float {
+    value / scale
+}
+
+def score(scores: Dict[String, Int], key: String) -> Int {
+    scores[key]
+}
+
+def unique_count(values: Set[Int]) -> Int {
+    len(values)
+}
+
+def pair(a: Int, b: String) -> Tuple[Int, String] {
+    (a, b)
+}

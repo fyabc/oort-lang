@@ -139,9 +139,11 @@ class ModuleLoader:
         entry_dir: Path,
         search_paths: Sequence[Path] = (),
         native_modules: Mapping[str, Callable[[], OortModule]] | None = None,
+        execute_core_module: Callable[[nodes.ModuleNode, Environment], None] | None = None,
     ):
         self._compile_module = compile_module
         self._execute_module = execute_module
+        self._execute_core_module = execute_core_module
         self._make_environment = make_environment
         self._make_module = make_module
         self.entry_dir = entry_dir.resolve()
@@ -255,6 +257,15 @@ class ModuleLoader:
                 f"Failed to import module {spec!r}: compilation failed.", position
             )
         if compiled.dialect_name != frame.dialect_name:
+            if (
+                frame.dialect_name == "oort-object"
+                and compiled.dialect_name == "oort-core"
+                and self._execute_core_module is not None
+            ):
+                # B1: object -> core is the supported boundary direction.
+                frame.dialect_name = compiled.dialect_name
+                self._execute_core_module(compiled.ast, record.env)
+                return
             raise OortImportError(
                 f"Cannot import a {compiled.dialect_name!r} module from an "
                 f"{frame.dialect_name!r} module; cross-dialect imports require "

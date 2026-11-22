@@ -1,0 +1,12 @@
+#lang oort-object
+
+# 动态脚本调用 oort-core 库（B1 语义原型）。
+# core_lib.ort 由 typed 字节码执行；参数/返回值的类型与容器复制在边界处理。
+
+from "./core_lib" import total, normalize, score, unique_count, pair
+
+print(total([1, 2, 3, 4]))
+print(normalize(3, 5))
+print(score({: "oort": 4, "lang": 2 :}, "oort"))
+print(unique_count({. 1, 2, 2, 3 .}))
+print(pair(7, "x"))

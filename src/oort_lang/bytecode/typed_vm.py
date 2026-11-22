@@ -23,6 +23,7 @@ from ..runtime.objects import (
     OortFloat,
     OortInt,
     OortList,
+    OortNull,
     OortObject,
     OortSet,
     OortString,
@@ -48,6 +49,7 @@ class TypedCodeVM:
         self.interpreter = interpreter
         self.runtime = interpreter.runtime
         self.globals: dict[str, TypedCodeFunction] = {}
+        self._program: TypedProgram | None = None
         self.env = Environment(
             outer=interpreter.builtins_env,
             name="<typed-bytecode>",
@@ -56,9 +58,24 @@ class TypedCodeVM:
         )
 
     def run(self, program: TypedProgram) -> OortObject:
+        self._program = program
+        for proto in program.functions:
+            self.globals.setdefault(proto.name, TypedCodeFunction(proto))
         registers: list[Any] = [self.runtime.null] * program.main.register_count
         with self.runtime.activate():
             return self._execute(program, program.main, registers)
+
+    def invoke(
+        self,
+        proto: TypedProto,
+        arguments: list[Any],
+        position: SourcePosition,
+    ) -> OortObject:
+        """Invoke a typed function after ``run`` has initialized the module."""
+        if self._program is None:
+            raise OortRuntimeError("Typed VM has not run a module yet.", position)
+        with self.runtime.activate():
+            return self._invoke(self._program, proto, arguments, position)
 
     # ------------------------------------------------------------------
     # Execution
@@ -315,7 +332,7 @@ class TypedCodeVM:
                 or (expected is IrType.FLOAT and type(value) is OortFloat)
                 or (expected is IrType.BOOL and type(value) is OortBool)
                 or (expected is IrType.STRING and type(value) is OortString)
-                or (expected is IrType.UNIT and value is None)
+                or (expected is IrType.UNIT and type(value) is OortNull)
             )
         if not ok:
             raise OortTypeError(

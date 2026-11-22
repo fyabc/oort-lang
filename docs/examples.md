@@ -72,6 +72,18 @@
 oort examples/08_core/08_01_core_functions.ort
 ```
 
+## 跨方言边界（B1）
+
+| 示例 | 内容 |
+|---|---|
+| [object 调用 core](https://github.com/fyabc/oort-lang/blob/main/examples/09_boundary/09_00_object_calls_core.ort) | `oort-object` 导入 `oort-core` 库、参数守卫、容器复制 |
+
+```bash
+oort examples/09_boundary/09_00_object_calls_core.ort
+```
+
+`core_lib.ort` 是配套的 `#lang oort-core` 库，不作为独立入口运行。
+
 ## Showcase
 
 | 示例 | 内容 |

@@ -1,8 +1,8 @@
 # 跨方言边界与 FFI（Boundary / FFI）
 
-> **状态**：设计草案（2026-11-23）。本文只讨论跨方言调用与外部 FFI 的
-> 架构、语义与优先级，**不改变当前行为**：跨方言导入/调用仍显式拒绝，
-> `oort-object` 与 `oort-core` 仍按各自后端执行。
+> **状态**：设计草案 + B1 语义原型（2026-11-23）。`oort-object → oort-core`
+> 导入已实现 Python 侧边界原型；反向调用、类/ADT 边界、C FFI 与性能边界仍未
+> 实现。本文其余部分继续作为架构与语义设计记录。
 >
 > 关联：[design 02](02-bytecode-vm-design.md) 的边界调用指令、
 > [design 03](03-type-system-design.md) 的渐进类型边界、
@@ -198,10 +198,38 @@ C FFI **不在本设计的第一阶段实现**；先做内部边界，验证模�
 | 里程碑 | 范围 | 退出条件 |
 |---|---|---|
 | **B0 设计** | 本文；方向策略、值映射、边界模型 | 评审通过 |
-| **B1 语义原型** | object→core 导入/调用（D/B），boxed | 示例库可运行；类型错误/blame 可读；无性能门禁 |
+| **B1 语义原型** | object→core 导入/调用（D/B），boxed | **已完成（2026-11-23）**；示例库/测试可运行；类型错误/blame 可读；无性能门禁 |
 | **B2 库覆盖** | S2/S3、类/ADT、集合/库 API 约定 | 至少一个 core 库端到端可用 |
 | **B3 性能实现** | 根据 Rust VM v2 选 B/C/A | 调用开销与库吞吐达到预算 |
 | **B4 C FFI** | C profile | 受信任原生模块、错误/所有权/回调测试通过 |
+
+### 8.1 B1 语义原型（2026-11-23，已实现）
+
+B1 只做 Python 侧语义验证，不做性能门禁：
+
+- **方向**：只允许 `oort-object` 模块导入 `oort-core` 模块；core→object 仍在
+  核心检查器与模块加载器两处拒绝；
+- **执行**：导入的 core 模块经 `lower_typed_module` + `compile_typed_module`
+  编译，由 `TypedCodeVM` 执行模块 main，然后把顶层函数包装为动态侧 callable；
+- **边界桩**：`TypedBoundaryFunction` 按 `param_types` 递归守卫参数（含嵌套
+  List/Tuple/Set/Dict），容器跨边界深拷贝；返回容器同样拷贝；标量/String
+  共享不可变值；
+- **值映射**：当前 typed 子集（Int/Float/Bool/String/Unit/List/Tuple/Set/Dict）
+  可用；Unit ↔ `null`；类、接口、ADT、函数值、迭代器显式拒绝；
+- **错误**：守卫失败归责动态调用方，错误包含 core 函数名、参数位置与期望/实际
+  类型；core 内部错误沿用 core 源码位置；
+- **限制**：只导出顶层函数；core 模块自身的 typed 导入、类/ADT、回调、C FFI
+  均未开放；每个 core 模块一个 `TypedCodeVM` 实例，模块只执行一次；
+- **入口**：默认 `-t vm` 与回退 `-t eval` 的 object 入口都可用；验收示例
+  `examples/09_boundary/09_00_object_calls_core.ort`（配套 `core_lib.ort`）；
+  测试覆盖 `from` 导入、模块属性导入、嵌套 core 调用、Unit 返回、容器复制与
+  守卫失败。
+
+实现入口：`src/oort_lang/bytecode/typed_boundary.py`、`runtime/modules.py`
+的 object→core 分支，以及 `driver/compiler.py` 的回调接线。诊断基准
+`benchmarks/boundary_run.py` 对比动态库、core Python typed VM、core Rust
+typed VM 与 B1 边界；该基准只用于研究诊断，不设门禁。B1 仍不承诺 ABI；
+Rust 侧边界与性能实现属于 B3。
 
 ## 9. 开放问题
 
