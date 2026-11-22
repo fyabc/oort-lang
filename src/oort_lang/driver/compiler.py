@@ -177,6 +177,28 @@ class Compiler:
             print(disassemble_module(program))
             return None
 
+        if self.args.target == "tvm":
+            from ..hir import lower_typed_module
+            from ..hir.typed_exec import TypedInterpreter
+
+            interpreter = ASTInterpreter(self.error_handler)
+            interpreter.script_args = tuple(getattr(self.args, "script_args", ()) or ())
+            interpreter.script_path = (
+                str(input_info.module_path) if input_info.module_path is not None else None
+            )
+            assert isinstance(ast, nodes.ModuleNode)
+            try:
+                typed_program = lower_typed_module(ast)
+                result = TypedInterpreter(interpreter).run(typed_program)
+            except OortException as e:
+                matched = self.error_handler.input_info_for(e.position) or input_info
+                self.error_handler.add(e, matched)
+                self.error_handler.report(exit_on_error=False, clear=True)
+                raise CompilerError() from None
+            if self.error_handler.pending_count:
+                self.error_handler.report(exit_on_error=False, clear=True)
+            return result.host_value
+
         if self.args.target == "vm":
             from ..runtime.bytecode_vm import BytecodeVM
 

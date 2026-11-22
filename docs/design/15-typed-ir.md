@@ -35,6 +35,7 @@
 | 2026-11-22 | v0 **不含 `String`** | 先把标量子集跑通；String 引入堆值，留作第一扩展 |
 | 2026-11-22 | M1 之后先做 **M2 typed 解释器** | 用于语义差分与基准；typed 字节码（M3）等 M2 结果再定 |
 | 2026-11-22 | CLI 增加 **`-t hir` + `-t thir`** | `hir` 为未类型化基线（诊断视图，格式非契约）；`thir` 为 typed dump；均属 M1 |
+| 2026-11-22 | M2 执行目标 **`-t tvm`** | 直接执行受限 typed HIR（研究目标，暂不进 spec） |
 
 ## 1. 问题与目标
 
@@ -355,6 +356,18 @@ TypedFunction
   一致；
 - 验证：全量测试 1252 passed（含 8 个 typed HIR 测试），ruff/mypy 与
   `mkdocs --strict` 通过。
+
+### M2 实现状态（2026-11-22）
+
+- `-t tvm` 直接执行 `TypedModule`（`src/oort_lang/hir/typed_exec.py`），复用
+  运行时值与 `apply_binary`/`apply_unary`，保证与 `-t vm`/`-t eval` 同语义；
+- main 的返回类型取最后一条 `Return` 寄存器的类型，因此顶层表达式值可返回；
+- 差分测试：验收示例（`08_15`）与内联 fib、早返回、`while` 程序三种路径输出
+  一致；子集外程序在 `-t tvm` 下同样显式拒绝；
+- 初步测量（本机 Python 宿主，5 次中位数）：fib(20) **442.5 ms** vs VM
+  **346.6 ms**（1.28× 慢）；loop 20000 **352.6 ms** vs **164.0 ms**（2.15×
+  慢）。typed HIR 在 Python 宿主上不带来性能收益——这符合预期，M2 只验证
+  语义与类型来源；真正的收益需要 M3 的 typed 字节码与 M4 的未装箱/Rust 值表示。
 
 ## 9. 风险与开放问题
 

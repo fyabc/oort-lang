@@ -11,6 +11,7 @@ COMPILER_MODE_HELPS = {
     "hir": "Lower to HIR and print it.",
     "thir": "Lower to typed HIR and print it (research; restricted core subset).",
     "bc": "Compile to bytecode and print disassembly.",
+    "tvm": "Execute the typed HIR subset (research).",
     "vm": "Execute the supported bytecode subset (default).",
     "eval": "Evaluate the AST (tree-walking interpreter, fallback).",
 }

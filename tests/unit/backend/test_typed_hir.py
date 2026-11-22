@@ -5,6 +5,7 @@
 import pytest
 
 from oort_lang.diagnostics.syntax_errors import UnsupportedSyntax
+from oort_lang.driver.compiler import CompilerError
 from oort_lang.hir import IrType, lower_typed_module
 from tests.helpers import EXAMPLES_DIR, build_ast, get_compiler
 
@@ -84,6 +85,49 @@ def test_typed_subset_example_is_accepted():
 
     names = {function.hir.name for function in typed.functions}
     assert {"fact", "fib", "clamp", "sum_to", "sign", "average", "mixed"} <= names
+
+
+def test_tvm_matches_vm_on_example(run_file):
+    typed = run_file(EXAMPLES_DIR / "08_core/08_15_typed_subset.ort", target="tvm")
+    vm = run_file(EXAMPLES_DIR / "08_core/08_15_typed_subset.ort", target="vm")
+
+    assert typed.stdout == vm.stdout
+    assert typed.value == vm.value
+
+
+@pytest.mark.parametrize("source", [FIB, EARLY_RETURN, LOOP])
+def test_tvm_matches_vm_on_inline_programs(
+    source: str,
+    capsys: pytest.CaptureFixture,
+):
+    typed_compiler = get_compiler("NOT_EXIST -t tvm")
+    typed_compiler.run_string(source)
+    typed_out = capsys.readouterr().out
+
+    vm_compiler = get_compiler("NOT_EXIST -t vm")
+    vm_compiler.run_string(source)
+    vm_out = capsys.readouterr().out
+
+    assert typed_out == vm_out
+
+
+def test_typed_main_value_uses_last_expression_type():
+    source = """\
+#lang oort-core
+def add(a: Int, b: Int) -> Int { a + b }
+add(2, 3)
+"""
+    typed = lower_typed_module(build_ast(source))
+    assert typed.main.ret_type is IrType.INT
+
+    compiler = get_compiler("NOT_EXIST -t tvm")
+    assert compiler.run_string(source) == 5
+
+
+def test_tvm_rejects_out_of_subset():
+    compiler = get_compiler("NOT_EXIST -t tvm")
+    with pytest.raises(CompilerError):
+        compiler.run_string('#lang oort-core\nprint("x")\n')
 
 
 def test_typed_lowering_rejects_out_of_subset():

@@ -426,6 +426,18 @@ def _user_module(module: nodes.ModuleNode) -> nodes.ModuleNode:
     return filtered
 
 
+def _main_return_type(function: HirFunction, register_types: tuple[IrType | None, ...]) -> IrType:
+    """The main body's value type is the final return register's type."""
+
+    for instruction in reversed(function.code):
+        if isinstance(instruction, Return):
+            register = instruction.src
+            if 0 <= register < len(register_types) and register_types[register] is not None:
+                return register_types[register]  # type: ignore[return-value]
+            return IrType.UNIT
+    return IrType.UNIT
+
+
 def lower_typed_module(module: nodes.ModuleNode) -> TypedModule:
     """Lower a checked ``oort-core`` module to typed HIR.
 
@@ -453,11 +465,14 @@ def lower_typed_module(module: nodes.ModuleNode) -> TypedModule:
         )
         typed_functions.append(TypedFunction(function, param_types, ret_type, register_types))
 
+    main_register_types = _filled_register_types(
+        hir.main, lowerer.register_types.get(hir.main.name, {})
+    )
     main = TypedFunction(
         hir.main,
         (),
-        IrType.UNIT,
-        _filled_register_types(hir.main, lowerer.register_types.get(hir.main.name, {})),
+        _main_return_type(hir.main, main_register_types),
+        main_register_types,
     )
     typed_module = TypedModule(main, tuple(typed_functions))
     validate_typed_module(typed_module)
