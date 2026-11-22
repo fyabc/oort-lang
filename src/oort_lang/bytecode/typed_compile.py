@@ -42,6 +42,7 @@ from ..hir.nodes import (
     SetItem,
     StoreGlobal,
     StoreLocal,
+    TupleItem,
     UnOp,
 )
 from ..hir.typed import (
@@ -267,6 +268,13 @@ class _ProtoBuilder:
             self._emit(
                 encode_abc(
                     TypedOp.ADT_FIELD, instruction.dst, instruction.value, instruction.index
+                ),
+                position,
+            )
+        elif isinstance(instruction, TupleItem):
+            self._emit(
+                encode_abc(
+                    TypedOp.TUPLE_ITEM, instruction.dst, instruction.value, instruction.index
                 ),
                 position,
             )

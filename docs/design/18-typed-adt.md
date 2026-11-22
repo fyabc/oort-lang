@@ -2,7 +2,7 @@
 
 > **状态**：设计草案 + **S4a/S4b 原型**（2026-11-23）。单态与泛型 ADT（含
 > prelude `Option`）已进入 typed HIR / kind=1 v6 / Python typed VM / Rust typed
-> VM；S4b 原型在运行时**擦除**类型参数，复杂模式仍留后续。**不改变语言表面**。
+> VM；泛型实例类型参数已保留，字面量/Tuple/或模式已支持。**不改变语言表面**。
 >
 > 关联：[design 15](15-typed-ir.md) 的 S4 扩展；[design 03](03-type-system-design.md)
 > 的泛型表示；[design 14](14-core-typechecking.md) 的 ADT 检查；[spec 14](../spec/14-typed-bytecode.md)
@@ -233,11 +233,11 @@ S4a 支持：
 - 空载荷/带载荷构造器；
 - arm 守卫（布尔表达式）。
 
-S4b 继续支持：
+S4b 已支持：
 
 - 字面量/Tuple/或模式与嵌套组合；
 - 泛型 ADT 的载荷；
-- 更复杂的绑定类型。
+- ADT/Int/Float/Bool/String/Tuple scrutinee。
 
 `match` 的穷尽性仍由 core 检查器负责；typed 路径只消费检查结果，不重新检查。
 
@@ -272,7 +272,7 @@ S4c 可把线性测试改成决策树（Maranget 风格）或跳转表；初始�
 | 阶段 | 范围 | 退出条件 |
 |---|---|---|
 | **S4a 单态 ADT** | 模块声明表；构造器；同构/递归单态 enum；`NEW_ADT`/`ADT_TAG`/`ADT_FIELD`；构造器/通配/变量/守卫匹配；相等/打印 | 示例与差分通过；round-trip；Rust 一致 |
-| **S4b 泛型 ADT** | `Option`/`Result`、泛型载荷、reified 实例类型参数 | **已完成（原型）**；复杂模式留后续 |
+| **S4b 泛型 ADT** | `Option`/`Result`、泛型载荷、reified 实例类型参数、字面量/Tuple/或模式 | **已完成（原型）** |
 | **S4c 优化** | 决策树/跳转表、单态布局、标量载荷内联；基准 | 不改变语义；typed benchmark 有收益 |
 
 S4a 的实现顺序：
@@ -338,14 +338,15 @@ S4a 的实现顺序：
 - 验收：`examples/08_core/08_19_typed_generic_adts.ort`、typed 单测、
   differential `typed_generic_adts`。
 
-S4b 原型的限制：
+S4b 原型的限制与备注：
 
-- 运行时 ADT 值现在携带 `AdtType` 实例身份（decl + args），守卫/相等可区分
+- 运行时 ADT 值携带 `AdtType` 实例身份（decl + args），守卫/相等可区分
   `Option[Int]` 与 `Option[String]`；
 - v6 类型表 tag 12 保存参数列表；反汇编/round-trip 保留实例参数；
+- 字面量/Tuple/或模式已实现；`TupleItem` 提供静态 Tuple 字段读取；
 - prelude 的 Option/Result 声明会出现在每个 typed 模块的声明表中；
 - `AdtField` 对泛型字段仍做宽松校验（字段 payload 模板不写入声明表）；
-- 跨模块 ADT、边界转换、完整复杂模式仍留后续。
+- 跨模块 ADT、边界转换仍留后续。
 
 ## 12. 推荐决策
 
@@ -353,5 +354,5 @@ S4b 原型的限制：
 - **类型身份用 `(origin, name, args)`**，不要用构造器名字符串；
 - **值布局先用统一 tagged payload**，不提前做 Rust enum 单态化；
 - **match 用 typed 专用 lowering + `ADT_TAG`/`ADT_FIELD`**，不复用 arm 函数；
-- **S4b 再引入泛型实例表 + Option/Result prelude**；
+- **S4b 已引入 reified 泛型参数、Option/Result prelude 与复杂模式**；
 - **S4 不引入 GC**，但记录“ADT 持有可变对象/闭包后需重新评估”。

@@ -45,6 +45,7 @@ from .nodes import (
     StoreLocal,
     StoreOuter,
     SuperProxy,
+    TupleItem,
     UnOp,
     Unpack,
 )
@@ -130,6 +131,8 @@ def format_instruction(instruction: Instruction) -> str:
         return f"ADT_TAG R{instruction.dst} R{instruction.value}"
     if isinstance(instruction, AdtField):
         return f"ADT_FIELD R{instruction.dst} R{instruction.value}[{instruction.index}]"
+    if isinstance(instruction, TupleItem):
+        return f"TUPLE_ITEM R{instruction.dst} R{instruction.value}[{instruction.index}]"
     if isinstance(instruction, (BuildList, BuildTuple, BuildSet)):
         values = ", ".join(f"R{value}" for value in instruction.elements)
         return f"{type(instruction).__name__.upper()} R{instruction.dst} ({values})"

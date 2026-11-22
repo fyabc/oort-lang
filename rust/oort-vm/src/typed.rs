@@ -785,6 +785,7 @@ const ADT_TAG: u32 = 76;
 const ADT_FIELD: u32 = 77;
 const EQ_ADT: u32 = 78;
 const NE_ADT: u32 = 79;
+const TUPLE_ITEM: u32 = 80;
 
 pub struct TypedVm {
     functions: Vec<ResolvedProto>,
@@ -1174,6 +1175,15 @@ fn execute(
                     .get(c)
                     .ok_or_else(|| "typed ADT field index out of range".to_string())?;
                 registers[a] = field.clone();
+            }
+            TUPLE_ITEM => {
+                let TypedValue::Tuple(items) = &registers[b] else {
+                    return Err("typed TUPLE_ITEM expects a Tuple".into());
+                };
+                let item = items
+                    .get(c)
+                    .ok_or_else(|| "typed tuple index out of range".to_string())?;
+                registers[a] = item.clone();
             }
             NEW_SET => {
                 let mut items = Vec::with_capacity(b);

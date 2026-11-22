@@ -143,6 +143,7 @@ ABx: [op:8][A:8][Bx:16]
 | 76 | `ADT_TAG` | ABC | A=目标 Int, B=ADT 值, C=0 | 返回构造器在声明内的索引 |
 | 77 | `ADT_FIELD` | ABC | A=目标, B=ADT 值, C=字段索引 | 读取 payload 字段 |
 | 78/79 | `EQ_ADT` / `NE_ADT` | ABC | A=目标, B=左, C=右 | ADT 名义 + 变体 + payload 深相等/不等 → Bool |
+| 80 | `TUPLE_ITEM` | ABC | A=目标, B=Tuple, C=索引 | 静态索引读取 Tuple 元素（支持异构 Tuple） |
 
 ### 3.2 调用约定
 
@@ -219,8 +220,8 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   Dict 字面量、List/Tuple/String/Dict 下标读取、`len`、深相等、
   List/Tuple（元素齐次）/Set/Dict/String 的 `for` 迭代；
 - 支持单态与泛型 ADT（含 prelude `Option`）；类型参数进入类型表并在运行时
-  作为 ADT 实例身份保留；构造器/通配/变量/守卫模式和嵌套构造器；
-  字面量/Tuple/或模式仍拒绝；
+  作为 ADT 实例身份保留；match 支持 ADT/Int/Float/Bool/String/Tuple
+  scrutinee，构造器/通配/变量/守卫/字面量/Tuple/或模式与嵌套组合；
 - 无集合原地修改（`SET_ITEM` 预留；核心检查器尚未允许 `xs[i] = v`）、`in`/
   集合运算、类/接口/泛型/lambda、模块导入、切片；
 - kind=1 **v6 是当前唯一版本**；ADT 模块声明表位于文件头；旧读者遇到未知

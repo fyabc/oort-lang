@@ -95,6 +95,7 @@ class TypedOp(IntEnum):
     ADT_FIELD = 77
     EQ_ADT = 78
     NE_ADT = 79
+    TUPLE_ITEM = 80
 
 
 # ABC: [op:8][A:8][B:8][C:8]
@@ -170,6 +171,7 @@ ABC_OPS = frozenset(
         TypedOp.ADT_FIELD,
         TypedOp.EQ_ADT,
         TypedOp.NE_ADT,
+        TypedOp.TUPLE_ITEM,
     }
 )
 

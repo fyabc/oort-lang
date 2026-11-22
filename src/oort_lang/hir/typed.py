@@ -65,6 +65,7 @@ from .nodes import (
     SetItem,
     StoreGlobal,
     StoreLocal,
+    TupleItem,
     UnOp,
     register_reads,
     register_writes,
@@ -423,6 +424,28 @@ def _validate_pattern(pattern: nodes.Pattern, expected: Type) -> None:
                 return
         _ir_type_from(expected, pattern.position)
         return
+    if isinstance(pattern, nodes.LiteralPattern):
+        if not isinstance(expected, PrimitiveType) or expected.name not in (
+            "Int",
+            "Float",
+            "Bool",
+            "String",
+        ):
+            _reject(pattern, "literal pattern on unsupported type")
+        _ir_type_from(expected, pattern.position)
+        return
+    if isinstance(pattern, nodes.TuplePattern):
+        if not isinstance(expected, TupleType):
+            _reject(pattern, "tuple pattern on non-Tuple values")
+        if len(pattern.patterns) != len(expected.elements):
+            _reject(pattern, "tuple pattern arity mismatch")
+        for item, item_type in zip(pattern.patterns, expected.elements, strict=True):
+            _validate_pattern(item, item_type)
+        return
+    if isinstance(pattern, nodes.OrPattern):
+        for alternative in pattern.patterns:
+            _validate_pattern(alternative, expected)
+        return
     if isinstance(pattern, nodes.ConstructorPattern):
         if not isinstance(expected, CoreAdtType):
             _reject(pattern, "constructor patterns on non-ADT values")
@@ -525,8 +548,15 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
         return
     if isinstance(node, nodes.MatchExpr):
         scrutinee = node.scrutinee.metadata.get("type_obj")
-        if not isinstance(scrutinee, CoreAdtType):
-            _reject(node, "match on non-ADT values")
+        if not isinstance(scrutinee, (CoreAdtType, TupleType, PrimitiveType)):
+            _reject(node, "match on unsupported values")
+        if isinstance(scrutinee, PrimitiveType) and scrutinee.name not in (
+            "Int",
+            "Float",
+            "Bool",
+            "String",
+        ):
+            _reject(node, "match on unsupported scalar values")
         _validate_expr(node.scrutinee)
         for arm in node.arms:
             _validate_pattern(arm.pattern, scrutinee)
@@ -683,9 +713,9 @@ class _TypedHirLowerer(HirLowerer):
 
     def _lower_match(self, node: nodes.MatchExpr) -> int:
         scrutinee = self._require_value(node.scrutinee)
-        core_type = node.scrutinee.metadata.get("type_obj")
-        if not isinstance(core_type, CoreAdtType):
-            raise UnsupportedSyntax("Typed match requires an ADT scrutinee.", node.position)
+        scrutinee_type = node.scrutinee.metadata.get("type_obj")
+        if not isinstance(scrutinee_type, Type):
+            raise UnsupportedSyntax("Typed match is missing the scrutinee type.", node.position)
         result_type = _ir_type_for_node(node)
         dst = self._alloc(node.position)
         self._record(dst, result_type, node.position)
@@ -698,7 +728,7 @@ class _TypedHirLowerer(HirLowerer):
             self._emit(Label(arm.position, arm_label))
             self._push_scope()
             try:
-                self._lower_pattern(arm.pattern, scrutinee, core_type, fail_label)
+                self._lower_pattern(arm.pattern, scrutinee, scrutinee_type, fail_label)
                 if arm.guard is not None:
                     guard = self._require_value(arm.guard)
                     self._emit(JumpIfFalse(arm.guard.position, guard, fail_label))
@@ -728,12 +758,44 @@ class _TypedHirLowerer(HirLowerer):
         self._emit(BinOp(position, ok, "==", tag, expected))
         self._emit(JumpIfFalse(position, ok, fail_label))
 
+    def _binding_types(self, pattern: nodes.Pattern, expected: Type) -> list[tuple[str, Type]]:
+        if isinstance(pattern, nodes.NamePattern):
+            if isinstance(expected, CoreAdtType):
+                constructor = expected.constructor(pattern.name)
+                if constructor is not None:
+                    return []
+            return [(pattern.name, expected)]
+        if isinstance(pattern, nodes.ConstructorPattern):
+            if not isinstance(expected, CoreAdtType):
+                return []
+            constructor = expected.constructor(pattern.name)
+            if constructor is None:
+                return []
+            payload = _instantiated_payload(expected, constructor)
+            return [
+                binding
+                for argument, payload_type in zip(pattern.args, payload, strict=True)
+                for binding in self._binding_types(argument, payload_type)
+            ]
+        if isinstance(pattern, nodes.TuplePattern):
+            if not isinstance(expected, TupleType):
+                return []
+            return [
+                binding
+                for item, item_type in zip(pattern.patterns, expected.elements, strict=True)
+                for binding in self._binding_types(item, item_type)
+            ]
+        if isinstance(pattern, nodes.OrPattern):
+            return self._binding_types(pattern.patterns[0], expected) if pattern.patterns else []
+        return []
+
     def _lower_pattern(
         self,
         pattern: nodes.Pattern,
         value: int,
         expected: Type,
         fail_label: str,
+        bindings: dict[str, int] | None = None,
     ) -> None:
         if isinstance(pattern, nodes.WildcardPattern):
             return
@@ -753,10 +815,59 @@ class _TypedHirLowerer(HirLowerer):
                     )
                     self._emit_tag_test(value, index, fail_label, pattern.position)
                     return
-            slot = self._declare_local(pattern.name, mutable=False, position=pattern.position)
-            slot_type = _ir_type_from(expected, pattern.position)
-            self._record(slot, slot_type, pattern.position)
+            slot = None if bindings is None else bindings.get(pattern.name)
+            if slot is None:
+                slot = self._declare_local(pattern.name, mutable=False, position=pattern.position)
+                slot_type = _ir_type_from(expected, pattern.position)
+                self._record(slot, slot_type, pattern.position)
             self._emit(Move(pattern.position, slot, value))
+            return
+        if isinstance(pattern, nodes.LiteralPattern):
+            expected_type = _ir_type_from(expected, pattern.position)
+            constant = self._const(pattern.value, pattern.position)
+            self._record(constant, expected_type, pattern.position)
+            ok = self._alloc(pattern.position)
+            self._record(ok, IrType.BOOL, pattern.position)
+            self._emit(BinOp(pattern.position, ok, "==", value, constant))
+            self._emit(JumpIfFalse(pattern.position, ok, fail_label))
+            return
+        if isinstance(pattern, nodes.TuplePattern):
+            if not isinstance(expected, TupleType):
+                raise UnsupportedSyntax(
+                    "Tuple patterns require a Tuple scrutinee.", pattern.position
+                )
+            for index, (item, item_type) in enumerate(
+                zip(pattern.patterns, expected.elements, strict=True)
+            ):
+                slot_type = _ir_type_from(item_type, pattern.position)
+                slot = self._alloc(pattern.position)
+                self._record(slot, slot_type, pattern.position)
+                self._emit(TupleItem(pattern.position, slot, value, index))
+                self._lower_pattern(item, slot, item_type, fail_label, bindings)
+            return
+        if isinstance(pattern, nodes.OrPattern):
+            if not pattern.patterns:
+                return
+            slot_map = dict(bindings or {})
+            for name, binding_type in self._binding_types(pattern.patterns[0], expected):
+                if name not in slot_map:
+                    slot = self._declare_local(name, mutable=False, position=pattern.position)
+                    self._record(
+                        slot, _ir_type_from(binding_type, pattern.position), pattern.position
+                    )
+                    slot_map[name] = slot
+            success = self._new_label("or_success")
+            for alt_index, alternative in enumerate(pattern.patterns):
+                alt_fail = (
+                    fail_label
+                    if alt_index == len(pattern.patterns) - 1
+                    else self._new_label("or_fail")
+                )
+                self._lower_pattern(alternative, value, expected, alt_fail, slot_map)
+                self._emit(Jump(pattern.position, success))
+                if alt_index != len(pattern.patterns) - 1:
+                    self._emit(Label(pattern.position, alt_fail))
+            self._emit(Label(pattern.position, success))
             return
         if isinstance(pattern, nodes.ConstructorPattern):
             if not isinstance(expected, CoreAdtType):
@@ -782,7 +893,7 @@ class _TypedHirLowerer(HirLowerer):
                 field_type = _ir_type_from(payload_type, pattern.position)
                 self._record(field, field_type, pattern.position)
                 self._emit(AdtField(pattern.position, field, value, field_index))
-                self._lower_pattern(argument, field, payload_type, fail_label)
+                self._lower_pattern(argument, field, payload_type, fail_label, bindings)
             return
         raise UnsupportedSyntax(
             f"Typed HIR backend does not support pattern {type(pattern).__name__}.",
@@ -1240,6 +1351,14 @@ def validate_typed_module(module: TypedModule) -> None:
                 ]
                 if field_types and not any(candidate == target for candidate in field_types):
                     _invalid(function, instruction, "ADT field type mismatch")
+            elif isinstance(instruction, TupleItem):
+                source = table[instruction.value]
+                if not isinstance(source, ContainerType) or source.kind != "Tuple":
+                    _invalid(function, instruction, "TupleItem source is not a Tuple")
+                if not 0 <= instruction.index < len(source.args):
+                    _invalid(function, instruction, "TupleItem index out of range")
+                if table[instruction.dst] != source.args[instruction.index]:
+                    _invalid(function, instruction, "TupleItem type mismatch")
             elif isinstance(instruction, GetItem):
                 _validate_get_item(function, instruction)
             elif isinstance(instruction, SetItem):

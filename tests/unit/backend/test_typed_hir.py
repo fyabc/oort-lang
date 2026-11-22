@@ -107,6 +107,7 @@ def test_typed_subset_example_is_accepted():
         "08_17_typed_sets_dicts.ort",
         "08_18_typed_adts.ort",
         "08_19_typed_generic_adts.ort",
+        "08_10_patterns.ort",
     ],
 )
 def test_tvm_matches_vm_on_example(name: str, run_file):
@@ -572,6 +573,46 @@ print(unwrap(Some(7), 0), unwrap(None, 9))
     compiler = get_compiler("NOT_EXIST -t tvm")
     compiler.run_string(source)
     assert capsys.readouterr().out == "7 9\n"
+
+
+def test_typed_literal_and_heterogeneous_tuple_patterns(capsys: pytest.CaptureFixture):
+    source = """#lang oort-core
+
+def classify_text(s: String) -> Int {
+    match s {
+        "a" => 1,
+        "b" => 2,
+        _ => 0,
+    }
+}
+
+def flag(b: Bool) -> Int {
+    match b {
+        true => 1,
+        false => 0,
+    }
+}
+
+def pair(p: Tuple[Int, String]) -> Bool {
+    match p {
+        (0, "x") => true,
+        _ => false,
+    }
+}
+
+print(classify_text("a"), classify_text("b"), classify_text("z"))
+print(flag(true), flag(false))
+print(pair((0, "x")), pair((0, "y")), pair((1, "x")))
+"""
+    typed_compiler = get_compiler("NOT_EXIST -t tvm")
+    typed_compiler.run_string(source)
+    typed_out = capsys.readouterr().out
+
+    vm_compiler = get_compiler("NOT_EXIST -t vm")
+    vm_compiler.run_string(source)
+    vm_out = capsys.readouterr().out
+
+    assert typed_out == vm_out == "1 2 0\n1 0\ntrue false false\n"
 
 
 def test_typed_collection_obc_round_trip(tmp_path):

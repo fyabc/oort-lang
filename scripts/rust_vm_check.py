@@ -223,6 +223,66 @@ print(tree_sum(Node(Leaf(1), Node(Leaf(2), Leaf(3)))))
 print(Circle(2) == Circle(2), Circle(2) == Circle(3))
 print(Circle(2))
 """,
+    "typed_patterns": """#lang oort-core
+
+enum Shape {
+    Point,
+    Line(x: Int),
+}
+
+def describe(shape: Shape) -> String {
+    match shape {
+        Point => "point",
+        Line(0) => "zero",
+        Line(x) if x < 0 => "negative",
+        Line(_) => "line",
+    }
+}
+
+def classify(n: Int) -> String {
+    match n {
+        0 => "zero",
+        1 | 2 | 3 => "small",
+        x if x < 0 => "negative",
+        _ => "large",
+    }
+}
+
+def at_origin(p: Tuple[Int, Int]) -> Bool {
+    match p {
+        (0, 0) => true,
+        _ => false,
+    }
+}
+
+def classify_text(s: String) -> Int {
+    match s {
+        "a" => 1,
+        "b" => 2,
+        _ => 0,
+    }
+}
+
+def flag(b: Bool) -> Int {
+    match b {
+        true => 1,
+        false => 0,
+    }
+}
+
+def pair(p: Tuple[Int, String]) -> Bool {
+    match p {
+        (0, "x") => true,
+        _ => false,
+    }
+}
+
+print(describe(Point), describe(Line(0)), describe(Line(-2)), describe(Line(3)))
+print(classify(0), classify(2), classify(-1), classify(9))
+print(at_origin((0, 0)), at_origin((0, 1)))
+print(classify_text("a"), classify_text("z"), flag(true), flag(false))
+print(pair((0, "x")), pair((1, "x")))
+""",
     "typed_generic_adts": """#lang oort-core
 
 enum Maybe[T] {

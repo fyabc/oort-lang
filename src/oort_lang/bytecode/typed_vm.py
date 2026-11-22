@@ -266,6 +266,11 @@ class TypedCodeVM:
                 if type(value) is not OortADT or not 0 <= c < len(value.values):
                     raise OortTypeError("Typed ADT_FIELD is out of range.", position)
                 registers[a] = value.values[c]
+            elif op is TypedOp.TUPLE_ITEM:
+                value = registers[b]
+                if type(value) is not OortTuple or not 0 <= c < len(value.value):
+                    raise OortTypeError("Typed TUPLE_ITEM is out of range.", position)
+                registers[a] = value.value[c]
             elif op in (TypedOp.EQ_ADT, TypedOp.NE_ADT):
                 equal = self.interpreter.values_equal(registers[b], registers[c], position)
                 if op is TypedOp.NE_ADT:
