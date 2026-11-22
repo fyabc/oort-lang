@@ -26,7 +26,8 @@
 | [14-core-typechecking.md](14-core-typechecking.md) | oort-core 已实现的双向检查与局部推断算法（含函数返回推断）；03 是远期目标 |
 | [15-typed-ir.md](15-typed-ir.md) | 类型化 IR 研究：类型来源、typed HIR/字节码的备选方案、受限标量子集与里程碑 |
 | [16-numeric-semantics.md](16-numeric-semantics.md) | 数值语义：Int 精度/溢出、Float 与混合比较、方言与后端一致性（草案） |
-| [17-boundary-ffi.md](17-boundary-ffi.md) | 跨方言边界与 FFI：object→core 调用、值/守卫/blame、模块导入、C FFI profile（草案） |
+| [17-boundary-ffi.md](17-boundary-ffi.md) | 跨方言边界与 FFI：object→core 调用、值/守卫/blame、模块导入、C FFI profile（草案 + B1 原型） |
+| [18-typed-adt.md](18-typed-adt.md) | typed ADT（S4）：名义类型、构造器、match、布局、泛型阶段与序列化（草案） |
 
 ## 使用注意
 

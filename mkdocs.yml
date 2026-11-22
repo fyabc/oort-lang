@@ -122,6 +122,7 @@ nav:
       - 类型化 IR 研究: design/15-typed-ir.md
       - 数值语义: design/16-numeric-semantics.md
       - 跨方言边界与 FFI: design/17-boundary-ffi.md
+      - 类型化 ADT（S4）: design/18-typed-adt.md
   - 实现:
       - 实现笔记: implementation/index.md
       - 参考资料: implementation/00-references.md
