@@ -41,7 +41,7 @@ source
   `constructors` 在声明注册后填充，以支持自递归 payload；
 - `AdtType(template, args)`：应用后的类型（`Option[Int]`）；名义相等看
   `(template.origin, template.name)`，实参结构比较。单态 enum 是 `args=()`；
-- `TypeParameterType(name)`：声明体内的刚性参数；
+- `TypeParameterType(name, variance)`：声明体内的刚性参数，带声明处变型；
 - `ForallType(params, body)`：构造器的多态类型方案；
 - `ConstructorInfo(name, field_names, payload)`；
 - `UnknownType`（错误恢复，兼容一切）；
@@ -108,11 +108,17 @@ source
 - `visit_enum_def`：
   - 仅模块顶层、非空；enum 名进入类型命名空间，构造器名进入模块值命名空间；
     先注册 `AdtTemplate` 再解析字段，支持自递归；
-  - 类型参数 `[T]`：`_enum_type_parameters` 校验重名/遮蔽；上界与默认值
-    显式拒绝（无 traits/interfaces）。解析载荷时 `self.type_parameters`
-    提供刚性参数；
+  - 类型参数 `[T]` / `[out T]` / `[in T]`：`_enum_type_parameters` 校验
+    重名/遮蔽并映射 `VarianceKind`；上界与默认值显式拒绝（无
+    traits/interfaces）。解析载荷时 `self.type_parameters` 提供刚性参数；
+  - `_check_enum_variance` 按 payload 极性检查变型：函数参数翻转、内建集合
+    保持、嵌套 ADT 按声明变型复合，不变型实参把极性压成 0；违规定位到字段。
+    算法见 [design 14](../design/14-core-typechecking.md) §7；
   - payload 构造器是 `ForallType(params, FunctionType(payload, adt))`
     （单态时直接是 `FunctionType`），零参构造器同理是 AdtType 值。
+- 变型文法：`typeParameter` 用 `(in_variance=IN | out_variance=identifier)?`
+  两个独立标签（ANTLR 不允许同一标签混用 token/rule）；AST builder 把
+  `in`/`out` 映射为 `VarianceKind`，其他文本报语法错误。`out` 仍是普通标识符。
 - 类型应用：`_resolve_container_type` 识别已声明 enum 模板，检查实参数目并
   返回 `AdtType(template, args)`；裸泛型名与单态 enum 加实参分别报错。
 - 构造器实例化（`_check_expr` / `_check_generic_call` / `_check_generic_value_expected`）：
@@ -186,6 +192,8 @@ Checker.visit_import -> Compiler._resolve_core_module
 - `tests/unit/runtime/test_core_execution.py`：检查后执行与 Unit/null 映射。
 - `tests/unit/runtime/test_core_adt_execution.py`：构造、match、嵌套、递归、
   跨模块构造器与打印；泛型 ADT 的 eval/vm 差分与跨模块用例。
+- `tests/unit/frontend/test_core_checker.py::TestCoreVariance`：协变/逆变
+  正例、函数位置误用、嵌套不变/逆变复合、非法变型文本与 `out` 标识符兼容。
 - `tests/unit/runtime/test_core_function_values.py`：lambda、闭包、高阶函数、
   函数值跨模块与 ADT payload。
 - `tests/unit/runtime/test_core_modules.py`：同方言导入、再导出、类型检查、

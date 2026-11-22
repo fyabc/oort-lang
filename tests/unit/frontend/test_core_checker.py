@@ -866,6 +866,103 @@ class TestCoreGenericAdt:
         )
 
 
+class TestCoreVariance:
+    def test_covariant_enum(self, run_source):
+        result = run_source(
+            core(
+                "enum Producer[out T] { Get(value: T), Empty }\n"
+                "val p: Producer[Int] = Get(3)\n"
+                "print(match p { Get(v) => v, Empty => 0 })\n"
+            )
+        )
+        assert result.stdout == "3\n"
+
+    def test_contravariant_enum(self, run_source):
+        result = run_source(
+            core(
+                "enum Consumer[in T] { Use(f: (T) -> Int) }\n"
+                "val c: Consumer[Int] = Use(do(x: Int) { x + 1 })\n"
+                "print(match c { Use(f) => f(2) })\n"
+            )
+        )
+        assert result.stdout == "3\n"
+
+    def test_covariant_recursive_enum(self, run_source):
+        result = run_source(
+            core(
+                "enum MyList[out T] { Cons(head: T, tail: MyList[T]), Nil }\n"
+                "val xs: MyList[Int] = Cons(1, Cons(2, Nil))\n"
+                "print(match xs { Cons(h, _) => h, Nil => 0 })\n"
+            )
+        )
+        assert result.stdout == "1\n"
+
+    def test_collections_are_covariant(self, run_source):
+        result = run_source(
+            core(
+                "enum E[out T] {\n"
+                "    D(d: Dict[String, T]),\n"
+                "    L(xs: List[T]),\n"
+                "    P(pair: Tuple[T, Int])\n"
+                "}\n"
+                'val e: E[Int] = D({: "a": 1 :})\n'
+                'print(match e { D(d) => d["a"], _ => 0 })\n'
+            )
+        )
+        assert result.stdout == "1\n"
+
+    def test_covariant_rejects_consumed_position(self, caplog):
+        check_error(
+            caplog,
+            "enum Bad[out T] { B(f: (T) -> Int) }\n",
+            "Type parameter 'T' is declared covariant ('out') but appears in a "
+            "contravariant position in constructor 'B'.",
+        )
+
+    def test_contravariant_rejects_produced_position(self, caplog):
+        check_error(
+            caplog,
+            "enum Bad[in T] { B(value: T) }\n",
+            "Type parameter 'T' is declared contravariant ('in') but appears in a "
+            "covariant position in constructor 'B'.",
+        )
+
+    def test_nested_invariant_parameter_breaks_covariance(self, caplog):
+        check_error(
+            caplog,
+            "enum Inner[T] { I(v: T) }\nenum Outer[out T] { O(x: Inner[T]) }\n",
+            "Type parameter 'T' is declared covariant ('out') but appears in an "
+            "invariant position in constructor 'O'.",
+        )
+
+    def test_nested_contravariance_composes(self, caplog):
+        check_error(
+            caplog,
+            "enum Consumer[in T] { C(f: (T) -> Int) }\n"
+            "enum BadWrap[out T] { BW(c: Consumer[T]) }\n",
+            "Type parameter 'T' is declared covariant ('out') but appears in a "
+            "contravariant position in constructor 'BW'.",
+        )
+
+    def test_out_remains_a_valid_identifier(self, run_source):
+        result = run_source(core("val out = 1\nprint(out)\n"))
+        assert result.stdout == "1\n"
+
+    def test_unknown_variance_annotation_is_rejected(self, caplog):
+        check_error(
+            caplog,
+            "enum E[foo T] { A }\n",
+            "Expected 'in' or 'out' before type parameter 'T', got 'foo'.",
+        )
+
+    def test_type_parameter_named_out_is_reserved(self, caplog):
+        check_error(
+            caplog,
+            "enum E[out] { A }\n",
+            "Type parameter 'out' is already declared or reserved.",
+        )
+
+
 class TestCoreFunctionValues:
     def test_annotated_lambda_and_call(self, run_source):
         result = run_source(

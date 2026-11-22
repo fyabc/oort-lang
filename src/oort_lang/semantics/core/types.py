@@ -13,6 +13,15 @@ not reused here; this module belongs to semantic analysis only.
 """
 
 import dataclasses
+from enum import Enum
+
+
+class Variance(Enum):
+    """Declaration-site variance of one enum type parameter."""
+
+    INVARIANT = 0
+    COVARIANT = 1
+    CONTRAVARIANT = 2
 
 
 class Type:
@@ -79,6 +88,7 @@ class TypeParameterType(Type):
     """A rigid type variable referenced inside one generic declaration."""
 
     name: str
+    variance: Variance = Variance.INVARIANT
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -181,6 +191,11 @@ class AdtType(Type):
     @property
     def constructors(self) -> tuple[ConstructorInfo, ...]:
         return self.template.constructors
+
+    def variance_at(self, index: int) -> Variance:
+        if index < len(self.template.params):
+            return self.template.params[index].variance
+        return Variance.INVARIANT
 
     def __eq__(self, other: object) -> bool:
         return (
@@ -302,11 +317,21 @@ def is_assignable(expected: Type, actual: Type) -> bool:
     if isinstance(expected, AdtType) and isinstance(actual, AdtType):
         if not _same_template(expected, actual) or len(expected.args) != len(actual.args):
             return False
-        # Invariant arguments until subtyping (and variance) exist.
-        return all(
-            is_assignable(expected_arg, actual_arg) and is_assignable(actual_arg, expected_arg)
-            for expected_arg, actual_arg in zip(expected.args, actual.args)
-        )
+        # Variance-aware; with no subtyping today every case degenerates to
+        # equality, but Unknown still participates in error recovery.
+        for index, (expected_arg, actual_arg) in enumerate(zip(expected.args, actual.args)):
+            variance = expected.variance_at(index)
+            if variance is Variance.COVARIANT:
+                if not is_assignable(expected_arg, actual_arg):
+                    return False
+            elif variance is Variance.CONTRAVARIANT:
+                if not is_assignable(actual_arg, expected_arg):
+                    return False
+            elif not (
+                is_assignable(expected_arg, actual_arg) and is_assignable(actual_arg, expected_arg)
+            ):
+                return False
+        return True
     if isinstance(expected, ClassType) and isinstance(actual, ClassType):
         return expected == actual
     if isinstance(expected, ForallType) and isinstance(actual, ForallType):

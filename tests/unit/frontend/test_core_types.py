@@ -16,6 +16,7 @@ from oort_lang.semantics.core.types import (
     ModuleType,
     TypeParameterType,
     UnknownType,
+    Variance,
     describe_type,
     is_assignable,
     join_types,
@@ -134,6 +135,21 @@ def test_join_generic_adt_types():
     assert join_types(int_option, int_option) == int_option
     assert join_types(int_option, unknown_option) == unknown_option
     assert join_types(int_option, AdtType(template, (BOOL,))) is None
+
+
+def test_variance_aware_assignability_through_never():
+    covariant = AdtTemplate("main.ort", "Producer", (TypeParameterType("T", Variance.COVARIANT),))
+    invariant = AdtTemplate("main.ort", "Box", (TypeParameterType("T", Variance.INVARIANT),))
+    contravariant = AdtTemplate(
+        "main.ort", "Consumer", (TypeParameterType("T", Variance.CONTRAVARIANT),)
+    )
+
+    assert is_assignable(AdtType(covariant, (INT,)), AdtType(covariant, (NEVER,)))
+    assert not is_assignable(AdtType(covariant, (NEVER,)), AdtType(covariant, (INT,)))
+    assert not is_assignable(AdtType(invariant, (INT,)), AdtType(invariant, (NEVER,)))
+    assert not is_assignable(AdtType(invariant, (NEVER,)), AdtType(invariant, (INT,)))
+    assert is_assignable(AdtType(contravariant, (NEVER,)), AdtType(contravariant, (INT,)))
+    assert not is_assignable(AdtType(contravariant, (INT,)), AdtType(contravariant, (NEVER,)))
 
 
 def test_substitute_type_parameters():

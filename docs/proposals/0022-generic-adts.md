@@ -1,6 +1,6 @@
 # OP 0022: 泛型 ADT 与内建 `Option` / `Result`
 
-- **状态**：Accepted（增量 A 已实现；增量 B/C 待实现）
+- **状态**：Accepted（增量 A/B 已实现；增量 C 待实现）
 - **作者**：fyabc
 - **创建日期**：2026-11-22
 - **相关提案**：[OP 0005](0005-type-system.md)（类型系统主线；§3.1 变型、§4 ADT、§5 错误处理）、
@@ -159,6 +159,13 @@ typeParameter
 
 若生成解析器在该规则上无法无歧义预测，回退方案只有“把 `out` 升为保留字并在
 CHANGELOG 记录破坏”，不推荐；实现时必须先用 ANTLR 再生验证第一种方案。
+
+**实现（2026-11-22）**：语法改为两个独立标签
+`(in_variance=IN | out_variance=identifier)? name=identifier ...`——ANTLR 不允许
+同一标签混用 token 与 rule（`variance=(IN | identifier)` 会报
+`RULE_LABEL != TOKEN_LABEL`）。两个标签在 AST builder 中合并为一个
+`VarianceKind`；`out` 仍是普通标识符（`val out = 1` 合法），非法变型文本报
+`Expected 'in' or 'out' before type parameter ...`。
 
 **声明处健全性检查**。enum 的载荷是构造器**产出**的数据，处于协变位置；
 极性规则：
@@ -366,8 +373,9 @@ enum Result[out T, out E] {
 
 ## 实现计划
 
-> **进度（2026-11-22）**：增量 A 已实现，由 spec 11/06、design 14、
-> implementation 09 与测试覆盖；增量 B/C 待实现。
+> **进度（2026-11-22）**：增量 A（泛型 ADT）与增量 B（声明处变型）已实现，
+> 由 spec 11/06、design 14、implementation 09 与测试覆盖；增量 C
+> （内建 `Option`/`Result`）待实现。
 
 分三个可独立评审的增量：
 

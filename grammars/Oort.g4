@@ -217,7 +217,8 @@ typeParameterList
     ;
 
 typeParameter
-    : identifier (qualifier=(COLON | LT | GT) typeExpr=expression)? (ASSIGN defaultValue=expression)?
+    : (in_variance=IN | out_variance=identifier)? name=identifier
+      (qualifier=(COLON | LT | GT) typeExpr=expression)? (ASSIGN defaultValue=expression)?
     ;
 
 baseClassDef

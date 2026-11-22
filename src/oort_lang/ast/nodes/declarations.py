@@ -99,6 +99,12 @@ class TypeQualifierKind(Enum):
     META_TYPE = 4
 
 
+class VarianceKind(Enum):
+    INVARIANT = 0
+    COVARIANT = 1
+    CONTRAVARIANT = 2
+
+
 class TypeParameter(Declaration):
     def __init__(
         self,
@@ -107,13 +113,19 @@ class TypeParameter(Declaration):
         type_expr: ASTNode | None,
         qualifier: TypeQualifierKind = TypeQualifierKind.DEFAULT,
         default_value: ASTNode | None = None,
+        variance: VarianceKind = VarianceKind.INVARIANT,
     ):
         super().__init__(context, name, type_expr)
         self.qualifier = qualifier
         self.default_value = default_value
+        self.variance = variance
 
     def _accept(self, visitor: ASTVisitor):
         return visitor.visit_type_parameter(self)
 
     def str_attrs(self) -> str | None:
-        return f"{self.name}, {self.qualifier.name}"
+        parts = [self.name]
+        if self.variance is not VarianceKind.INVARIANT:
+            parts.append(self.variance.name)
+        parts.append(self.qualifier.name)
+        return ", ".join(parts)

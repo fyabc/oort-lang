@@ -2,12 +2,12 @@
 
 """Build AST from syntax tree."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from antlr4 import ParserRuleContext
 
 from ..ast.nodes import *
-from ..ast.nodes.declarations import TypeQualifierKind
+from ..ast.nodes.declarations import TypeQualifierKind, VarianceKind
 from ..diagnostics import OortException, OortSyntaxError
 from ..diagnostics.error_handler import CompilerErrorHandler
 from ..diagnostics.syntax_errors import UnsupportedSyntax
@@ -321,12 +321,33 @@ class ASTBuilder(ExpressionParsingMixin, ParameterParsingMixin, OortVisitor):
             qualifier = TypeQualifierKind.META_TYPE
         else:
             raise ValueError(f"Unknown type qualifier: {ctx.qualifier.text}")
+
+        name_ctx = cast("OortParser.IdentifierContext", ctx.name)
+        variance = VarianceKind.INVARIANT
+        if ctx.in_variance is not None:
+            variance = VarianceKind.CONTRAVARIANT
+        elif ctx.out_variance is not None:
+            out_ctx = cast("OortParser.IdentifierContext", ctx.out_variance)
+            text = out_ctx.getText()
+            if text == "out":
+                variance = VarianceKind.COVARIANT
+            else:
+                self.error_handler.add(
+                    OortSyntaxError(
+                        f"Expected 'in' or 'out' before type parameter "
+                        f"'{name_ctx.getText()}', got '{text}'.",
+                        SourcePosition.from_context(out_ctx),
+                    ),
+                    self.input_info,
+                )
+
         return TypeParameter(
             ctx,
-            name=ctx.identifier().getText(),
+            name=name_ctx.getText(),
             type_expr=None if ctx.typeExpr is None else self.visit(ctx.typeExpr),
             qualifier=qualifier,
             default_value=None if ctx.defaultValue is None else self.visit(ctx.defaultValue),
+            variance=variance,
         )
 
     # visitBaseClassDef: pass

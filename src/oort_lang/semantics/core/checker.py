@@ -15,6 +15,7 @@ from pathlib import Path, PurePosixPath
 
 from ...ast import nodes
 from ...ast.ast_visitor import ASTVisitor
+from ...ast.nodes.declarations import VarianceKind
 from ...diagnostics import TypeCheckError, UnsupportedSyntax
 from ...diagnostics.error_handler import CompilerErrorHandler
 from ...parser.dialect import DialectConfig
@@ -47,6 +48,7 @@ from .types import (
     TypeParameterType,
     UnifyFailure,
     UnknownType,
+    Variance,
     describe_type,
     is_assignable,
     join_types,
@@ -62,6 +64,11 @@ _EQUALITY = frozenset({"==", "!="})
 _RESERVED_TYPE_NAMES = frozenset(
     {"Int", "Float", "Bool", "String", "Unit", "List", "Set", "Dict", "Tuple", "_"}
 )
+_VARIANCE_BY_KIND = {
+    VarianceKind.INVARIANT: Variance.INVARIANT,
+    VarianceKind.COVARIANT: Variance.COVARIANT,
+    VarianceKind.CONTRAVARIANT: Variance.CONTRAVARIANT,
+}
 
 
 def _is_numeric(type_: Type) -> bool:
@@ -102,6 +109,58 @@ def _is_valid_key_type(type_: Type) -> bool:
     if isinstance(type_, TupleType):
         return all(_is_valid_key_type(element) for element in type_.elements)
     return False
+
+
+def _variance_violation(target: TypeParameterType, type_: Type, polarity: int) -> int | None:
+    """Find the first occurrence of `target` that its declared variance forbids.
+
+    `polarity` is +1 in a produced (covariant) position, -1 in a consumed
+    (contravariant) position, and 0 once an invariant type constructor is
+    crossed.  Returns the offending polarity, or None if the occurrence is
+    legal.
+    """
+    if isinstance(type_, TypeParameterType):
+        if type_.name != target.name:
+            return None
+        if target.variance is Variance.COVARIANT:
+            return None if polarity > 0 else polarity
+        if target.variance is Variance.CONTRAVARIANT:
+            return None if polarity < 0 else polarity
+        return None
+    if isinstance(type_, (ListType, SetType)):
+        return _variance_violation(target, type_.element, polarity)
+    if isinstance(type_, DictType):
+        for part in (type_.key, type_.value):
+            bad = _variance_violation(target, part, polarity)
+            if bad is not None:
+                return bad
+        return None
+    if isinstance(type_, TupleType):
+        for element in type_.elements:
+            bad = _variance_violation(target, element, polarity)
+            if bad is not None:
+                return bad
+        return None
+    if isinstance(type_, FunctionType):
+        for param in type_.params:
+            bad = _variance_violation(target, param, -polarity)
+            if bad is not None:
+                return bad
+        return _variance_violation(target, type_.ret, polarity)
+    if isinstance(type_, AdtType):
+        for index, arg in enumerate(type_.args):
+            nested = type_.variance_at(index)
+            if nested is Variance.COVARIANT:
+                child = polarity
+            elif nested is Variance.CONTRAVARIANT:
+                child = -polarity
+            else:
+                child = 0
+            bad = _variance_violation(target, arg, child)
+            if bad is not None:
+                return bad
+        return None
+    return None
 
 
 @dataclasses.dataclass(slots=True)
@@ -821,6 +880,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
             self.type_parameters = previous_params
 
         template.constructors = tuple(info for info, _ in built)
+        self._check_enum_variance(template, built)
         applied = AdtType(template, params)
         for info, case in built:
             body: Type
@@ -886,8 +946,42 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 )
                 continue
             seen.add(name)
-            params.append(TypeParameterType(name))
+            params.append(TypeParameterType(name, _VARIANCE_BY_KIND[declaration.variance]))
         return tuple(params)
+
+    def _check_enum_variance(
+        self,
+        template: AdtTemplate,
+        built: list[tuple[ConstructorInfo, nodes.EnumConstructor]],
+    ) -> None:
+        """Enforce declaration-site variance over constructor payloads.
+
+        Payload types are produced by the constructor, so they start in a
+        covariant position; function parameters flip polarity, built-in
+        collections stay covariant, and nested ADTs compose their declared
+        variance (an invariant argument makes the occurrence invariant).
+        """
+        for param in template.params:
+            if param.variance is Variance.INVARIANT:
+                continue
+            for info, case in built:
+                for field, payload in zip(case.fields, info.payload):
+                    bad = _variance_violation(param, payload, 1)
+                    if bad is None:
+                        continue
+                    position = {1: "covariant", -1: "contravariant"}.get(bad, "invariant")
+                    article = "an" if position == "invariant" else "a"
+                    declared = (
+                        "covariant ('out')"
+                        if param.variance is Variance.COVARIANT
+                        else "contravariant ('in')"
+                    )
+                    self._error(
+                        f"Type parameter '{param.name}' is declared {declared} but "
+                        f"appears in {article} {position} position in constructor "
+                        f"'{info.name}'.",
+                        field.position,
+                    )
 
     def _module_origin(self) -> str:
         path = self.input_info.module_path

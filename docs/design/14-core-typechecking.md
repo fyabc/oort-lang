@@ -175,10 +175,10 @@ Oort 的递归规则对齐 Kotlin/Scala。共同根因：推断靠分析函数�
   与 [Scala Type Inference](https://www.geeksforgeeks.org/scala/scala-type-inference/)：
   递归方法无法推断结果类型。
 
-## 7. 泛型 ADT（增量 A，2026-11-22）
+## 7. 泛型 ADT 与变型（增量 A/B，2026-11-22）
 
-泛型 `enum E[T]` 的已实现算法。设计取舍见
-[OP 0022](../proposals/0022-generic-adts.md) §2–§4；此处只记录落地形态。
+泛型 `enum E[T]` 与声明处变型的已实现算法。设计取舍见
+[OP 0022](../proposals/0022-generic-adts.md) §2–§5；此处只记录落地形态。
 
 **表示**。声明与应用分离：`AdtTemplate(origin, name, params, constructors)`
 是类型构造器，`AdtType(template, args)` 是应用（`Option[Int]`）。模板在解析
@@ -206,6 +206,19 @@ Some`）；否则 `visit_name` 报“无法推断类型实参”。
 检查子模式；穷尽性仍按模板的构造器名集合。运行时完全擦除：variant 名 +
 payload，解释器与 VM 均不读类型参数。
 
+**声明处变型（增量 B）**。`TypeParameterType` 带 `Variance`（不变/协变/逆变）。
+文法用两个独立标签
+`(in_variance=IN | out_variance=identifier)? name=identifier`：ANTLR 不允许同一
+标签混用 token 与 rule，且 `out` 保持普通标识符（`val out = 1` 合法）；其他
+变型文本由 AST builder 报错。声明解析完 payload 后 `_check_enum_variance`
+做极性检查：payload 起始极性 +1（构造器产出数据）；`FunctionType` 参数取反、
+返回不变；内建集合（不可变）保持极性；嵌套 `AdtType` 按
+`AdtType.variance_at(i)` 复合（协变保持、逆变取反、不变型把极性压成 0）。
+`_variance_violation` 返回第一个非法出现的极性：`out` 要求 +1，`in` 要求 −1，
+0 表示不变位置（对两者都非法）。`is_assignable` 对同模板实参按变型逐参比较
+（协变正向、逆变反向、不变双向）；当前没有子类型，关系实际退化为相等，但
+检查已启用，为继承/接口落地预置健全性。
+
 **与内建容器的关系（非显然）**。`List[T]`/`Set[T]`/`Dict[K, V]`/`Tuple[...]`
 **不是**这套模板机制的实例：它们是 `ListType` 等硬编码的结构化静态类型，
 由 `_resolve_container_type` 按名字白名单特判。泛型 ADT 走
@@ -213,11 +226,11 @@ payload，解释器与 VM 均不读类型参数。
 无参数的 `OortType`（`type_system.py`），类型参数只存在于检查器抽象域。
 未来若统一，属于类型系统重构，不在增量 A 范围内。
 
-**尚未落地**：声明处变型（增量 B）与内建 `Option`/`Result` 预置（增量 C）。
+**尚未落地**：内建 `Option`/`Result` 预置（增量 C）。
 
 ## 8. 边界与后续
 
-- **变型 / Result·Option 预置 / 完整模式匹配 / FFI 边界**：OP 0005 后续切片，
+- **Result·Option 预置 / 完整模式匹配 / FFI 边界**：OP 0005 后续切片，
   建立在本文的双向检查 + 局部推断基线上。
 - **方法依赖扫描的保守性**：按属性名匹配同类方法（不看 receiver 类型），可能给
   「调用其他类同名方法」多加一条依赖约束——只会更保守（偶尔多要求标注），不会

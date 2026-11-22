@@ -2,8 +2,8 @@
 
 本页描述 `#lang oort-core` 当前**已实现**的最小静态子集。它不是完整的
 `oort-core` v1：已实现 Int/Float/Bool/String、集合与循环、函数、泛型 ADT
-（`enum E[T]`）与 `match`、静态类与固定槽，但内建 `Option`/`Result`、
-声明处变型注解与跨方言 FFI 尚未实现。
+（`enum E[T]`，含声明处变型）与 `match`、静态类与固定槽，但内建
+`Option`/`Result` 与跨方言 FFI 尚未实现。
 设计取舍见 [OP 0017](../proposals/0017-oort-core-thin-probe.md) 与
 [OP 0022](../proposals/0022-generic-adts.md)。
 
@@ -255,6 +255,15 @@ enum MyList[T] {
     Nil
 }
 
+enum Producer[out T] {
+    Get(value: T),
+    Empty
+}
+
+enum Consumer[in T] {
+    Use(f: (T) -> Int)
+}
+
 val a: Option[Int] = Some(1)
 val b = Some("text")                  # 推断为 Option[String]
 val xs: MyList[Int] = Cons(1, Cons(2, Nil))
@@ -281,9 +290,17 @@ def unwrap(o: Option[Int]) -> Int {
 - **顶层构造器穷尽性**：`_`/普通绑定覆盖全部；构造器模式在其所有子模式都
   不可反驳时覆盖该构造器。嵌套穷尽性尚未实现，需用 `_`/绑定兜底。
 - **泛型参数**：`[T]` / `[T, E]`；参数名不得遮蔽内建/已知类型，重复参数报错。
-  上界 `T: Bound` 与类型参数默认值显式拒绝；声明处变型 `[out T]`/`[in T]`
-  尚未实现（当前是语法错误，增量 B 落地，见
-  [OP 0022](../proposals/0022-generic-adts.md)）。
+  可选声明处变型 `[out T]`（协变）/ `[in T]`（逆变），缺省不变型；`out` 仍是
+  普通标识符（`val out = 1` 合法），非法变型文本报
+  `Expected 'in' or 'out' before type parameter ...`。上界 `T: Bound` 与类型参数
+  默认值显式拒绝（见 [OP 0022](../proposals/0022-generic-adts.md)）。
+- **变型检查**：声明处按使用位置检查。payload 是构造器产出的数据，起始为
+  协变位置；函数参数翻转极性；内建集合（`List`/`Set`/`Dict`/`Tuple`，不可变）
+  保持协变；嵌套 ADT 按其实参的声明变型复合，不变型实参使出现位置变为不变。
+  `out T` 只能出现在协变位置，`in T` 只能逆变；违反时定位到字段：
+  `Type parameter 'T' is declared covariant ('out') but appears in a
+  contravariant position in constructor 'B'.` 当前没有子类型（无继承/接口/顶
+  类型），变型关系尚不可观察，但检查已启用，为后续对象模型预置健全性。
 - **类型应用**：`Option[Int]`、`Pair[Int, String]`，可嵌套（`Option[List[Int]]`）；
   实参个数必须匹配；裸 `Option` 报“requires N type argument(s)”；单态 enum
   不接受实参。
@@ -329,6 +346,8 @@ def unwrap(o: Option[Int]) -> Int {
 | 跨方言 import | core 导入 object 模块 | `Cannot import a 'oort-object' module...` |
 | native import | `import "math"` | `Native modules are not supported...` |
 | 类型参数上界/默认值 | `enum E[T: Int] { A }`、`enum E[T = Int] { A }` | `Type parameter bounds/defaults are not supported...` |
+| 变型误用 | `enum E[out T] { A(f: (T) -> Int) }`、`enum E[in T] { A(v: T) }` | `Type parameter 'T' is declared covariant/contravariant ... but appears in a ... position ...` |
+| 非法变型文本 | `enum E[foo T] { A }` | `Expected 'in' or 'out' before type parameter 'T', got 'foo'.` |
 | 裸泛型类型 | `val x: MyOption = None` | `Type 'MyOption' requires 1 type argument(s); write MyOption[...].` |
 | 单态 enum 加实参 | `Shape[Int]` | `Enum 'Shape' does not take type arguments.` |
 | 泛型实参数目 | `MyOption[Int, String]` | `Type 'MyOption' expects 1 type argument(s), got 2.` |
@@ -370,6 +389,6 @@ print(x)          # 1
 
 ## 尚未实现
 
-null、类继承与元类、泛型类/函数/lambda、声明处变型注解、内建
-`Option`/`Result`、匿名 $n lambda、跨方言 FFI、REPL 方言切换、字面量/元组/
-守卫/或模式、嵌套穷尽性、ADT 相等。
+null、类继承与元类、泛型类/函数/lambda、内建 `Option`/`Result`、匿名 $n
+lambda、跨方言 FFI、REPL 方言切换、字面量/元组/守卫/或模式、嵌套穷尽性、
+ADT 相等。
