@@ -11,13 +11,13 @@ explicitly; the erased path is never changed.
 
 from __future__ import annotations
 
-import copy
 import dataclasses
 from enum import Enum
 from typing import TYPE_CHECKING, NoReturn
 
 from ..ast import nodes
 from ..diagnostics.syntax_errors import UnsupportedSyntax
+from ..semantics.core.prelude import CORE_PRELUDE_ORIGIN
 from ..semantics.core.types import (
     AdtType as CoreAdtType,
 )
@@ -32,6 +32,7 @@ from ..semantics.core.types import (
     Type,
     UnknownType,
     describe_type,
+    substitute,
 )
 from .dump import format_instruction
 from .lower import HirLowerer
@@ -158,12 +159,13 @@ class ConstructorSite:
         decl_index: int,
         ctor_index: int,
         payload: tuple[IrTypeLike, ...],
+        arity: int,
     ):
         self.constructor_id = constructor_id
         self.decl_index = decl_index
         self.ctor_index = ctor_index
         self.payload = payload
-        self.arity = len(payload)
+        self.arity = arity
 
 
 def list_type(element: IrTypeLike) -> ContainerType:
@@ -248,14 +250,12 @@ def _ir_type_from(type_: Type, position, *, allow_function: bool = False) -> IrT
     if isinstance(type_, TupleType):
         return tuple_type(*(_ir_type_from(element, position) for element in type_.elements))
     if isinstance(type_, CoreAdtType):
-        if type_.args:
-            raise UnsupportedSyntax(
-                "Typed HIR backend does not support generic ADTs yet.",
-                position,
-            )
-        # S4a is single-module; use one stable typed origin until module
-        # identity is carried into the typed table (S4b/B2).
-        return AdtType("<typed-module>", type_.name)
+        origin = CORE_PRELUDE_ORIGIN if type_.origin == CORE_PRELUDE_ORIGIN else "<typed-module>"
+        return AdtType(
+            origin,
+            type_.name,
+            tuple(_ir_type_from(argument, position) for argument in type_.args),
+        )
     if isinstance(type_, FunctionType) and allow_function:
         return IrType.FUNCTION
     if isinstance(type_, FunctionType):
@@ -311,11 +311,11 @@ def _validate_module(module: nodes.ModuleNode) -> None:
 
 
 def _validate_enum(node: nodes.EnumDef) -> None:
-    if node.type_params:
-        _reject(node, "generic enums")
     enum_type = node.metadata.get("type_obj")
     if not isinstance(enum_type, CoreAdtType):
         _reject(node, "enum without a checked type")
+    if node.type_params:
+        return
     _ir_type_from(enum_type, node.position)
 
 
@@ -431,7 +431,9 @@ def _validate_pattern(pattern: nodes.Pattern, expected: Type) -> None:
             _reject(pattern, f"unknown constructor '{pattern.name}'")
         if len(pattern.args) != len(constructor.payload):
             _reject(pattern, f"constructor '{pattern.name}' arity mismatch")
-        for argument, payload_type in zip(pattern.args, constructor.payload, strict=True):
+        for argument, payload_type in zip(
+            pattern.args, _instantiated_payload(expected, constructor), strict=True
+        ):
             _validate_pattern(argument, payload_type)
         return
     _reject(pattern, f"pattern {type(pattern).__name__}")
@@ -550,6 +552,14 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _instantiated_payload(expected: CoreAdtType, constructor) -> tuple[Type, ...]:
+    mapping = {
+        parameter.name: argument
+        for parameter, argument in zip(expected.template.params, expected.args)
+    }
+    return tuple(substitute(payload, mapping) for payload in constructor.payload)
+
+
 def _constructor_payload(
     enum_type: CoreAdtType, constructor: nodes.EnumConstructor
 ) -> tuple[IrTypeLike, ...]:
@@ -568,24 +578,35 @@ def _collect_adt_decls(
     sites: dict[str, ConstructorSite] = {}
     next_constructor = 0
     for stmt in module.body.statements:
-        if not isinstance(stmt, nodes.EnumDef) or getattr(stmt, "synthetic", False):
+        if not isinstance(stmt, nodes.EnumDef):
             continue
         origin = stmt.declaration_origin or "<typed-module>"
         enum_type = stmt.metadata.get("type_obj")
         if not isinstance(enum_type, CoreAdtType):
             raise UnsupportedSyntax("Enum is missing a checked type.", stmt.position)
-        constructors = tuple(
-            AdtConstructor(
-                ctor.name,
-                _constructor_payload(enum_type, ctor),
+        if stmt.type_params:
+            # Generic payload types depend on the instantiation. S4b erases
+            # runtime type arguments; constructors keep arity here.
+            constructors = tuple(
+                AdtConstructor(ctor.name, arity=len(ctor.fields)) for ctor in stmt.constructors
             )
-            for ctor in stmt.constructors
-        )
+        else:
+            constructors = tuple(
+                AdtConstructor(
+                    ctor.name,
+                    _constructor_payload(enum_type, ctor),
+                )
+                for ctor in stmt.constructors
+            )
         decls.append(AdtDecl(origin, stmt.name, constructors))
         decl_index = len(decls) - 1
         for ctor_index, constructor in enumerate(constructors):
             sites[constructor.name] = ConstructorSite(
-                next_constructor, decl_index, ctor_index, constructor.payload
+                next_constructor,
+                decl_index,
+                ctor_index,
+                constructor.payload,
+                constructor.arity,
             )
             next_constructor += 1
     return tuple(decls), sites
@@ -755,7 +776,7 @@ class _TypedHirLowerer(HirLowerer):
             )
             self._emit_tag_test(value, index, fail_label, pattern.position)
             for field_index, (argument, payload_type) in enumerate(
-                zip(pattern.args, constructor.payload, strict=True)
+                zip(pattern.args, _instantiated_payload(expected, constructor), strict=True)
             ):
                 field = self._alloc(pattern.position)
                 field_type = _ir_type_from(payload_type, pattern.position)
@@ -820,21 +841,13 @@ def _constant_ir_type(value: object) -> IrType | None:
 
 
 def _user_module(module: nodes.ModuleNode) -> nodes.ModuleNode:
-    """Return a shallow copy without compiler-injected statements.
+    """Keep prelude enums: Option/Result constructors participate in S4b.
 
-    The core prelude injects ``Option``/``Result`` enums; they are irrelevant
-    to the scalar typed subset and would otherwise add ``BUILD_ENUM``
-    instructions with no typed register meaning.
+    The typed lowerer turns EnumDef into module declarations and a no-op main
+    instruction, so prelude enums no longer introduce BUILD_ENUM code.
     """
 
-    statements = [stmt for stmt in module.body.statements if not getattr(stmt, "synthetic", False)]
-    if len(statements) == len(module.body.statements):
-        return module
-    filtered = copy.copy(module)
-    body = copy.copy(module.body)
-    body.statements = statements
-    filtered.body = body
-    return filtered
+    return module
 
 
 def _main_return_type(
@@ -1198,13 +1211,16 @@ def validate_typed_module(module: TypedModule) -> None:
                     _invalid(function, instruction, "ADT constructor target is not an ADT")
                 if len(instruction.args) != constructor.arity:
                     _invalid(function, instruction, "ADT constructor arity mismatch")
-                for argument, expected in zip(instruction.args, constructor.payload, strict=True):
-                    if table[argument] != expected:
-                        _invalid(
-                            function,
-                            instruction,
-                            f"ADT payload {table[argument]} != {expected}",
-                        )
+                if constructor.payload:
+                    for argument, expected in zip(
+                        instruction.args, constructor.payload, strict=True
+                    ):
+                        if table[argument] != expected:
+                            _invalid(
+                                function,
+                                instruction,
+                                f"ADT payload {table[argument]} != {expected}",
+                            )
             elif isinstance(instruction, AdtTag):
                 if not isinstance(table[instruction.value], AdtType):
                     _invalid(function, instruction, "ADT tag source is not an ADT")
@@ -1220,9 +1236,9 @@ def validate_typed_module(module: TypedModule) -> None:
                     for decl in module.adt_decls
                     if (decl.origin, decl.name) == (source.origin, source.name)
                     for constructor in decl.constructors
-                    if instruction.index < constructor.arity
+                    if instruction.index < len(constructor.payload)
                 ]
-                if not field_types or not any(candidate == target for candidate in field_types):
+                if field_types and not any(candidate == target for candidate in field_types):
                     _invalid(function, instruction, "ADT field type mismatch")
             elif isinstance(instruction, GetItem):
                 _validate_get_item(function, instruction)

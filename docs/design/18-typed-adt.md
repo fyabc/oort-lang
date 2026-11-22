@@ -1,8 +1,8 @@
 # 类型化 ADT 设计（S4）
 
-> **状态**：设计草案 + **S4a 原型**（2026-11-23）。单态 ADT 已进入 typed HIR /
-> kind=1 v5 / Python typed VM / Rust typed VM；泛型 ADT、prelude Option/Result、
-> 复杂模式留 S4b。**不改变语言表面**。
+> **状态**：设计草案 + **S4a/S4b 原型**（2026-11-23）。单态与泛型 ADT（含
+> prelude `Option`）已进入 typed HIR / kind=1 v5 / Python typed VM / Rust typed
+> VM；S4b 原型在运行时**擦除**类型参数，复杂模式仍留后续。**不改变语言表面**。
 >
 > 关联：[design 15](15-typed-ir.md) 的 S4 扩展；[design 03](03-type-system-design.md)
 > 的泛型表示；[design 14](14-core-typechecking.md) 的 ADT 检查；[spec 14](../spec/14-typed-bytecode.md)
@@ -145,17 +145,15 @@ tag 12: AdtDeclRef
   u16 adt_decl_id
 ```
 
-S4b（泛型）扩展为：
+S4b 的**静态类型**允许类型参数：
 
 ```text
-tag 12: AdtDeclRef
-  u16 adt_decl_id
-  u16 arg_count
-  u16 arg_type_id[arg_count]
+AdtType(origin, name, args)
 ```
 
-类型参数仍引用更早的类型表项（后序规则）。单态 ADT 的 `arg_count=0`，
-S4a 可以先只写/读 0；格式版本提升为 **v5**，因为模块头布局改变。
+但 v5 原型的线格式仍只写 `u16 adt_decl_id`，运行时也按 decl 身份擦除类型参数。
+这是为了先跑通泛型构造/匹配/prelude；完整 reified 实例表（`arg_count` +
+`arg_type_id[]`）留到后续 ABI 阶段。格式版本为 **v5**。
 
 ## 5. 构造器与值
 
@@ -275,7 +273,7 @@ S4c 可把线性测试改成决策树（Maranget 风格）或跳转表；初始�
 | 阶段 | 范围 | 退出条件 |
 |---|---|---|
 | **S4a 单态 ADT** | 模块声明表；构造器；同构/递归单态 enum；`NEW_ADT`/`ADT_TAG`/`ADT_FIELD`；构造器/通配/变量/守卫匹配；相等/打印 | 示例与差分通过；round-trip；Rust 一致 |
-| **S4b 泛型 ADT** | `Option`/`Result`、泛型载荷、类型参数进类型表；嵌套/字面量/Tuple/或模式 | 泛型示例与 prelude 可用；差分通过 |
+| **S4b 泛型 ADT** | `Option`/`Result`、泛型载荷、静态类型参数；S4b 原型运行时擦除参数 | **原型完成**；reified 实例表与复杂模式留后续 |
 | **S4c 优化** | 决策树/跳转表、单态布局、标量载荷内联；基准 | 不改变语义；typed benchmark 有收益 |
 
 S4a 的实现顺序：
@@ -328,6 +326,31 @@ S4a 的实现顺序：
 - 序列化不保存构造器 payload 类型，只保存 arity；读取后的 `.obc` 用于执行，
   不用于重新类型检查；
 - 无跨模块 ADT、无类/接口/typed 闭包、无 GC 变更。
+
+## 11.1 S4b 实现状态（2026-11-23）
+
+已实现：
+
+- `AdtType.args` 进入静态 typed 类型；用户泛型 enum 与 prelude `Option` 可用；
+- 泛型构造器类型实参由检查器的期望类型/实参推断，typed lowerer 读取检查结果；
+- `match` 的 payload 类型通过 `substitute` 从实例类型参数得到；
+- prelude `Option`/`Result` 的 synthetic enum 进入模块 ADT 声明表；
+- Rust/Python typed VM 使用相同的构造器/标签/payload 执行路径；
+- 验收：`examples/08_core/08_19_typed_generic_adts.ort`、typed 单测、
+  differential `typed_generic_adts`。
+
+S4b 原型的限制：
+
+- **运行时类型参数被擦除**：ADT 值只携带 decl/变体/payload，不携带
+  `Option[Int]` vs `Option[String]` 的实例身份；静态检查仍区分它们，但没有
+  reified 边界守卫。B1 边界尚不接受 ADT，因此当前不暴露跨方言守卫漏洞；
+- v5 类型表 tag 12 只写 decl_id；读取后 `AdtType.args` 丢失，执行不受影响，
+  但反汇编/类型表 round-trip 不保留实例参数；
+- prelude 的 Option/Result 声明会出现在每个 typed 模块的声明表中；
+- `AdtField` 对泛型字段只做宽松校验（字段 payload 模板不写入声明表）。
+
+完整 reified 泛型实例（用于边界守卫、跨模块 ADT、精确相等/反汇编）是后续
+ABI 扩展，不在当前 S4b 原型范围内。
 
 ## 12. 推荐决策
 

@@ -1956,6 +1956,8 @@ class CoreTypeChecker(ASTVisitor[Type]):
     ) -> Type:
         body = scheme.body
         assert isinstance(body, FunctionType)
+        node.func.metadata["type_obj"] = body
+        node.func.metadata["type"] = describe_type(body)
         bindings = {param.name: arg for param, arg in zip(scheme.params, expected.args)}
         if len(node.args) != len(body.params):
             self._error(
@@ -1983,6 +1985,8 @@ class CoreTypeChecker(ASTVisitor[Type]):
             self._infer_arguments(node)
             return self._record(node, UNKNOWN)
 
+        node.func.metadata["type_obj"] = body
+        node.func.metadata["type"] = describe_type(body)
         arity_ok = len(node.args) == len(body.params)
         if not arity_ok:
             self._error(

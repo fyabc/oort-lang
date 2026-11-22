@@ -66,6 +66,7 @@ EXPECTED_OUTPUTS = {
     "08_core/08_16_typed_collections.ort": "10\n18\n4\ntroo\n11\n3 true true\n",
     "08_core/08_17_typed_sets_dicts.ort": ("2 3\n6\n12 3\n0 0\ntrue\ntrue\n{: x: (1, true) :}\n"),
     "08_core/08_18_typed_adts.ort": "12\n12\n0\n6\ntrue false true\nCircle(2)\n",
+    "08_core/08_19_typed_generic_adts.ort": "7\n9\n3 9\n7\n",
     "09_boundary/09_00_object_calls_core.ort": "10\n0.6\n4\n3\n(7, x)\n",
 }
 

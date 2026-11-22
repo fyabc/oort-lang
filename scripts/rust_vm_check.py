@@ -223,6 +223,24 @@ print(tree_sum(Node(Leaf(1), Node(Leaf(2), Leaf(3)))))
 print(Circle(2) == Circle(2), Circle(2) == Circle(3))
 print(Circle(2))
 """,
+    "typed_generic_adts": """#lang oort-core
+
+enum Maybe[T] {
+    Just(value: T),
+    Nothing,
+}
+
+def unwrap(value: Maybe[Int], fallback: Int) -> Int {
+    match value {
+        Just(v) => v,
+        Nothing => fallback,
+    }
+}
+
+print(unwrap(Just(7), 0))
+print(unwrap(Nothing, 9))
+print(unwrap(Just(3), 9) + unwrap(Nothing, 4))
+""",
     "typed_sets_dicts": """#lang oort-core
 
 def dict_total(items: Dict[String, Int]) -> Int {

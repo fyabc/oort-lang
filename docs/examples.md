@@ -68,6 +68,7 @@
 | [类型化集合迭代](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_16_typed_collections.ort) | typed List/Tuple/String、`for` 迭代、下标/`len`/相等 |
 | [类型化 Set/Dict](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_17_typed_sets_dicts.ort) | typed Set/Dict 字面量、Dict 下标、`len`、深相等、`for` 迭代 |
 | [类型化 ADT](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_18_typed_adts.ort) | typed 单态 ADT、构造器、`match`、递归 ADT、相等/打印 |
+| [类型化泛型 ADT](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_19_typed_generic_adts.ort) | typed 泛型 enum、`Option`、构造器实参推断、匹配 |
 
 ```bash
 oort examples/08_core/08_01_core_functions.ort

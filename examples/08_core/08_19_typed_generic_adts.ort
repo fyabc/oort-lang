@@ -1,0 +1,30 @@
+#lang oort-core
+
+# 类型化 IR 子集（S4b）：泛型 ADT 与内建 Option。
+# - S4b 原型把泛型类型参数用于静态检查/匹配，运行时暂不保留实例类型参数；
+# - 用户泛型 enum 与 prelude Option[Int] 都走 typed ADT 路径；
+# - 构造器类型实参由期望类型或实参类型推断。
+
+enum Maybe[T] {
+    Just(value: T),
+    Nothing,
+}
+
+def maybe_or(value: Maybe[Int], fallback: Int) -> Int {
+    match value {
+        Just(v) => v,
+        Nothing => fallback,
+    }
+}
+
+def option_or(value: Option[Int], fallback: Int) -> Int {
+    match value {
+        Some(v) => v,
+        None => fallback,
+    }
+}
+
+print(maybe_or(Just(7), 0))
+print(maybe_or(Nothing, 9))
+print(option_or(Some(3), 9), option_or(None, 9))
+print(maybe_or(Just(3), 9) + option_or(None, 4))

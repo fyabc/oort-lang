@@ -106,6 +106,7 @@ def test_typed_subset_example_is_accepted():
         "08_16_typed_collections.ort",
         "08_17_typed_sets_dicts.ort",
         "08_18_typed_adts.ort",
+        "08_19_typed_generic_adts.ort",
     ],
 )
 def test_tvm_matches_vm_on_example(name: str, run_file):
@@ -500,8 +501,9 @@ print(Circle(2))
     path = tmp_path / "adts.obc"
     write_typed_obc(program, path)
     loaded = read_typed_obc(path)
-    assert [decl.name for decl in loaded.adt_decls] == ["Shape", "Tree"]
-    assert loaded.adt_decls[0].constructors[0].arity == 1
+    decls = {decl.name: decl for decl in loaded.adt_decls}
+    assert {"Shape", "Tree"} <= decls.keys()
+    assert decls["Shape"].constructors[0].arity == 1
 
     typed_compiler = get_compiler("NOT_EXIST -t tvm")
     typed_compiler.run_string(source)
@@ -512,6 +514,62 @@ print(Circle(2))
     vm_out = capsys.readouterr().out
 
     assert typed_out == vm_out == "12 12 0\n6\ntrue false\nCircle(2)\n"
+
+
+def test_typed_generic_adts(capsys: pytest.CaptureFixture, tmp_path):
+    source = """#lang oort-core
+
+enum Maybe[T] {
+    Just(value: T),
+    Nothing,
+}
+
+def unwrap(value: Maybe[Int], fallback: Int) -> Int {
+    match value {
+        Just(v) => v,
+        Nothing => fallback,
+    }
+}
+
+print(unwrap(Just(7), 0))
+print(unwrap(Nothing, 9))
+print(unwrap(Just(3), 9) + unwrap(Nothing, 4))
+"""
+    program = compile_typed_module(lower_typed_module(build_ast(source)))
+    path = tmp_path / "generic_adts.obc"
+    write_typed_obc(program, path)
+    loaded = read_typed_obc(path)
+
+    result = TypedCodeVM(ASTInterpreter(CompilerErrorHandler())).run(loaded)
+    assert result.host_value is None
+    capsys.readouterr()  # drop the round-trip run's output
+
+    typed_compiler = get_compiler("NOT_EXIST -t tvm")
+    typed_compiler.run_string(source)
+    typed_out = capsys.readouterr().out
+
+    vm_compiler = get_compiler("NOT_EXIST -t vm")
+    vm_compiler.run_string(source)
+    vm_out = capsys.readouterr().out
+
+    assert typed_out == vm_out == "7\n9\n7\n"
+
+
+def test_typed_generic_prelude_option(capsys: pytest.CaptureFixture):
+    source = """#lang oort-core
+
+def unwrap(value: Option[Int], fallback: Int) -> Int {
+    match value {
+        Some(v) => v,
+        None => fallback,
+    }
+}
+
+print(unwrap(Some(7), 0), unwrap(None, 9))
+"""
+    compiler = get_compiler("NOT_EXIST -t tvm")
+    compiler.run_string(source)
+    assert capsys.readouterr().out == "7 9\n"
 
 
 def test_typed_collection_obc_round_trip(tmp_path):
@@ -538,12 +596,12 @@ print(len((1, 2, 3)))
 def test_tvm_rejects_out_of_subset():
     compiler = get_compiler("NOT_EXIST -t tvm")
     with pytest.raises(CompilerError):
-        compiler.run_string("#lang oort-core\nenum E[T] { A }\nprint(1)\n")
+        compiler.run_string("#lang oort-core\nclass C { val x: Int = 1 }\nprint(1)\n")
 
 
 def test_typed_lowering_rejects_out_of_subset():
-    ast = build_ast("#lang oort-core\nenum E[T] { A }\nprint(1)\n")
-    with pytest.raises(UnsupportedSyntax, match="generic enums"):
+    ast = build_ast("#lang oort-core\nclass C { val x: Int = 1 }\nprint(1)\n")
+    with pytest.raises(UnsupportedSyntax, match="Class definitions"):
         lower_typed_module(ast)
 
 
