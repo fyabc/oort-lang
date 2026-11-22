@@ -18,7 +18,7 @@ from .serialize import MAGIC, ObcError, _read_constant, _Reader, _write_constant
 from .typed_compile import TypedProgram, TypedProto
 
 KIND_TYPED = 1
-VERSION = 2
+VERSION = 3
 
 _IR_TO_INDEX = {
     None: 0,
@@ -27,6 +27,7 @@ _IR_TO_INDEX = {
     IrType.BOOL: 3,
     IrType.UNIT: 4,
     IrType.FUNCTION: 5,
+    IrType.STRING: 6,
 }
 _INDEX_TO_IR = {index: ir_type for ir_type, index in _IR_TO_INDEX.items()}
 

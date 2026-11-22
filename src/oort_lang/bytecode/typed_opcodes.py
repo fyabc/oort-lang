@@ -66,6 +66,14 @@ class TypedOp(IntEnum):
     GT_MIXED = 50
     GE_MIXED = 51
 
+    ADD_S = 52
+    EQ_S = 53
+    NE_S = 54
+    LT_S = 55
+    LE_S = 56
+    GT_S = 57
+    GE_S = 58
+
 
 # ABC: [op:8][A:8][B:8][C:8]
 ABC_OPS = frozenset(
@@ -112,6 +120,13 @@ ABC_OPS = frozenset(
         TypedOp.LE_MIXED,
         TypedOp.GT_MIXED,
         TypedOp.GE_MIXED,
+        TypedOp.ADD_S,
+        TypedOp.EQ_S,
+        TypedOp.NE_S,
+        TypedOp.LT_S,
+        TypedOp.LE_S,
+        TypedOp.GT_S,
+        TypedOp.GE_S,
     }
 )
 

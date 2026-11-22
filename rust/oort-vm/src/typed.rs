@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::obc::{Constant, Reader};
-use crate::vm::{float_repr, floor_div, floor_mod, NativeFn, Value};
+use crate::vm::{float_repr, floor_div, floor_mod, Value};
 
 type TResult<T> = Result<T, String>;
 
@@ -22,6 +22,7 @@ pub enum TypedType {
     Float,
     Bool,
     Unit,
+    String,
     Function,
 }
 
@@ -33,6 +34,7 @@ fn typed_type(tag: u8) -> TResult<Option<TypedType>> {
         3 => Some(TypedType::Bool),
         4 => Some(TypedType::Unit),
         5 => Some(TypedType::Function),
+        6 => Some(TypedType::String),
         _ => return Err(format!("invalid typed register type tag {tag}")),
     })
 }
@@ -114,7 +116,7 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
         return Err(format!("expected typed bytecode (kind=1), got kind={kind}"));
     }
     let version = data[4];
-    if version != 2 {
+    if version != 3 {
         return Err(format!("unsupported typed bytecode version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -127,22 +129,30 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
     Ok(TypedModule { functions, main })
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum TypedValue {
     Unit,
     Bool(bool),
     Int(i64),
     Float(f64),
+    Str(Rc<str>),
     Function(usize),
-    Native(NativeFn),
+    Native(TypedNative),
 }
 
-fn display_typed(value: TypedValue) -> String {
+#[derive(Clone, Copy)]
+enum TypedNative {
+    Print,
+    Len,
+}
+
+fn display_typed(value: &TypedValue) -> String {
     match value {
         TypedValue::Unit => "null".into(),
-        TypedValue::Bool(b) => if b { "true" } else { "false" }.into(),
+        TypedValue::Bool(b) => if *b { "true" } else { "false" }.into(),
         TypedValue::Int(i) => i.to_string(),
-        TypedValue::Float(f) => float_repr(f),
+        TypedValue::Float(f) => float_repr(*f),
+        TypedValue::Str(s) => s.to_string(),
         TypedValue::Function(_) | TypedValue::Native(_) => "<function>".into(),
     }
 }
@@ -153,6 +163,7 @@ fn to_value(value: TypedValue) -> TResult<Value> {
         TypedValue::Bool(b) => Value::Bool(b),
         TypedValue::Int(i) => Value::Int(i),
         TypedValue::Float(f) => Value::Float(f),
+        TypedValue::Str(s) => Value::Str(s),
         _ => return Err("typed main returned a function value".into()),
     })
 }
@@ -163,37 +174,46 @@ fn constant_value(constant: &Constant) -> TResult<TypedValue> {
         Constant::Bool(b) => TypedValue::Bool(*b),
         Constant::Int(i) => TypedValue::Int(*i),
         Constant::Float(f) => TypedValue::Float(*f),
+        Constant::Str(s) => TypedValue::Str(Rc::clone(s)),
         _ => return Err("unsupported constant kind for typed LOAD_K".into()),
     })
 }
 
-fn as_int(value: TypedValue) -> TResult<i64> {
+fn as_int(value: &TypedValue) -> TResult<i64> {
     match value {
-        TypedValue::Int(i) => Ok(i),
+        TypedValue::Int(i) => Ok(*i),
         _ => Err("typed opcode expected Int".into()),
     }
 }
 
-fn as_float(value: TypedValue) -> TResult<f64> {
+fn as_float(value: &TypedValue) -> TResult<f64> {
     match value {
-        TypedValue::Float(f) => Ok(f),
+        TypedValue::Float(f) => Ok(*f),
         _ => Err("typed opcode expected Float".into()),
     }
 }
 
-fn as_bool(value: TypedValue) -> TResult<bool> {
+fn as_bool(value: &TypedValue) -> TResult<bool> {
     match value {
-        TypedValue::Bool(b) => Ok(b),
+        TypedValue::Bool(b) => Ok(*b),
         _ => Err("typed opcode expected Bool".into()),
     }
 }
 
-fn guard(expected: TypedType, value: TypedValue) -> TResult<()> {
+fn as_str(value: &TypedValue) -> TResult<&str> {
+    match value {
+        TypedValue::Str(s) => Ok(s.as_ref()),
+        _ => Err("typed opcode expected String".into()),
+    }
+}
+
+fn guard(expected: TypedType, value: &TypedValue) -> TResult<()> {
     let ok = matches!(
         (expected, value),
         (TypedType::Int, TypedValue::Int(_))
             | (TypedType::Float, TypedValue::Float(_))
             | (TypedType::Bool, TypedValue::Bool(_))
+            | (TypedType::String, TypedValue::Str(_))
             | (TypedType::Unit, TypedValue::Unit)
     );
     if ok {
@@ -205,13 +225,13 @@ fn guard(expected: TypedType, value: TypedValue) -> TResult<()> {
     }
 }
 
-fn mixed_cmp(lhs: TypedValue, rhs: TypedValue) -> TResult<Option<Ordering>> {
+fn mixed_cmp(lhs: &TypedValue, rhs: &TypedValue) -> TResult<Option<Ordering>> {
     match (lhs, rhs) {
-        (TypedValue::Int(a), TypedValue::Int(b)) => Ok(Some(a.cmp(&b))),
-        (TypedValue::Float(a), TypedValue::Float(b)) => Ok(a.partial_cmp(&b)),
-        (TypedValue::Int(a), TypedValue::Float(b)) => Ok(cmp_i64_f64(a, b)),
+        (TypedValue::Int(a), TypedValue::Int(b)) => Ok(Some(a.cmp(b))),
+        (TypedValue::Float(a), TypedValue::Float(b)) => Ok(a.partial_cmp(b)),
+        (TypedValue::Int(a), TypedValue::Float(b)) => Ok(cmp_i64_f64(*a, *b)),
         (TypedValue::Float(a), TypedValue::Int(b)) => {
-            Ok(cmp_i64_f64(b, a).map(|ordering| ordering.reverse()))
+            Ok(cmp_i64_f64(*b, *a).map(|ordering| ordering.reverse()))
         }
         _ => Err("typed mixed comparison expects Int or Float".into()),
     }
@@ -301,6 +321,13 @@ const LT_MIXED: u32 = 48;
 const LE_MIXED: u32 = 49;
 const GT_MIXED: u32 = 50;
 const GE_MIXED: u32 = 51;
+const ADD_S: u32 = 52;
+const EQ_S: u32 = 53;
+const NE_S: u32 = 54;
+const LT_S: u32 = 55;
+const LE_S: u32 = 56;
+const GT_S: u32 = 57;
+const GE_S: u32 = 58;
 
 pub struct TypedVm {
     functions: Vec<ResolvedProto>,
@@ -337,7 +364,7 @@ impl FramePool {
 #[derive(Clone, Copy)]
 enum TypedGlobal {
     Function(usize),
-    Native(NativeFn),
+    Native(TypedNative),
 }
 
 /// A cached `LOAD_G` target. The version makes invalidation lazy: a globals
@@ -367,7 +394,10 @@ impl GlobalTable {
         // A user function named `print` keeps precedence over the native.
         bindings
             .entry("print".to_string())
-            .or_insert(TypedGlobal::Native(NativeFn::Print));
+            .or_insert(TypedGlobal::Native(TypedNative::Print));
+        bindings
+            .entry("len".to_string())
+            .or_insert(TypedGlobal::Native(TypedNative::Len));
         GlobalTable {
             version: 0,
             bindings,
@@ -496,7 +526,7 @@ fn execute(
                 registers[a] = constant_value(&proto.constants[bx])?;
             }
             LOAD_L | STORE_L => {
-                registers[a] = registers[b];
+                registers[a] = registers[b].clone();
             }
             LOAD_G => {
                 registers[a] = match resolve_global(resolved, globals, bx)? {
@@ -506,11 +536,11 @@ fn execute(
             }
             DEF_FUN => {}
             MOVE => {
-                registers[a] = registers[b];
+                registers[a] = registers[b].clone();
             }
             ADD_I | SUB_I | MUL_I | FLOORDIV_I | MOD_I => {
-                let left = as_int(registers[b])?;
-                let right = as_int(registers[c])?;
+                let left = as_int(&registers[b])?;
+                let right = as_int(&registers[c])?;
                 let result = match op {
                     ADD_I => left.checked_add(right).ok_or("integer overflow")?,
                     SUB_I => left.checked_sub(right).ok_or("integer overflow")?,
@@ -539,8 +569,8 @@ fn execute(
                 registers[a] = TypedValue::Int(result);
             }
             ADD_F | SUB_F | MUL_F | DIV_F | FLOORDIV_F | MOD_F => {
-                let left = as_float(registers[b])?;
-                let right = as_float(registers[c])?;
+                let left = as_float(&registers[b])?;
+                let right = as_float(&registers[c])?;
                 if matches!(op, DIV_F | FLOORDIV_F | MOD_F) && right == 0.0 {
                     return Err("division or modulo by zero".into());
                 }
@@ -555,8 +585,8 @@ fn execute(
                 registers[a] = TypedValue::Float(result);
             }
             EQ_I | NE_I | LT_I | LE_I | GT_I | GE_I => {
-                let left = as_int(registers[b])?;
-                let right = as_int(registers[c])?;
+                let left = as_int(&registers[b])?;
+                let right = as_int(&registers[c])?;
                 let result = match op {
                     EQ_I => left == right,
                     NE_I => left != right,
@@ -568,8 +598,8 @@ fn execute(
                 registers[a] = TypedValue::Bool(result);
             }
             EQ_F | NE_F | LT_F | LE_F | GT_F | GE_F => {
-                let left = as_float(registers[b])?;
-                let right = as_float(registers[c])?;
+                let left = as_float(&registers[b])?;
+                let right = as_float(&registers[c])?;
                 let result = match op {
                     EQ_F => left == right,
                     NE_F => left != right,
@@ -581,8 +611,8 @@ fn execute(
                 registers[a] = TypedValue::Bool(result);
             }
             EQ_B | NE_B => {
-                let left = as_bool(registers[b])?;
-                let right = as_bool(registers[c])?;
+                let left = as_bool(&registers[b])?;
+                let right = as_bool(&registers[c])?;
                 let result = if op == EQ_B {
                     left == right
                 } else {
@@ -591,7 +621,7 @@ fn execute(
                 registers[a] = TypedValue::Bool(result);
             }
             EQ_MIXED | NE_MIXED | LT_MIXED | LE_MIXED | GT_MIXED | GE_MIXED => {
-                let ordering = mixed_cmp(registers[b], registers[c])?;
+                let ordering = mixed_cmp(&registers[b], &registers[c])?;
                 let result = match op {
                     EQ_MIXED => ordering == Some(Ordering::Equal),
                     NE_MIXED => ordering != Some(Ordering::Equal),
@@ -603,7 +633,7 @@ fn execute(
                 registers[a] = TypedValue::Bool(result);
             }
             POS_I | NEG_I => {
-                let value = as_int(registers[b])?;
+                let value = as_int(&registers[b])?;
                 registers[a] = TypedValue::Int(if op == NEG_I {
                     value.checked_neg().ok_or("integer overflow")?
                 } else {
@@ -611,39 +641,57 @@ fn execute(
                 });
             }
             POS_F | NEG_F => {
-                let value = as_float(registers[b])?;
+                let value = as_float(&registers[b])?;
                 registers[a] = TypedValue::Float(if op == NEG_F { -value } else { value });
             }
             NOT_B => {
-                let value = as_bool(registers[b])?;
+                let value = as_bool(&registers[b])?;
                 registers[a] = TypedValue::Bool(!value);
             }
             TO_FLOAT => {
-                let value = match registers[b] {
-                    TypedValue::Float(f) => f,
-                    TypedValue::Int(i) => i as f64,
+                let value = match &registers[b] {
+                    TypedValue::Float(f) => *f,
+                    TypedValue::Int(i) => *i as f64,
                     _ => return Err("TO_FLOAT expects a number".into()),
                 };
                 registers[a] = TypedValue::Float(value);
+            }
+            ADD_S => {
+                let left = as_str(&registers[b])?;
+                let right = as_str(&registers[c])?;
+                registers[a] = TypedValue::Str(Rc::from(format!("{left}{right}").as_str()));
+            }
+            EQ_S | NE_S | LT_S | LE_S | GT_S | GE_S => {
+                let left = as_str(&registers[b])?;
+                let right = as_str(&registers[c])?;
+                let result = match op {
+                    EQ_S => left == right,
+                    NE_S => left != right,
+                    LT_S => left < right,
+                    LE_S => left <= right,
+                    GT_S => left > right,
+                    _ => left >= right,
+                };
+                registers[a] = TypedValue::Bool(result);
             }
             JMP => {
                 pc = bx;
                 continue;
             }
             JMP_FALSE => {
-                if !as_bool(registers[a])? {
+                if !as_bool(&registers[a])? {
                     pc = bx;
                     continue;
                 }
             }
             JMP_TRUE => {
-                if as_bool(registers[a])? {
+                if as_bool(&registers[a])? {
                     pc = bx;
                     continue;
                 }
             }
             CALL => {
-                let callee = registers[a];
+                let callee = registers[a].clone();
                 let result = call(
                     functions,
                     globals,
@@ -654,7 +702,7 @@ fn execute(
                 registers[c] = result;
             }
             RET => {
-                return Ok(registers[a]);
+                return Ok(registers[a].clone());
             }
             _ => return Err(format!("unknown typed opcode {op}")),
         }
@@ -683,24 +731,30 @@ fn call(
                 ));
             }
             for (index, (expected, value)) in proto.param_types.iter().zip(arguments).enumerate() {
-                guard(*expected, *value)
+                guard(*expected, value)
                     .map_err(|e| format!("argument {index} of '{}': {e}", proto.name))?;
             }
             let mut frame = pool.acquire(proto.register_count as usize);
             for (slot, value) in frame.iter_mut().zip(arguments) {
-                *slot = *value;
+                *slot = value.clone();
             }
             let result = execute(resolved, functions, globals, pool, &mut frame);
             pool.release(frame);
             result
         }
-        TypedValue::Native(NativeFn::Print) => {
-            let parts: Vec<String> = arguments
-                .iter()
-                .map(|value| display_typed(*value))
-                .collect();
+        TypedValue::Native(TypedNative::Print) => {
+            let parts: Vec<String> = arguments.iter().map(display_typed).collect();
             println!("{}", parts.join(" "));
             Ok(TypedValue::Unit)
+        }
+        TypedValue::Native(TypedNative::Len) => {
+            if arguments.len() != 1 {
+                return Err("len expects exactly one argument".into());
+            }
+            match &arguments[0] {
+                TypedValue::Str(s) => Ok(TypedValue::Int(s.chars().count() as i64)),
+                _ => Err("len expects a String in the typed subset".into()),
+            }
         }
         _ => Err("typed bytecode call target is not callable".into()),
     }
@@ -730,7 +784,7 @@ mod tests {
             version: 0,
             bindings: HashMap::from([
                 ("f".to_string(), TypedGlobal::Function(0)),
-                ("print".to_string(), TypedGlobal::Native(NativeFn::Print)),
+                ("print".to_string(), TypedGlobal::Native(TypedNative::Print)),
             ]),
         };
 
@@ -741,7 +795,7 @@ mod tests {
         ));
         assert!(matches!(
             cells[1].get().unwrap().target,
-            TypedGlobal::Native(NativeFn::Print)
+            TypedGlobal::Native(TypedNative::Print)
         ));
         assert!(cells[2].get().is_none());
     }
@@ -775,10 +829,10 @@ mod tests {
         globals.invalidate();
         globals
             .bindings
-            .insert("f".to_string(), TypedGlobal::Native(NativeFn::Print));
+            .insert("f".to_string(), TypedGlobal::Native(TypedNative::Print));
         assert!(matches!(
             resolve_global(&resolved, &globals, 0).unwrap(),
-            TypedGlobal::Native(NativeFn::Print)
+            TypedGlobal::Native(TypedNative::Print)
         ));
         let cached = resolved.globals[0].get().unwrap();
         assert_eq!(cached.version, 1);
@@ -804,10 +858,10 @@ mod tests {
         // 2^53 + 1 cannot be represented as f64; the comparison must not round.
         let big = TypedValue::Int(9_007_199_254_740_993);
         let as_float = TypedValue::Float(9_007_199_254_740_992.0);
-        assert_eq!(mixed_cmp(big, as_float).unwrap(), Some(Ordering::Greater));
-        assert_eq!(mixed_cmp(as_float, big).unwrap(), Some(Ordering::Less));
+        assert_eq!(mixed_cmp(&big, &as_float).unwrap(), Some(Ordering::Greater));
+        assert_eq!(mixed_cmp(&as_float, &big).unwrap(), Some(Ordering::Less));
         assert_eq!(
-            mixed_cmp(TypedValue::Int(9_007_199_254_740_992), as_float).unwrap(),
+            mixed_cmp(&TypedValue::Int(9_007_199_254_740_992), &as_float).unwrap(),
             Some(Ordering::Equal)
         );
     }
@@ -815,25 +869,25 @@ mod tests {
     #[test]
     fn mixed_comparison_handles_nan_and_infinity() {
         let nan = TypedValue::Float(f64::NAN);
-        assert_eq!(mixed_cmp(nan, TypedValue::Int(1)).unwrap(), None);
-        assert_eq!(mixed_cmp(TypedValue::Int(1), nan).unwrap(), None);
+        assert_eq!(mixed_cmp(&nan, &TypedValue::Int(1)).unwrap(), None);
+        assert_eq!(mixed_cmp(&TypedValue::Int(1), &nan).unwrap(), None);
         assert_eq!(
-            mixed_cmp(TypedValue::Float(f64::INFINITY), TypedValue::Int(i64::MAX)).unwrap(),
+            mixed_cmp(&TypedValue::Float(f64::INFINITY), &TypedValue::Int(i64::MAX)).unwrap(),
             Some(Ordering::Greater)
         );
     }
 
     #[test]
     fn guard_rejects_wrong_types() {
-        assert!(guard(TypedType::Int, TypedValue::Int(1)).is_ok());
-        assert!(guard(TypedType::Int, TypedValue::Bool(true)).is_err());
-        assert!(guard(TypedType::Unit, TypedValue::Unit).is_ok());
+        assert!(guard(TypedType::Int, &TypedValue::Int(1)).is_ok());
+        assert!(guard(TypedType::Int, &TypedValue::Bool(true)).is_err());
+        assert!(guard(TypedType::Unit, &TypedValue::Unit).is_ok());
     }
 
     #[test]
     fn typed_values_display_like_python() {
-        assert_eq!(display_typed(TypedValue::Float(2.0)), "2.0");
-        assert_eq!(display_typed(TypedValue::Float(-0.0)), "-0.0");
-        assert_eq!(display_typed(TypedValue::Unit), "null");
+        assert_eq!(display_typed(&TypedValue::Float(2.0)), "2.0");
+        assert_eq!(display_typed(&TypedValue::Float(-0.0)), "-0.0");
+        assert_eq!(display_typed(&TypedValue::Unit), "null");
     }
 }

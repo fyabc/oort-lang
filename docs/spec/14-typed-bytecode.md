@@ -16,7 +16,7 @@
 ## 2. 文件头与布局
 
 ```text
-magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=2)
+magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=3)
 u32 function_count
 proto[function_count]
 proto(main)
@@ -55,6 +55,7 @@ positions?:
 | 3 | `Bool` |
 | 4 | `Unit` |
 | 5 | 函数引用（CALL 目标） |
+| 6 | `String` |
 
 - 参数与返回类型不允许 tag 0；
 - 常量池复用 spec 13 的 tagged 编码；kind=1 只允许 `null`/`bool`/`int`/`float`/
@@ -106,6 +107,10 @@ ABx: [op:8][A:8][Bx:16]
 | 46/47 | `EQ_MIXED` / `NE_MIXED` | ABC | A=目标, B=左, C=右 | Int/Float 相等/不等，按数学值精确比较 |
 | 48/49 | `LT_MIXED` / `LE_MIXED` | ABC | 同上 | Int/Float 小于/小于等于（精确） |
 | 50/51 | `GT_MIXED` / `GE_MIXED` | ABC | 同上 | Int/Float 大于/大于等于（精确） |
+| 52 | `ADD_S` | ABC | A=目标, B=左, C=右 | String 拼接 |
+| 53/54 | `EQ_S` / `NE_S` | ABC | 同上 | String 相等/不等 → Bool |
+| 55/56 | `LT_S` / `LE_S` | ABC | 同上 | String 小于/小于等于 → Bool |
+| 57/58 | `GT_S` / `GE_S` | ABC | 同上 | String 大于/大于等于 → Bool |
 
 ### 3.2 调用约定
 
@@ -121,7 +126,7 @@ CALL A B C
 - 实参个数必须等于 `param_types` 长度；
 - 当前仅支持位置实参；关键字/尾随 block 不是 kind=1 的合法构造。
 
-### 3.3 混合数值运算
+### 3.3 混合数值与字符串运算
 
 - **算术**：`Int`/`Float` 混合时先把 `Int` 操作数用 `TO_FLOAT` 转换到临时
   寄存器，再使用 `_F` 指令；`/` 总是先转换两个操作数再 `DIV_F`。
@@ -129,6 +134,8 @@ CALL A B C
   不先转换成 Float。例如 `2**53 + 1 == 2.0**53` 为 false。NaN 语义见
   [design 16](../design/16-numeric-semantics.md)：`==` 为 false，`!=` 为
   true，排序比较为 false。
+- **String**：`+` 生成新字符串；比较/相等使用 `*_S` 指令，按字典序/值相等。
+  `len` 是 native 调用，返回 Int（字符数）。
 
 ### 3.4 控制流与标签
 
@@ -138,8 +145,8 @@ typed HIR 的命名标签在编译期解析为绝对字索引；`JMP`/`JMP_FALSE
 ## 4. 执行语义
 
 - **值表示由实现决定**：Python 参考实现使用 boxed 运行时值（差分 baseline）；
-  Rust typed VM（M4 U1）对标量使用未装箱表示（i64/f64/bool/Unit），只在
-  `print` 与主结果边界转换；
+  Rust typed VM 标量使用未装箱表示，String 使用共享堆字符串（`Rc<str>`）；
+  只在 native `print`/`len` 与主结果边界转换；
 - `Int` 在 Python 参考实现中使用宿主整数（任意精度）；Rust spike 使用
   `i64`，溢出显式报错。这是 spike 的表示限制，不是语言语义；跨实现差分
   测试避免溢出输入。完整数值语义见
@@ -154,11 +161,11 @@ typed HIR 的命名标签在编译期解析为绝对字索引；`JMP`/`JMP_FALSE
 
 ## 5. 当前边界
 
-- 仅 `oort-core` 标量子集：`Int`/`Float`/`Bool`/`Unit`、顶层函数、直接调用、
-  `if`/`while`/早返回；
-- 无 String、集合、ADT/`match`、类/接口/泛型/lambda、模块导入；
+- 仅 `oort-core` 标量子集 + `String`：`Int`/`Float`/`Bool`/`Unit`/`String`、
+  顶层函数、直接调用、`if`/`while`/早返回、String 拼接/比较/`len`；
+- 无集合、ADT/`match`、类/接口/泛型/lambda、模块导入、String 索引/切片；
 - 无动态↔静态边界、`box`/`unbox`/blame；跨方言调用仍拒绝；
-- 格式版本 `version=2`；不兼容变更必须提升 version，并保持 kind=1 的独立
+- 格式版本 `version=3`；不兼容变更必须提升 version，并保持 kind=1 的独立
   命名空间。
 
 ## 6. 参考实现入口

@@ -66,6 +66,13 @@ _MIXED_COMPARISONS = {
     ">=": TypedOp.GE_MIXED,
 }
 _MIXED_EQUALITY = {"==": TypedOp.EQ_MIXED, "!=": TypedOp.NE_MIXED}
+_STRING_COMPARISONS = {
+    "<": TypedOp.LT_S,
+    "<=": TypedOp.LE_S,
+    ">": TypedOp.GT_S,
+    ">=": TypedOp.GE_S,
+}
+_STRING_EQUALITY = {"==": TypedOp.EQ_S, "!=": TypedOp.NE_S}
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -243,6 +250,27 @@ class _ProtoBuilder:
         op = instruction.op
         lhs = instruction.lhs
         rhs = instruction.rhs
+
+        if lhs_type is IrType.STRING and rhs_type is IrType.STRING:
+            if op == "+":
+                self._emit(encode_abc(TypedOp.ADD_S, instruction.dst, lhs, rhs), position)
+                return
+            if op in _STRING_COMPARISONS:
+                self._emit(
+                    encode_abc(_STRING_COMPARISONS[op], instruction.dst, lhs, rhs),
+                    position,
+                )
+                return
+            if op in _STRING_EQUALITY:
+                self._emit(
+                    encode_abc(_STRING_EQUALITY[op], instruction.dst, lhs, rhs),
+                    position,
+                )
+                return
+            raise UnsupportedSyntax(
+                f"Typed bytecode does not support string operator {op!r}.",
+                position,
+            )
 
         if op == "/":
             lhs = self._ensure_float(lhs, lhs_type, position)

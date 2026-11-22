@@ -165,6 +165,19 @@ def show() -> Unit {
 
 show()
 """,
+    "typed_string": """#lang oort-core
+
+def greet(name: String) -> String {
+    "Hello, " + name
+}
+
+def before(a: String, b: String) -> Bool { a < b }
+
+print(greet("Oort"))
+print(len("abc"), len(""))
+print("a" < "b", "a" == "a", "a" != "b")
+print(before("b", "a"))
+""",
 }
 
 

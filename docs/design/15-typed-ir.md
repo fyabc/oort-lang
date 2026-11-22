@@ -24,7 +24,8 @@
   不走“先降级到现有字节码”的替代路径。
 - **何时改字节码**：等 typed HIR 的语义/差分/基准稳定后，再用 `.obc` 的
   `kind=1` 做 typed 字节码原型；未装箱值与守卫优先在 Rust VM 落地。
-- **不做什么**：不改语言表面；不在 v0 做集合/ADT/类/泛型/闭包/String；不做
+- **不做什么**：不改语言表面；不在 v0 做集合/ADT/类/泛型/闭包/String（String
+  已由 S1 扩展）；不做
   JIT、不做动态方言的类型特化；不替换擦除式路径。
 
 ### 决策记录
@@ -36,6 +37,7 @@
 | 2026-11-22 | M1 之后先做 **M2 typed 解释器** | 用于语义差分与基准；typed 字节码（M3）等 M2 结果再定 |
 | 2026-11-22 | CLI 增加 **`-t hir` + `-t thir`** | `hir` 为未类型化基线（诊断视图，格式非契约）；`thir` 为 typed dump；均属 M1 |
 | 2026-11-22 | M2 执行目标 **`-t tvm`** | 直接执行受限 typed HIR（研究目标，暂不进 spec） |
+| 2026-11-23 | **S1 扩展 String** | kind=1 v3；String 拼接/比较/`len`；Rust `TypedValue::Str(Rc<str>)`；集合留 S2/S3 |
 
 ## 1. 问题与目标
 
@@ -192,8 +194,8 @@ typed 路径（研究阶段用显式 target/标志，正式集成时由编译器
 
 - **声明**：顶层 `def` 函数；参数必须标注；返回标注可写可省（沿用 design 14
   的返回推断）；函数体内 `val`/`var` 必须初始化、单目标。
-- **类型**：`Int`、`Float`、`Bool`、`Unit`。**不含 `String`**（引入堆值，
-  留作第一扩展）。
+- **类型**：`Int`、`Float`、`Bool`、`Unit`。**v0 不含 `String`**（引入堆值，
+  留作第一扩展；2026-11-23 已由 S1 扩展，见下文「扩展计划」）。
 - **表达式**：整/浮点/布尔字面量；变量；`+ - * // % /`；一元 `+ - not`；
   比较 `== != < <= > >=`；`and`/`or`；`if/else`；块；直接调用顶层函数；
   `print`（标量 → Unit）。
@@ -530,6 +532,31 @@ wrapping、不引入 `unsafe` 或外部 crate。
   若未来 kind=1 加入可变全局/`STORE_G`，应由 VM 失效缓存或改用版本化查找，
   而不是修改格式。当前 typed 子集无全局写，因此预解析是安全且可逆的实现
   选择。
+
+### 扩展计划：String 与集合（2026-11-23）
+
+按堆值复杂度分阶段，每阶段都保持差分可执行：
+
+| 阶段 | 范围 | 状态 |
+|---|---|---|
+| **S1 String** | `IrType.STRING`；`ADD_S`/`EQ_S`/`*_S`；`len` native；`TypedValue::Str(Rc<str>)`；kind=1 **v3** | **已完成** |
+| **S2 List / Tuple** | 递归类型描述 + 类型表；`NEW_LIST`/`NEW_TUPLE`/`GET_ITEM`/`LEN`/`OPEN_ITER`/`ITER_NEXT`；List 可变、Tuple 不可变 | 待做 |
+| **S3 Set / Dict** | `NEW_SET`/`NEW_DICT`、成员/下标/写入、键相等（先用线性查找，不实现哈希） | 待做 |
+| **S4 ADT** | 构造器/`match`/布局；依赖集合与类型表的稳定 | 后做 |
+
+泛型类型表示的跨语言调研与 Oort 取舍见
+[design 03 §2.5](03-type-system-design.md)。S2/S3 只存具体类型；
+`TypeParam`/`Forall`/`App(Nominal, args)` 等到实现泛型时再进类型表。
+
+S1 的约束与实现：
+
+- Python 参考实现使用 `OortString`（boxed），Rust 使用 `Rc<str>`（非 `Copy`，
+  寄存器/帧改为 `Clone`）；转换只发生在 `print`/`len` 与主结果边界；
+- `len` 是 native 调用，返回字符数（Rust `chars().count()`，与 Python 一致）；
+- 格式 v3 只新增类型 tag 6 与字符串 opcode，寄存器类型表仍是每寄存器一字节；
+- String 索引/切片暂不做（需要 `GET_ITEM`/`BUILD_SLICE`，留到 S2 一并设计）；
+- 集合阶段需要把类型表从“每寄存器一字节”升级为**递归类型描述表**，届时
+  再提升 kind=1 version。
 
 ## 9. 风险与开放问题
 

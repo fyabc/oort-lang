@@ -17,7 +17,7 @@ from ..diagnostics.runtime_errors import OortNameError, OortRuntimeError, OortTy
 from ..hir.typed import IrType
 from ..runtime.environment import Environment
 from ..runtime.functions import OortNativeFunction
-from ..runtime.objects import OortBool, OortFloat, OortInt, OortObject
+from ..runtime.objects import OortBool, OortFloat, OortInt, OortObject, OortString
 from .typed_opcodes import TypedOp, decode_a, decode_b, decode_bx, decode_c, decode_op
 
 if TYPE_CHECKING:
@@ -141,6 +141,20 @@ class TypedCodeVM:
                 registers[a] = OortBool.get_bool_value(not operand.value)
             elif op is TypedOp.TO_FLOAT:
                 registers[a] = self._to_float(registers[b], position)
+            elif op is TypedOp.ADD_S:
+                registers[a] = OortString(
+                    self._string(registers[b], position).value
+                    + self._string(registers[c], position).value
+                )
+            elif op in (
+                TypedOp.EQ_S,
+                TypedOp.NE_S,
+                TypedOp.LT_S,
+                TypedOp.LE_S,
+                TypedOp.GT_S,
+                TypedOp.GE_S,
+            ):
+                registers[a] = self._string_compare(op, registers[b], registers[c], position)
             elif op is TypedOp.JMP:
                 pc = bx
                 continue
@@ -236,6 +250,7 @@ class TypedCodeVM:
             (expected is IrType.INT and type(value) is OortInt)
             or (expected is IrType.FLOAT and type(value) is OortFloat)
             or (expected is IrType.BOOL and type(value) is OortBool)
+            or (expected is IrType.STRING and type(value) is OortString)
             or (expected is IrType.UNIT and value is None)
         )
         if not ok:
@@ -392,6 +407,35 @@ class TypedCodeVM:
         if type(value) is OortFloat:
             return value.value
         raise OortTypeError("Typed mixed comparison expects Int or Float.", position)
+
+    @staticmethod
+    def _string(value: Any, position: SourcePosition) -> OortString:
+        if type(value) is not OortString:
+            raise OortTypeError("Typed opcode expected String.", position)
+        return value
+
+    def _string_compare(
+        self,
+        op: TypedOp,
+        lhs: Any,
+        rhs: Any,
+        position: SourcePosition,
+    ) -> OortBool:
+        left = self._string(lhs, position).value
+        right = self._string(rhs, position).value
+        if op is TypedOp.EQ_S:
+            result = left == right
+        elif op is TypedOp.NE_S:
+            result = left != right
+        elif op is TypedOp.LT_S:
+            result = left < right
+        elif op is TypedOp.LE_S:
+            result = left <= right
+        elif op is TypedOp.GT_S:
+            result = left > right
+        else:
+            result = left >= right
+        return OortBool.get_bool_value(result)
 
     def _int_unary(self, op: TypedOp, operand: Any, position: SourcePosition) -> OortInt:
         value = self._int(operand, position).value

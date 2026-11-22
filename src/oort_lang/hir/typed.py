@@ -62,6 +62,7 @@ class IrType(Enum):
     FLOAT = "Float"
     BOOL = "Bool"
     UNIT = "Unit"
+    STRING = "String"
     FUNCTION = "<function>"
 
     def __str__(self) -> str:
@@ -73,6 +74,7 @@ _PRIMITIVE_IR = {
     "Float": IrType.FLOAT,
     "Bool": IrType.BOOL,
     "Unit": IrType.UNIT,
+    "String": IrType.STRING,
 }
 
 _ARITHMETIC_OPS = {"+", "-", "*", "//", "%"}
@@ -250,7 +252,9 @@ def _validate_block(node: nodes.BlockExpr) -> None:
 
 
 def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
-    if isinstance(node, (nodes.IntConstant, nodes.FloatConstant, nodes.BooleanConstant)):
+    if isinstance(
+        node, (nodes.IntConstant, nodes.FloatConstant, nodes.BooleanConstant, nodes.StringConstant)
+    ):
         _ir_type_for_node(node)
         return
     if isinstance(node, nodes.Name):
@@ -501,6 +505,10 @@ def _check_binop(function: TypedFunction, instruction: BinOp) -> None:
     rhs = table[instruction.rhs]
     result = table[instruction.dst]
     op = instruction.op
+    if op == "+" and lhs is IrType.STRING and rhs is IrType.STRING:
+        if result is not IrType.STRING:
+            _invalid(function, instruction, f"+ result {result} != String")
+        return
     if op in _ARITHMETIC_OPS | {"/"}:
         if not (_is_numeric(lhs) and _is_numeric(rhs)):
             _invalid(function, instruction, f"non-numeric operands for {op}")
@@ -511,12 +519,20 @@ def _check_binop(function: TypedFunction, instruction: BinOp) -> None:
             _invalid(function, instruction, f"{op} result {result} != {expected}")
         return
     if op in _COMPARISON_OPS:
+        if lhs is IrType.STRING and rhs is IrType.STRING:
+            if result is not IrType.BOOL:
+                _invalid(function, instruction, f"{op} result {result} != Bool")
+            return
         if not (_is_numeric(lhs) and _is_numeric(rhs)):
             _invalid(function, instruction, f"non-numeric operands for {op}")
         if result is not IrType.BOOL:
             _invalid(function, instruction, f"{op} result {result} != Bool")
         return
     if op in _EQUALITY_OPS:
+        if lhs is IrType.STRING and rhs is IrType.STRING:
+            if result is not IrType.BOOL:
+                _invalid(function, instruction, f"{op} result {result} != Bool")
+            return
         comparable = (_is_numeric(lhs) and _is_numeric(rhs)) or (
             lhs is rhs and lhs in (IrType.INT, IrType.FLOAT, IrType.BOOL)
         )

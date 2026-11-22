@@ -251,15 +251,46 @@ print(same(9007199254740992, 9007199254740992.0))
     assert typed_out == vm_out == "false\ntrue\n"
 
 
+def test_typed_string_subset(capsys: pytest.CaptureFixture):
+    source = """\
+#lang oort-core
+
+def greet(name: String) -> String { "Hello, " + name }
+def before(a: String, b: String) -> Bool { a < b }
+
+print(greet("Oort"))
+print(len("abc"), len(""))
+print("a" < "b", "a" == "a", "a" != "b")
+print(before("b", "a"))
+"""
+    typed = lower_typed_module(build_ast(source))
+    program = compile_typed_module(typed)
+    ops = {
+        TypedOp(word >> 24) for proto in (program.main, *program.functions) for word in proto.code
+    }
+    assert TypedOp.ADD_S in ops
+    assert TypedOp.LT_S in ops
+
+    typed_compiler = get_compiler("NOT_EXIST -t tvm")
+    typed_compiler.run_string(source)
+    typed_out = capsys.readouterr().out
+
+    vm_compiler = get_compiler("NOT_EXIST -t vm")
+    vm_compiler.run_string(source)
+    vm_out = capsys.readouterr().out
+
+    assert typed_out == vm_out == "Hello, Oort\n3 0\ntrue true true\nfalse\n"
+
+
 def test_tvm_rejects_out_of_subset():
     compiler = get_compiler("NOT_EXIST -t tvm")
     with pytest.raises(CompilerError):
-        compiler.run_string('#lang oort-core\nprint("x")\n')
+        compiler.run_string("#lang oort-core\nenum E { A }\nprint(1)\n")
 
 
 def test_typed_lowering_rejects_out_of_subset():
-    ast = build_ast('#lang oort-core\nprint("x")\n')
-    with pytest.raises(UnsupportedSyntax, match="StringConstant"):
+    ast = build_ast("#lang oort-core\nenum E { A }\nprint(1)\n")
+    with pytest.raises(UnsupportedSyntax, match="Enum definitions"):
         lower_typed_module(ast)
 
 
