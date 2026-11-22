@@ -18,7 +18,9 @@ from oort_lang.diagnostics.syntax_errors import UnsupportedSyntax
 from oort_lang.driver.compiler import CompilerError
 from oort_lang.hir import AdtType, ContainerType, IrType, lower_module, lower_typed_module
 from oort_lang.hir.typed_exec import TypedInterpreter
+from oort_lang.hir.typed_link import link_typed_modules
 from oort_lang.runtime.interpreter import ASTInterpreter
+from oort_lang.source.input_info import StringInputInfo
 from tests.helpers import EXAMPLES_DIR, build_ast, get_compiler
 
 FIB = """\
@@ -671,6 +673,109 @@ print(lib.paint(make()))
     typed = run_file(main, target="tvm")
     vm = run_file(main, target="vm")
     assert typed.stdout == vm.stdout == "3\n9\n1\n"
+
+
+def _parse_only(source: str):
+    compiler = get_compiler("NOT_EXIST -t eval")
+    info = StringInputInfo(source)
+    compiler.error_handler.register_input(info)
+    dialect = compiler._resolve_dialect(info)
+    assert dialect is not None
+    ast = compiler.build_ast(compiler._build_parser(info), info, dialect=dialect)
+    assert ast is not None
+    return ast
+
+
+LIB_SOURCE = """#lang oort-core
+enum Color { Red, Green }
+def add(a: Int, b: Int) -> Int { a + b }
+def make_red() -> Color { Red }
+"""
+
+
+def _link_sources(tmp_path, main_source: str, lib_source: str = LIB_SOURCE):
+    lib_path = tmp_path / "lib.ort"
+    main_path = tmp_path / "main.ort"
+    lib_ast = build_ast(lib_source)
+    main_ast = _parse_only("#lang oort-core\n" + main_source)
+
+    def resolve(spec: str, importer, position):
+        if spec == "./lib":
+            return lib_path, lib_ast
+        return None
+
+    return link_typed_modules(main_ast, main_path, resolve)
+
+
+def test_typed_link_rejects_missing_export(tmp_path):
+    with pytest.raises(UnsupportedSyntax, match=r"Module 'lib' does not export 'missing'\."):
+        _link_sources(tmp_path, 'from "./lib" import missing\nprint(1)\n')
+
+
+def test_typed_link_rejects_type_only_export(tmp_path):
+    with pytest.raises(UnsupportedSyntax, match="type-only export from 'lib'"):
+        _link_sources(tmp_path, 'from "./lib" import Color\nprint(1)\n')
+
+
+def test_typed_link_rejects_imported_constructor(tmp_path):
+    with pytest.raises(UnsupportedSyntax, match=r"Imported constructors are not supported yet\."):
+        _link_sources(tmp_path, 'from "./lib" import Red\nprint(1)\n')
+
+
+def test_typed_link_rejects_function_collision(tmp_path):
+    lib_ast = build_ast(LIB_SOURCE)
+    a_path = tmp_path / "a.ort"
+    b_path = tmp_path / "b.ort"
+    main_ast = _parse_only('#lang oort-core\nimport "./a"\nimport "./b"\n')
+
+    def resolve(spec: str, importer, position):
+        return {"./a": (a_path, lib_ast), "./b": (b_path, lib_ast)}.get(spec)
+
+    with pytest.raises(UnsupportedSyntax, match="Typed function name collision: 'add'"):
+        link_typed_modules(main_ast, tmp_path / "main.ort", resolve)
+
+
+def test_typed_link_rejects_circular_import(tmp_path):
+    a_path = tmp_path / "a.ort"
+    b_path = tmp_path / "b.ort"
+    a_ast = _parse_only('#lang oort-core\nimport "./b"\ndef fa() -> Int { b.fb() }\nprint(fa())\n')
+    b_ast = _parse_only('#lang oort-core\nimport "./a"\ndef fb() -> Int { 1 }\n')
+
+    def resolve(spec: str, importer, position):
+        if importer == a_path and spec == "./b":
+            return b_path, b_ast
+        if importer == b_path and spec == "./a":
+            return a_path, a_ast
+        return None
+
+    with pytest.raises(UnsupportedSyntax, match=r"Circular typed import\."):
+        link_typed_modules(a_ast, a_path, resolve)
+
+
+def test_typed_namespace_import_uses_export_table(tmp_path, run_file):
+    lib = tmp_path / "lib.ort"
+    lib.write_text(LIB_SOURCE, encoding="utf-8")
+    main = tmp_path / "main.ort"
+    main.write_text(
+        '#lang oort-core\nimport "./lib"\nprint(lib.add(2, 3), lib.make_red())\n',
+        encoding="utf-8",
+    )
+
+    typed = run_file(main, target="tvm")
+    assert typed.stdout == "5 Red\n"
+
+
+def test_typed_module_id_is_relative_to_entry(tmp_path, run_file):
+    lib = tmp_path / "lib.ort"
+    lib.write_text("#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n", encoding="utf-8")
+    main = tmp_path / "main.ort"
+    main.write_text(
+        '#lang oort-core\nimport "./lib"\nprint(lib.add(2, 3))\n',
+        encoding="utf-8",
+    )
+
+    typed = run_file(main, target="tvm")
+    assert typed.stdout == "5\n"
 
 
 def test_typed_collection_obc_round_trip(tmp_path):
