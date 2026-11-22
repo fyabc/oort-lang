@@ -3,7 +3,7 @@
 > 本文件由 `benchmarks/report.py` 从机器可读结果生成，请勿手改数字。
 > 手工维护的只有 `benchmarks/history.json` 的历史里程碑元数据。
 > 快照日期：2026-11-22  
-> 提交：`4187196`  
+> 提交：`925fa4a`  
 > 环境：AMD Ryzen 7 5800H with Radeon Graphics / Windows 11 / Python 3.12.12  
 > 版本：Oort 0.5.0
 
