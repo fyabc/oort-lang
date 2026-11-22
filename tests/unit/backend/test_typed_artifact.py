@@ -169,6 +169,38 @@ def test_link_artifacts_rejects_missing_export(tmp_path):
         link_typed_artifacts(main_artifact, {"lib": lib_artifact, "main": main_artifact})
 
 
+def test_link_artifacts_rejects_missing_module():
+    main = _unit(
+        "#lang oort-core\nprint(1)\n",
+        "main",
+        imports=(TypedImportRef("nope", "module", "nope"),),
+    )
+    artifact = build_typed_artifact(main)
+
+    with pytest.raises(UnsupportedSyntax, match="imports missing module 'nope'"):
+        link_typed_artifacts(artifact, {"main": artifact})
+
+
+def test_link_artifacts_rejects_cycle():
+    a = build_typed_artifact(
+        _unit(
+            "#lang oort-core\nprint(1)\n",
+            "a",
+            imports=(TypedImportRef("b", "module", "b"),),
+        )
+    )
+    b = build_typed_artifact(
+        _unit(
+            "#lang oort-core\nprint(2)\n",
+            "b",
+            imports=(TypedImportRef("a", "module", "a"),),
+        )
+    )
+
+    with pytest.raises(UnsupportedSyntax, match="Circular typed module import"):
+        link_typed_artifacts(a, {"a": a, "b": b})
+
+
 def test_build_typed_program_links_units_in_order():
     root = _unit(
         "#lang oort-core\nenum Color { Red }\nprint(Red)\n",
