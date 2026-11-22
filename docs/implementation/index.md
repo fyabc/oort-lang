@@ -20,10 +20,16 @@
 
 ## 当前实现边界
 
-Oort 目前只有一条执行路径：**树遍历解释器**（`oort -t eval`，默认）。
+Oort 有两条执行路径：**寄存器 VM**（`oort -t vm`，文件与 `-c` 的默认后端）与
+**树遍历解释器**（`oort -t eval`，回退选项；REPL 仍使用它）。两者对同一合法程序
+必须产生相同的输出与返回值；对非法程序的拒绝时机可能不同。规范行为见
+[spec 12：HIR、字节码与寄存器 VM](../spec/12-hir-bytecode-vm.md)，HIR 设计见
+[design 13](../design/13-hir-design.md)。
 
 - 语法前端解析的语言超集比运行时支持的更大；运行时未实现的功能会在语义分析阶段
   以 `UnsupportedSyntax` 显式报错，而不是静默产生错误结果（见
-  [规范：未实现功能](../spec/06-conformance.md)）。
-- 曾经的寄存器字节码原型已移除：它会在未实现的语法节点上静默“穿透”到子节点，
-  产生错误结果。重新实现前的设计要求见 [提案 0004](../proposals/0004-bytecode-vm.md)。
+  [规范：未实现功能](../spec/06-conformance.md)）。VM 在 lowering/编译期拒绝的
+  构造，解释器可能在运行期才拒绝，详见 spec 12「显式拒绝」。
+- 共享后端不承载方言策略：`oort-core` 的静态类型在降低到 HIR 前已擦除，两个方言
+  共用同一份 HIR/字节码；typed IR/VM（未装箱值、静态槽布局、单态调用）尚未实现，
+  长期目标见 [design 02](../design/02-bytecode-vm-design.md)。

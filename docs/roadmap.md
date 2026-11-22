@@ -116,8 +116,9 @@ eval）；method dispatch 1.44× 为已知弱项。最新数字见
 [`benchmarks/RESULTS.md`](https://github.com/fyabc/oort-lang/blob/main/benchmarks/RESULTS.md)。
 **Python VM 微优化已冻结**（调用点/属性缓存、寄存器复用、帧内联降级为可选
 学习练习 / Rust 设计输入）：玩具语言以语义为先，Python 宿主的性能天花板是
-结构性的，真性能留给阶段 5 的 Rust/LLVM。本阶段余下工作为**收口**：HIR/字节码/VM
-正式规范（默认后端已稳定，前置满足）、补齐剩余显式拒绝项与差分覆盖。
+结构性的，真性能交给 Rust 后端（见下文「性能路线图」）。本阶段余下工作为
+**收口**：HIR/字节码/VM 正式规范（默认后端已稳定，前置满足）、补齐剩余显式
+拒绝项与差分覆盖。
 
 ### 阶段 4：`oort-systems` / `oort-meta` 与 DSL 开关（按需）
 
@@ -126,7 +127,46 @@ DSL 作为正交开关叠加在 `oort-object` / `oort-core` 之上；`oort-syste
 
 ### 阶段 5：静态后端与 Rust 迁移（远期）
 
-LLVM IR、静态模块单态化、GC/ARC 选择，以及关键路径的 Rust 重写。
+typed IR、静态模块单态化、GC/ARC 选择，以及关键路径的 Rust 重写；分阶段目标
+与门禁见下文「性能路线图」。
+
+## 性能路线图（2026-11）
+
+现状：默认后端的 Python VM 已达成 v1 门禁（fib/loop ≥2× 树遍历解释器），但相对
+CPython 仍有约 100–727× 的耗时差距（见
+[`benchmarks/RESULTS.md`](https://github.com/fyabc/oort-lang/blob/main/benchmarks/RESULTS.md)）。
+Python 宿主的指令分发是结构性天花板，微优化已冻结；Rust spike 已验证消费同一份
+`.obc` 的可行性（fib(20) 5.23 ms，比 Python VM 快约 63×、仅慢 CPython 约 4×）。
+性能路径分三段，逐段验收：
+
+### A. Rust VM v2（后端主线）
+
+把 spike 做成正式运行时，消费现有 `.obc`，不改变语言语义：
+
+- 64 位 tagged pointer + Smi（[design 01](design/01-runtime-value-representation.md)），
+  数值内联，去掉热路径上的 `Rc`/`RefCell` 开销；
+- 连续寄存器栈 + 帧指针，去掉每次调用的堆分配；
+- 隐藏类/shape + 单态内联缓存修属性与调用点，名字 atom 化；
+- 集合与字符串的 stdlib 操作原生实现，减少宿主投影；
+- 真 GC 回收环；单一原生二进制 + 编译缓存降低启动。
+
+**门禁**：fib/loop/methods 在 CPython 的 2× 以内，启动 < 50 ms。
+
+### B. typed IR（与阶段 2 的类型系统研究合并）
+
+把静态类型保留到 HIR/字节码（当前擦除边界见
+[spec 12](spec/12-hir-bytecode-vm.md)）：免装箱寄存器、静态槽布局、泛型单态化、
+决策树模式匹配，动态侧按类型反馈特化内联缓存。
+
+**门禁**：`oort-core` 程序 ≤1× CPython，内存峰值不涨。
+
+### C. 静态方言原生编译（远期）
+
+typed IR → Cranelift（先）/ LLVM（后）：逃逸分析拆箱、自递归尾调用、常量折叠与
+循环不变量提升。目标进入 Ruby/Lua 区间；动态方言 JIT 在这一步之后再评估。
+
+三段均以语义不变为前提：任何优化都不得改变可观察行为，Rust 后端与 Python VM
+的差分测试持续作为门禁。详细执行清单与未合并工作维护在私有台账。
 
 ## 工作如何跟踪
 
