@@ -205,7 +205,7 @@ impl<'a> Reader<'a> {
         })
     }
 
-    fn constant(&mut self) -> RResult<Constant> {
+    pub(crate) fn constant(&mut self) -> RResult<Constant> {
         let tag = self.u8()?;
         Ok(match tag {
             0 => Constant::Null,

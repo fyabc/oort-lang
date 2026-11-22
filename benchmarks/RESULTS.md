@@ -147,3 +147,29 @@ uv run --frozen python benchmarks/report.py --benchmark benchmark-050-clean.json
 4. 当前表格由 `report.py` 生成，不要手改 RESULTS 数字；
 5. 若结论跨过目标线，只在 design08/roadmap 写一句结论并链接本文件；
 6. benchmark JSON、profile 与临时图表不提交仓库；长期趋势交给 CI。
+
+<!-- TYPED-BENCH-START -->
+## 6. 类型化路径（研究快照）
+
+> 快照日期：2026-11-22；提交：`9e315c5`；重复 5 次取中位数。
+> 仅标量子集（fib20 / loop 20000）；Python 运行时为进程内计时，Rust 为
+> 子进程 wall time 扣除空 typed 程序启动。该节不进入门禁，由
+> `benchmarks/typed_run.py` + `typed_report.py` 生成。
+
+| 运行时 | fib(20) | loop 20000 | 说明 |
+|---|---:|---:|---|
+| Oort VM (kind=0) | 364.4 ms | 213.9 ms | 基线 |
+| Typed HIR 解释器 (M2) | 498.7 ms | 390.1 ms | Python，in-process |
+| Typed 字节码 VM (M3) | 658.8 ms | 424.3 ms | Python，in-process |
+| Rust typed VM (M4) | 5.9 ms | 1.4 ms | kind=1，exec 扣启动 |
+
+Python typed 字节码相对 kind=0 VM：**1.81–1.98×**（仍更慢，类型断言与解码开销；M3 只验证 ABI）。
+Rust typed 字节码比 kind=0 VM 快 **62.16–151.73×**（同 exec 口径；boxed 值仍是 spike 表示，M4 后续做未装箱）。
+
+生成命令：
+
+```bash
+uv run --frozen python benchmarks/typed_run.py --repeat 5 --json > typed.json
+uv run --frozen python benchmarks/typed_report.py --typed typed.json
+```
+<!-- TYPED-BENCH-END -->

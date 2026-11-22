@@ -25,10 +25,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from oort_lang.bytecode import compile_module
+from oort_lang.bytecode import compile_module, compile_typed_module, write_typed_obc
 from oort_lang.bytecode.serialize import write_obc
+from oort_lang.bytecode.typed_vm import TypedCodeVM
 from oort_lang.diagnostics.error_handler import CompilerErrorHandler
-from oort_lang.hir import lower_module
+from oort_lang.hir import lower_module, lower_typed_module
 from oort_lang.runtime.bytecode_vm import BytecodeVM
 from oort_lang.runtime.interpreter import ASTInterpreter
 from tests.helpers import build_ast
@@ -95,6 +96,69 @@ def compile_to_obc(source: str, path: Path) -> None:
     write_obc(compile_module(lower_module(build_ast(source))), path)
 
 
+TYPED_DIFF_PROGRAMS = {
+    "typed_fib": """#lang oort-core
+
+def fib(n: Int) -> Int {
+    if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+}
+
+print(fib(15))
+""",
+    "typed_loop": """#lang oort-core
+
+def total(n: Int) -> Int {
+    var sum: Int = 0
+    var i: Int = 0
+    while i < n {
+        sum = sum + i
+        i = i + 1
+    }
+    sum
+}
+
+print(total(10000))
+""",
+    "typed_early_return": """#lang oort-core
+
+def sign(n: Int) -> Int {
+    if n < 0 { return -1 }
+    if n > 0 { return 1 }
+    0
+}
+
+print(sign(-2), sign(0), sign(3))
+""",
+    "typed_mixed": """#lang oort-core
+
+def average(a: Float, b: Float) -> Float {
+    (a + b) / 2.0
+}
+
+def close(a: Float, b: Float) -> Bool {
+    a - b < 0.001 and b - a < 0.001
+}
+
+print(average(1.0, 4.0), close(1.0, 1.0005))
+""",
+}
+
+
+def python_typed_stdout(source: str) -> str:
+    typed = lower_typed_module(build_ast(source))
+    program = compile_typed_module(typed)
+    interpreter = ASTInterpreter(CompilerErrorHandler())
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf), interpreter.runtime.activate():
+        TypedCodeVM(interpreter).run(program)
+    return buf.getvalue()
+
+
+def compile_to_typed_obc(source: str, path: Path) -> None:
+    typed = lower_typed_module(build_ast(source))
+    write_typed_obc(compile_typed_module(typed), path)
+
+
 def rust_stdout(rust_bin: Path, obc: Path) -> str:
     proc = subprocess.run(
         [str(rust_bin), str(obc)],
@@ -127,6 +191,28 @@ def differential(rust_bin: Path) -> bool:
             else:
                 ok = False
                 print(f"  {name:16s} MISMATCH\n    python={expected!r}\n    rust  ={actual!r}")
+    return ok
+
+
+def typed_differential(rust_bin: Path) -> bool:
+    print("\n== typed differential (kind=1 Rust VM vs Python typed VM, stdout) ==")
+    ok = True
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, source in TYPED_DIFF_PROGRAMS.items():
+            obc = Path(tmp) / f"{name}.obc"
+            compile_to_typed_obc(source, obc)
+            expected = python_typed_stdout(source)
+            try:
+                actual = rust_stdout(rust_bin, obc)
+            except RuntimeError as e:
+                print(f"  {name:20s} ERROR: {e}")
+                ok = False
+                continue
+            if actual == expected:
+                print(f"  {name:20s} OK")
+            else:
+                ok = False
+                print(f"  {name:20s} MISMATCH\n    python={expected!r}\n    rust  ={actual!r}")
     return ok
 
 
@@ -167,6 +253,7 @@ def main() -> int:
     ok = True
     if not options.bench_only:
         ok = differential(rust_bin)
+        ok = typed_differential(rust_bin) and ok
     if not options.diff_only:
         benchmark(rust_bin, options.repeat)
     return 0 if ok else 1

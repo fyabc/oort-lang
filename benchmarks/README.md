@@ -78,6 +78,13 @@ make 等价目标：`benchmark-json`、`benchmark-reference-json`、
 `benchmark-report`、`benchmark-report-check`。生成器只读取 JSON；只有
 `history.json` 的历史里程碑元数据是人工维护的。
 
+类型化路径（M2–M4）单独生成，追加/替换 RESULTS 第 6 节；该节不进入门禁：
+
+```bash
+uv run python benchmarks/typed_run.py --repeat 5 --json > typed.json
+uv run python benchmarks/typed_report.py --typed typed.json
+```
+
 ## 性能分析
 
 基准告诉我们*是否*回退；profiler 告诉我们*在哪里*回退。

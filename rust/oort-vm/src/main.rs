@@ -1,6 +1,8 @@
 //! oort-vm: spike register VM consuming `.obc` bytecode (spec 13).
 //!
 //! Usage: oort-vm <file.obc>
+//! Both kind=0 (type-erased) and kind=1 (typed scalar subset) files are
+//! accepted; the kind byte selects the reader and VM.
 //! Program `print` output goes to stdout; the final value is reported on stderr
 //! (prefixed `value:`) for differential comparison. Errors exit non-zero.
 
@@ -9,6 +11,7 @@
 #![allow(dead_code)]
 
 mod obc;
+mod typed;
 mod vm;
 
 use std::process::ExitCode;
@@ -26,15 +29,19 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let module = match obc::read_module(&data) {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("bytecode error: {e}");
-            return ExitCode::from(1);
-        }
+    let kind = data.get(3).copied().unwrap_or(255);
+    let result = match kind {
+        0 => match obc::read_module(&data) {
+            Ok(module) => vm::Vm::new(module).run_main(),
+            Err(e) => Err(format!("bytecode error: {e}")),
+        },
+        1 => match typed::read_typed_module(&data) {
+            Ok(module) => typed::TypedVm::new(module).run_main(),
+            Err(e) => Err(format!("typed bytecode error: {e}")),
+        },
+        _ => Err(format!("unsupported bytecode kind: {kind}")),
     };
-    let mut machine = vm::Vm::new(module);
-    match machine.run_main() {
+    match result {
         Ok(value) => {
             eprintln!("value: {}", vm::display(&value));
             ExitCode::SUCCESS

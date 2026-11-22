@@ -175,6 +175,7 @@ ignore = [
 "tests/**/*.py" = ["S101", "ARG", "PLR2004"]
 "benchmarks/**/*.py" = ["S101", "ARG"]
 "benchmarks/report.py" = ["RUF001"]  # Chinese benchmark report text
+"benchmarks/typed_report.py" = ["RUF001"]  # Chinese typed report text
 "src/oort_lang/parser/grammar/*.py" = ["ALL"]  # Generated code
 "**/__init__.py" = ["F401"]  # Re-exports in __init__.py
 

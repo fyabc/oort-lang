@@ -73,6 +73,7 @@ nav:
       - oort-core 薄探针: spec/11-core-probe.md
       - HIR 与字节码 VM: spec/12-hir-bytecode-vm.md
       - 字节码序列化: spec/13-bytecode-serialization.md
+      - 类型化字节码: spec/14-typed-bytecode.md
   - 提案:
       - 提案索引与流程: proposals/README.md
       - OP 0000 模板: proposals/0000-template.md

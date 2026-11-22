@@ -29,6 +29,7 @@
 | [11-core-probe.md](11-core-probe.md) | `oort-core` 薄探针：Int/Float/Bool/String、集合/循环、静态类/槽、单继承与静态接口、跨模块类型、函数、Unit、单态/泛型 ADT、内建 `Option`/`Result`、完整模式匹配、拒绝清单 |
 | [12-hir-bytecode-vm.md](12-hir-bytecode-vm.md) | 共享后端：HIR、32 位字节码编码、寄存器 VM 语义与调用约定、显式拒绝 |
 | [13-bytecode-serialization.md](13-bytecode-serialization.md) | `.obc` 字节码文件格式：头/布局/tagged 常量池 |
+| [14-typed-bytecode.md](14-typed-bytecode.md) | `.obc` kind=1：typed 标量子集的文件布局、类型化操作码、调用窗口与守卫（研究性） |
 | [06-conformance.md](06-conformance.md) | 实现状态矩阵与诊断规则 |
 
 ## 术语

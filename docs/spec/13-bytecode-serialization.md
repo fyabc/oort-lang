@@ -36,8 +36,9 @@
 magic "OBC" (3 字节) | kind u8 | version u8
 ```
 
-- `kind`：字节码种类。`0` = 动态/类型擦除（当前）；`1+` 预留给未来 typed/静态
-  字节码。读入方遇到不支持的 kind 必须显式拒绝。
+- `kind`：字节码种类。`0` = 动态/类型擦除（当前）；`1` = typed 标量子集
+  （研究性，见 [spec 14](14-typed-bytecode.md)）；`2+` 预留。读入方遇到不支持的
+  kind 必须显式拒绝。
 - `version`：该 kind 的格式修订号，当前写出 `2`（OP 0023：模式字面量值、
   MatchArm guard 字段）；读入兼容 `1` 与 `2`。不支持的 version 显式拒绝。
 

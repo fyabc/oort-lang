@@ -381,13 +381,32 @@ TypedFunction
 - CLI：`-t tbc` 打印 typed 反汇编；`-t tvm` 改为执行 typed 字节码；typed HIR
   解释器保留用于差分测试；
 - `.obc` **kind=1** 序列化/读回（`bytecode/typed_serialize.py`）：携带常量、
-  字/位置表、寄存器类型、参数/返回类型；kind 0 与 kind 1 互斥拒绝；
+  字/位置表、寄存器类型、参数/返回类型；kind 0 与 kind 1 互斥拒绝；格式见
+  [spec 14](../spec/14-typed-bytecode.md)；
 - 验证：typed 字节码、typed HIR 解释器与现有 VM 在示例及内联 fib/while/
   早返回程序上输出一致；round-trip 后再执行结果一致；
 - **尚未做**：Rust VM 消费 kind=1、动态边界守卫、格式稳定化并纳入 spec；
 - 初步测量（本机，5 次中位数）：fib(20) **560.0 ms** vs VM **345.1 ms**
   （1.62× 慢）；loop 20000 **382.1 ms** vs **162.0 ms**（2.36× 慢）。typed
   字节码比 typed HIR 略慢（解码 + 类型断言），符合 M3 只验证 ABI 的定位。
+
+### M4 入口（2026-11-22）
+
+- Rust VM 现在按 `.obc` kind 分派：kind=0 走 `obc::read_module`/`vm::Vm`，
+  kind=1 走 `typed::read_typed_module`/`typed::TypedVm`
+  （`rust/oort-vm/src/typed.rs`）；
+- typed 标量子集执行已打通：typed opcodes、`TO_FLOAT`、CALL 窗口、入口守卫；
+  值仍是 boxed `vm::Value`，未装箱留到后续；文件格式见
+  [spec 14](../spec/14-typed-bytecode.md)；
+- `scripts/rust_vm_check.py` 增加 typed differential（4 个 core 程序），与
+  Python typed VM 的 stdout 全部一致；
+- `benchmarks/typed_run.py` + `typed_report.py` 把 typed 路径接入
+  `benchmarks/RESULTS.md` §6（研究快照，不进门禁）；
+- 初步测量（本机，exec 口径，5 次中位数）：Rust typed **fib(20) 5.9 ms /
+  loop 20000 1.4 ms**；同机 Python typed 字节码 VM 为 **658.8 / 424.3 ms**，
+  kind=0 VM 为 **364.4 / 213.9 ms**。Rust typed 比 kind=0 VM 快约
+  62–152×（boxed 值仍是 spike 表示）；
+- **尚未做**：未装箱寄存器、动态边界；`exec_ms` 已接入 RESULTS §6。
 
 ## 9. 风险与开放问题
 

@@ -253,7 +253,7 @@ fn binary(op: u32, lhs: &Value, rhs: &Value) -> VResult<Value> {
     ))
 }
 
-fn floor_div(a: i64, b: i64) -> i64 {
+pub(crate) fn floor_div(a: i64, b: i64) -> i64 {
     let q = a / b;
     let r = a % b;
     if r != 0 && (r < 0) != (b < 0) {
@@ -263,7 +263,7 @@ fn floor_div(a: i64, b: i64) -> i64 {
     }
 }
 
-fn floor_mod(a: i64, b: i64) -> i64 {
+pub(crate) fn floor_mod(a: i64, b: i64) -> i64 {
     let r = a % b;
     if r != 0 && (r < 0) != (b < 0) {
         r + b
@@ -325,7 +325,7 @@ pub fn display(v: &Value) -> String {
     }
 }
 
-fn constant_to_value(c: &Constant) -> VResult<Value> {
+pub(crate) fn constant_to_value(c: &Constant) -> VResult<Value> {
     Ok(match c {
         Constant::Null => Value::Null,
         Constant::Bool(b) => Value::Bool(*b),

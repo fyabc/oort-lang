@@ -36,8 +36,11 @@ uv run --frozen python benchmarks/reference/run.py \
 ### oort-rust（Rust VM spike）
 
 `oort-rust` 是消费 `.obc` 字节码的 Rust 寄存器 VM 原型（`rust/oort-vm`，spec 13），
-**不是正式后端**，数字单列作参考。runner 通过包装器 `oort_rust.py` 运行它：把
-`.ort` 编译成 `.obc`（按 mtime 缓存到 `.obc-cache/`）再交 Rust VM 执行。需先构建：
+**不是正式后端**，数字单列作参考。`oort-vm` 同时接受 kind=0（擦除式）与
+kind=1（typed 标量子集）文件；typed 差分用
+`uv run --frozen python scripts/rust_vm_check.py --diff-only`。runner 通过包装器
+`oort_rust.py` 运行它：把 `.ort` 编译成 `.obc`（按 mtime 缓存到 `.obc-cache/`）
+再交 Rust VM 执行。需先构建：
 
 ```bash
 cargo build --release --manifest-path rust/Cargo.toml
