@@ -21,6 +21,8 @@ pub enum Value {
     Str(Rc<str>),
     List(Rc<RefCell<Vec<Value>>>),
     Tuple(Rc<[Value]>),
+    Set(Rc<RefCell<Vec<Value>>>),
+    Dict(Rc<RefCell<Vec<(Value, Value)>>>),
     Closure(Rc<Closure>),
     BoundMethod(Rc<BoundMethod>),
     Type(Rc<TypeObj>),
@@ -138,6 +140,8 @@ fn truthy(v: &Value) -> bool {
         Value::Float(f) => *f != 0.0,
         Value::Str(s) => !s.is_empty(),
         Value::List(l) => !l.borrow().is_empty(),
+        Value::Set(items) => !items.borrow().is_empty(),
+        Value::Dict(entries) => !entries.borrow().is_empty(),
         _ => true, // instances, types, callables are always truthy
     }
 }
@@ -159,6 +163,8 @@ fn type_name(v: &Value) -> &'static str {
         Value::Str(_) => "String",
         Value::List(_) => "List",
         Value::Tuple(_) => "Tuple",
+        Value::Set(_) => "Set",
+        Value::Dict(_) => "Dict",
         Value::Closure(_) | Value::BoundMethod(_) | Value::Native(_) => "Function",
         Value::Type(_) => "Type",
         Value::Instance(_) => "Instance",
@@ -352,6 +358,27 @@ pub fn display(v: &Value) -> String {
             } else {
                 let parts: Vec<String> = items.iter().map(display).collect();
                 format!("({})", parts.join(", "))
+            }
+        }
+        Value::Set(items) => {
+            let items = items.borrow();
+            if items.is_empty() {
+                "{.}".into()
+            } else {
+                let parts: Vec<String> = items.iter().map(display).collect();
+                format!("{{. {} .}}", parts.join(", "))
+            }
+        }
+        Value::Dict(entries) => {
+            let entries = entries.borrow();
+            if entries.is_empty() {
+                "{:}".into()
+            } else {
+                let parts: Vec<String> = entries
+                    .iter()
+                    .map(|(key, value)| format!("{}: {}", display(key), display(value)))
+                    .collect();
+                format!("{{: {} :}}", parts.join(", "))
             }
         }
         Value::Type(t) => format!("<Type '{}'>", t.name),

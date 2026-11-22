@@ -58,8 +58,8 @@ positions?:
 | 5 | 函数引用（CALL 目标） | — |
 | 6 | `String` | — |
 | 7 | `List` | `u16 element_type_id` |
-| 8 | `Set`（预留） | `u16 element_type_id` |
-| 9 | `Dict`（预留） | `u16 key_type_id, u16 value_type_id` |
+| 8 | `Set` | `u16 element_type_id` |
+| 9 | `Dict` | `u16 key_type_id, u16 value_type_id` |
 | 10 | `Tuple` | `u16 count, u16 element_type_id[count]` |
 | 11 | `Iterator` | — |
 
@@ -123,9 +123,13 @@ ABx: [op:8][A:8][Bx:16]
 | 61 | `GET_ITEM` | ABC | A=目标, B=容器, C=索引 | 下标读取 |
 | 62/63 | `EQ_LIST` / `NE_LIST` | ABC | A=目标, B=左, C=右 | List 深相等/不等 → Bool |
 | 64/65 | `EQ_TUPLE` / `NE_TUPLE` | ABC | 同上 | Tuple 深相等/不等 → Bool |
-| 66 | `OPEN_ITER` | ABC | A=目标, B=可迭代值, C=0 | 创建迭代器（List/Tuple/String 的快照） |
+| 66 | `OPEN_ITER` | ABC | A=目标, B=可迭代值, C=0 | 创建迭代器（List/Tuple/Set/Dict/String 的快照） |
 | 67 | `ITER_NEXT` | ABC | A=值目标, B=迭代器, C=有效标志 | `(R[A], R[C]) = next(R[B])`；结束时值为 `Unit`、标志为 false |
 | 68 | `SET_ITEM` | ABC | A=容器, B=索引, C=源 | **预留**：List 原地写入；当前语言表面禁止下标赋值，编译器尚不发出 |
+| 69 | `NEW_SET` | ABC | A=元素窗口基址, B=元素数, C=目标 | 构造 Set，按值相等去重 |
+| 70 | `NEW_DICT` | ABC | A=窗口基址, B=条目数, C=目标 | 构造 Dict；窗口为 `key,value` 交替的 `2*B` 个寄存器 |
+| 71/72 | `EQ_SET` / `NE_SET` | ABC | A=目标, B=左, C=右 | Set 深相等/不等（顺序无关）→ Bool |
+| 73/74 | `EQ_DICT` / `NE_DICT` | ABC | 同上 | Dict 深相等/不等（键查找 + 值比较）→ Bool |
 
 ### 3.2 调用约定
 
@@ -169,17 +173,20 @@ JMP        loop
 end:
 ```
 
-`OPEN_ITER` 接受元素类型已知的 List、元素类型齐次的 Tuple 或 String
-（元素为单字符 String）；迭代器是**快照**，循环期间修改容器不影响本次
-迭代。`ITER_NEXT` 的 `ok` 是编译器分配的临时 Bool 寄存器；HIR 层不暴露
-该寄存器。
+`OPEN_ITER` 接受元素类型已知的 List/Set、元素类型齐次的 Tuple、Dict 或
+String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭代器是
+**快照**，循环期间修改容器不影响本次迭代。`ITER_NEXT` 的 `ok` 是编译器
+分配的临时 Bool 寄存器；HIR 层不暴露该寄存器。
 
 ## 4. 执行语义
 
 - **值表示由实现决定**：Python 参考实现使用 boxed 运行时值（差分 baseline）；
-  Rust typed VM 标量使用未装箱表示，String 使用 `Rc<str>`，List/Tuple 使用
-  `Rc<RefCell<Vec<TypedValue>>>` / `Rc<[TypedValue]>`，迭代器使用
+  Rust typed VM 标量使用未装箱表示，String 使用 `Rc<str>`，List/Set 使用
+  `Rc<RefCell<Vec<TypedValue>>>`，Tuple 使用 `Rc<[TypedValue]>`，Dict 使用
+  `Rc<RefCell<Vec<(TypedValue, TypedValue)>>>`，迭代器使用
   `Rc<RefCell<{ values, index }>>`；只在 native `print`/`len` 与主结果边界转换；
+- **Dict 保持插入顺序**；Set 的迭代/打印顺序不属于语言保证。Rust 参考实现
+  用有序 `Vec` + 线性键查找，不依赖 `std::HashMap`；
 - `Int` 在 Python 参考实现中使用宿主整数（任意精度）；Rust spike 使用
   `i64`，溢出显式报错。这是 spike 的表示限制，不是语言语义；跨实现差分
   测试避免溢出输入。完整数值语义见
@@ -195,10 +202,11 @@ end:
 ## 5. 当前边界
 
 - 仅 `oort-core` typed 子集：`Int`/`Float`/`Bool`/`Unit`/`String`、顶层函数、
-  直接调用、`if`/`while`/`for`/早返回、String 拼接/比较/`len`、List/Tuple
-  字面量/下标/`len`/深相等、List/Tuple（元素齐次）/String 的 `for` 迭代；
-- 无 Set/Dict、集合原地修改（`SET_ITEM` 预留；核心检查器尚未允许 `xs[i] = v`）、
-  ADT/`match`、类/接口/泛型/lambda、模块导入、切片；
+  直接调用、`if`/`while`/`for`/早返回、String 拼接/比较/`len`、List/Tuple/Set/
+  Dict 字面量、List/Tuple/String/Dict 下标读取、`len`、深相等、
+  List/Tuple（元素齐次）/Set/Dict/String 的 `for` 迭代；
+- 无集合原地修改（`SET_ITEM` 预留；核心检查器尚未允许 `xs[i] = v`）、`in`/
+  集合运算、ADT/`match`、类/接口/泛型/lambda、模块导入、切片；
 - kind=1 **v4 是当前唯一版本**；新增 opcode/type tag 属于向后兼容的格式扩展，
   旧读者遇到未知 opcode/tag 必须报错而不是猜测；破坏既有布局的变更必须提升
   version；

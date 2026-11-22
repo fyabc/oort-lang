@@ -203,12 +203,14 @@ enum TypedValue {
     Str(Rc<str>),
     List(Rc<RefCell<Vec<TypedValue>>>),
     Tuple(Rc<[TypedValue]>),
+    Set(Rc<RefCell<Vec<TypedValue>>>),
+    Dict(Rc<RefCell<Vec<(TypedValue, TypedValue)>>>),
     Iterator(Rc<RefCell<TypedIterator>>),
     Function(usize),
     Native(TypedNative),
 }
 
-/// Snapshot iterator over a List, Tuple or String; mirrors `OortIterator`.
+/// Snapshot iterator over a List, Tuple, Set, Dict keys or String.
 struct TypedIterator {
     values: Vec<TypedValue>,
     index: usize,
@@ -249,6 +251,27 @@ fn display_typed(value: &TypedValue) -> String {
                 format!("({})", parts.join(", "))
             }
         }
+        TypedValue::Set(items) => {
+            let items = items.borrow();
+            if items.is_empty() {
+                "{.}".into()
+            } else {
+                let parts: Vec<String> = items.iter().map(display_typed).collect();
+                format!("{{. {} .}}", parts.join(", "))
+            }
+        }
+        TypedValue::Dict(entries) => {
+            let entries = entries.borrow();
+            if entries.is_empty() {
+                "{:}".into()
+            } else {
+                let parts: Vec<String> = entries
+                    .iter()
+                    .map(|(key, value)| format!("{}: {}", display_typed(key), display_typed(value)))
+                    .collect();
+                format!("{{: {} :}}", parts.join(", "))
+            }
+        }
         TypedValue::Iterator(_) => "<iterator>".into(),
         TypedValue::Function(_) | TypedValue::Native(_) => "<function>".into(),
     }
@@ -279,6 +302,20 @@ fn typed_to_value(value: &TypedValue) -> TResult<Value> {
             }
             Value::Tuple(Rc::from(values))
         }
+        TypedValue::Set(items) => {
+            let mut values = Vec::with_capacity(items.borrow().len());
+            for item in items.borrow().iter() {
+                values.push(typed_to_value(item)?);
+            }
+            Value::Set(Rc::new(RefCell::new(values)))
+        }
+        TypedValue::Dict(entries) => {
+            let mut values = Vec::with_capacity(entries.borrow().len());
+            for (key, value) in entries.borrow().iter() {
+                values.push((typed_to_value(key)?, typed_to_value(value)?));
+            }
+            Value::Dict(Rc::new(RefCell::new(values)))
+        }
         _ => return Err("typed main returned an iterable or function value".into()),
     })
 }
@@ -306,6 +343,32 @@ fn typed_equal(lhs: &TypedValue, rhs: &TypedValue) -> TResult<bool> {
                 && a.iter()
                     .zip(b.iter())
                     .all(|(l, r)| typed_equal(l, r).unwrap_or(false))
+        }
+        (TypedValue::Set(a), TypedValue::Set(b)) => {
+            let left = a.borrow();
+            let right = b.borrow();
+            left.len() == right.len()
+                && left.iter().all(|item| {
+                    right
+                        .iter()
+                        .any(|other| typed_equal(item, other).unwrap_or(false))
+                })
+        }
+        (TypedValue::Dict(a), TypedValue::Dict(b)) => {
+            let left = a.borrow();
+            let right = b.borrow();
+            if left.len() != right.len() {
+                return Ok(false);
+            }
+            for (key, value) in left.iter() {
+                let Some(other) = dict_get(&right, key)? else {
+                    return Ok(false);
+                };
+                if !typed_equal(value, &other)? {
+                    return Ok(false);
+                }
+            }
+            true
         }
         _ => false,
     })
@@ -360,6 +423,8 @@ fn guard(expected: &TypedType, value: &TypedValue) -> TResult<()> {
             | (TypedType::Unit, TypedValue::Unit)
             | (TypedType::List(_), TypedValue::List(_))
             | (TypedType::Tuple(_), TypedValue::Tuple(_))
+            | (TypedType::Set(_), TypedValue::Set(_))
+            | (TypedType::Dict(_, _), TypedValue::Dict(_))
             | (TypedType::Iterator, TypedValue::Iterator(_))
     );
     if ok {
@@ -375,6 +440,12 @@ fn open_iterator(value: &TypedValue) -> TResult<TypedValue> {
     let values = match value {
         TypedValue::List(items) => items.borrow().clone(),
         TypedValue::Tuple(items) => items.to_vec(),
+        TypedValue::Set(items) => items.borrow().clone(),
+        TypedValue::Dict(entries) => entries
+            .borrow()
+            .iter()
+            .map(|(key, _)| key.clone())
+            .collect(),
         TypedValue::Str(text) => text
             .chars()
             .map(|ch| TypedValue::Str(Rc::from(ch.to_string().as_str())))
@@ -400,7 +471,47 @@ fn iterator_next(value: &TypedValue) -> TResult<(TypedValue, bool)> {
     }
 }
 
+fn set_insert(items: &mut Vec<TypedValue>, value: TypedValue) -> TResult<()> {
+    for item in items.iter() {
+        if typed_equal(item, &value)? {
+            return Ok(());
+        }
+    }
+    items.push(value);
+    Ok(())
+}
+
+fn dict_set(
+    entries: &mut Vec<(TypedValue, TypedValue)>,
+    key: TypedValue,
+    value: TypedValue,
+) -> TResult<()> {
+    for (existing_key, existing_value) in entries.iter_mut() {
+        if typed_equal(existing_key, &key)? {
+            *existing_value = value;
+            return Ok(());
+        }
+    }
+    entries.push((key, value));
+    Ok(())
+}
+
+fn dict_get(entries: &[(TypedValue, TypedValue)], key: &TypedValue) -> TResult<Option<TypedValue>> {
+    for (existing_key, value) in entries.iter() {
+        if typed_equal(existing_key, key)? {
+            return Ok(Some(value.clone()));
+        }
+    }
+    Ok(None)
+}
+
 fn get_item(container: &TypedValue, index: &TypedValue) -> TResult<TypedValue> {
+    if let TypedValue::Dict(entries) = container {
+        return match dict_get(&entries.borrow(), index)? {
+            Some(value) => Ok(value),
+            None => Err("key not found".into()),
+        };
+    }
     let index = as_int(index)?;
     match container {
         TypedValue::List(items) => {
@@ -545,6 +656,12 @@ const NE_TUPLE: u32 = 65;
 const OPEN_ITER: u32 = 66;
 const ITER_NEXT: u32 = 67;
 const SET_ITEM: u32 = 68;
+const NEW_SET: u32 = 69;
+const NEW_DICT: u32 = 70;
+const EQ_SET: u32 = 71;
+const NE_SET: u32 = 72;
+const EQ_DICT: u32 = 73;
+const NE_DICT: u32 = 74;
 
 pub struct TypedVm {
     functions: Vec<ResolvedProto>,
@@ -886,6 +1003,22 @@ fn execute(
                 let items = registers[a..a + b].to_vec();
                 registers[c] = TypedValue::Tuple(Rc::from(items));
             }
+            NEW_SET => {
+                let mut items = Vec::with_capacity(b);
+                for value in &registers[a..a + b] {
+                    set_insert(&mut items, value.clone())?;
+                }
+                registers[c] = TypedValue::Set(Rc::new(RefCell::new(items)));
+            }
+            NEW_DICT => {
+                let mut entries = Vec::with_capacity(b);
+                for index in 0..b {
+                    let key = registers[a + 2 * index].clone();
+                    let value = registers[a + 2 * index + 1].clone();
+                    dict_set(&mut entries, key, value)?;
+                }
+                registers[c] = TypedValue::Dict(Rc::new(RefCell::new(entries)));
+            }
             GET_ITEM => {
                 registers[a] = get_item(&registers[b], &registers[c])?;
             }
@@ -907,9 +1040,9 @@ fn execute(
                     return Err("typed SET_ITEM expects a List".into());
                 }
             }
-            EQ_LIST | NE_LIST | EQ_TUPLE | NE_TUPLE => {
+            EQ_LIST | NE_LIST | EQ_TUPLE | NE_TUPLE | EQ_SET | NE_SET | EQ_DICT | NE_DICT => {
                 let mut equal = typed_equal(&registers[b], &registers[c])?;
-                if op == NE_LIST || op == NE_TUPLE {
+                if matches!(op, NE_LIST | NE_TUPLE | NE_SET | NE_DICT) {
                     equal = !equal;
                 }
                 registers[a] = TypedValue::Bool(equal);
@@ -1008,6 +1141,8 @@ fn call(
                 TypedValue::Str(s) => Ok(TypedValue::Int(s.chars().count() as i64)),
                 TypedValue::List(items) => Ok(TypedValue::Int(items.borrow().len() as i64)),
                 TypedValue::Tuple(items) => Ok(TypedValue::Int(items.len() as i64)),
+                TypedValue::Set(items) => Ok(TypedValue::Int(items.borrow().len() as i64)),
+                TypedValue::Dict(entries) => Ok(TypedValue::Int(entries.borrow().len() as i64)),
                 _ => Err("len expects a String, List or Tuple in the typed subset".into()),
             }
         }
@@ -1150,5 +1285,66 @@ mod tests {
         assert_eq!(display_typed(&TypedValue::Float(2.0)), "2.0");
         assert_eq!(display_typed(&TypedValue::Float(-0.0)), "-0.0");
         assert_eq!(display_typed(&TypedValue::Unit), "null");
+    }
+
+    fn set_value(values: &[TypedValue]) -> TypedValue {
+        let mut items = Vec::new();
+        for value in values {
+            set_insert(&mut items, value.clone()).unwrap();
+        }
+        TypedValue::Set(Rc::new(RefCell::new(items)))
+    }
+
+    fn dict_value(entries: &[(TypedValue, TypedValue)]) -> TypedValue {
+        let mut items = Vec::new();
+        for (key, value) in entries {
+            dict_set(&mut items, key.clone(), value.clone()).unwrap();
+        }
+        TypedValue::Dict(Rc::new(RefCell::new(items)))
+    }
+
+    #[test]
+    fn set_deduplicates_with_typed_equality() {
+        let value = set_value(&[TypedValue::Int(1), TypedValue::Int(2), TypedValue::Int(1)]);
+        let TypedValue::Set(items) = &value else {
+            panic!("expected a set");
+        };
+        assert_eq!(items.borrow().len(), 2);
+        assert_eq!(display_typed(&value), "{. 1, 2 .}");
+    }
+
+    #[test]
+    fn dict_preserves_insertion_order_and_replaces_values() {
+        let value = dict_value(&[
+            (TypedValue::Str(Rc::from("b")), TypedValue::Int(2)),
+            (TypedValue::Str(Rc::from("a")), TypedValue::Int(1)),
+            (TypedValue::Str(Rc::from("b")), TypedValue::Int(3)),
+        ]);
+        let TypedValue::Dict(entries) = &value else {
+            panic!("expected a dict");
+        };
+        let entries = entries.borrow();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(display_typed(&value), "{: b: 3, a: 1 :}");
+        assert!(dict_get(&entries, &TypedValue::Str(Rc::from("a")))
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn set_and_dict_equality_ignore_insertion_order() {
+        let left_set = set_value(&[TypedValue::Int(1), TypedValue::Int(2)]);
+        let right_set = set_value(&[TypedValue::Int(2), TypedValue::Int(1)]);
+        assert!(typed_equal(&left_set, &right_set).unwrap());
+
+        let left_dict = dict_value(&[
+            (TypedValue::Str(Rc::from("a")), TypedValue::Int(1)),
+            (TypedValue::Str(Rc::from("b")), TypedValue::Int(2)),
+        ]);
+        let right_dict = dict_value(&[
+            (TypedValue::Str(Rc::from("b")), TypedValue::Int(2)),
+            (TypedValue::Str(Rc::from("a")), TypedValue::Int(1)),
+        ]);
+        assert!(typed_equal(&left_dict, &right_dict).unwrap());
     }
 }

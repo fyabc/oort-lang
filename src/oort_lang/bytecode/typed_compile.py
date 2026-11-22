@@ -16,7 +16,9 @@ from typing import TYPE_CHECKING
 from ..diagnostics.syntax_errors import UnsupportedSyntax
 from ..hir.nodes import (
     BinOp,
+    BuildDict,
     BuildList,
+    BuildSet,
     BuildTuple,
     Call,
     DefineFunction,
@@ -250,8 +252,12 @@ class _ProtoBuilder:
             )
         elif isinstance(instruction, BuildList):
             self._emit_sequence(instruction, TypedOp.NEW_LIST)
+        elif isinstance(instruction, BuildSet):
+            self._emit_sequence(instruction, TypedOp.NEW_SET)
         elif isinstance(instruction, BuildTuple):
             self._emit_sequence(instruction, TypedOp.NEW_TUPLE)
+        elif isinstance(instruction, BuildDict):
+            self._emit_dict(instruction)
         elif isinstance(instruction, GetItem):
             self._emit(
                 encode_abc(
@@ -312,7 +318,9 @@ class _ProtoBuilder:
                 position,
             )
 
-    def _emit_sequence(self, instruction: BuildList | BuildTuple, opcode: TypedOp) -> None:
+    def _emit_sequence(
+        self, instruction: BuildList | BuildSet | BuildTuple, opcode: TypedOp
+    ) -> None:
         position = instruction.position
         count = len(instruction.elements)
         if count > 255:
@@ -331,6 +339,33 @@ class _ProtoBuilder:
             self._emit(encode_abc(TypedOp.MOVE, slot, element, 0), position)
         self._emit(encode_abc(opcode, base, count, instruction.dst), position)
 
+    def _emit_dict(self, instruction: BuildDict) -> None:
+        position = instruction.position
+        count = len(instruction.items)
+        if 2 * count > 255:
+            raise UnsupportedSyntax("Typed Dict literal has too many entries.", position)
+        base = 0
+        for index, (key, value) in enumerate(instruction.items):
+            key_type = self._register_type(key, position)
+            value_type = self._register_type(value, position)
+            key_slot = self._alloc(key_type, position)
+            if index == 0:
+                base = key_slot
+            elif key_slot != base + 2 * index:
+                raise UnsupportedSyntax(
+                    "Typed Dict window is not contiguous.",
+                    position,
+                )
+            value_slot = self._alloc(value_type, position)
+            if value_slot != key_slot + 1:
+                raise UnsupportedSyntax(
+                    "Typed Dict window is not contiguous.",
+                    position,
+                )
+            self._emit(encode_abc(TypedOp.MOVE, key_slot, key, 0), position)
+            self._emit(encode_abc(TypedOp.MOVE, value_slot, value, 0), position)
+        self._emit(encode_abc(TypedOp.NEW_DICT, base, count, instruction.dst), position)
+
     def _emit_binop(self, instruction: BinOp) -> None:
         position = instruction.position
         lhs_type = self._register_type(instruction.lhs, position)
@@ -343,17 +378,21 @@ class _ProtoBuilder:
             isinstance(lhs_type, ContainerType)
             and isinstance(rhs_type, ContainerType)
             and lhs_type == rhs_type
-            and lhs_type.kind in ("List", "Tuple")
+            and lhs_type.kind in ("List", "Tuple", "Set", "Dict")
         ):
             if op not in ("==", "!="):
                 raise UnsupportedSyntax(
                     f"Typed bytecode does not support {lhs_type.kind} operator {op!r}.",
                     position,
                 )
-            if lhs_type.kind == "List":
-                opcode = TypedOp.EQ_LIST if op == "==" else TypedOp.NE_LIST
-            else:
-                opcode = TypedOp.EQ_TUPLE if op == "==" else TypedOp.NE_TUPLE
+            equality_ops = {
+                "List": (TypedOp.EQ_LIST, TypedOp.NE_LIST),
+                "Tuple": (TypedOp.EQ_TUPLE, TypedOp.NE_TUPLE),
+                "Set": (TypedOp.EQ_SET, TypedOp.NE_SET),
+                "Dict": (TypedOp.EQ_DICT, TypedOp.NE_DICT),
+            }
+            eq_op, ne_op = equality_ops[lhs_type.kind]
+            opcode = eq_op if op == "==" else ne_op
             self._emit(encode_abc(opcode, instruction.dst, lhs, rhs), position)
             return
 

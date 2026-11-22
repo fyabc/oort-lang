@@ -51,6 +51,7 @@ from .nodes import (
     validate_module,
 )
 from .typed import (
+    ContainerType,
     IrType,
     TypedFunction,
     TypedModule,
@@ -70,6 +71,7 @@ __all__ = [
     "BuildSlice",
     "BuildTuple",
     "Call",
+    "ContainerType",
     "DefineFunction",
     "FreshLocals",
     "GetAttr",

@@ -190,6 +190,33 @@ print(first([4, 5]))
 print(pair(7, "x"))
 print([1, 2] == [1, 2], [1, 2] != [1, 3])
 """,
+    "typed_sets_dicts": """#lang oort-core
+
+def dict_total(items: Dict[String, Int]) -> Int {
+    var total: Int = 0
+    for key in items { total = total + items[key] }
+    total
+}
+
+def set_total(items: Set[Int]) -> Int {
+    var total: Int = 0
+    for item in items { total = total + item }
+    total
+}
+
+def tuple_key(items: Dict[Tuple[Int, Bool], String]) -> String { items[(1, true)] }
+
+def float_key(items: Dict[Float, String]) -> String { items[1.5] }
+
+print({: "a": 1, "b": 2 :}["b"], len({: "a": 1, "b": 2 :}))
+print(dict_total({: "a": 1, "b": 2 :}))
+print(set_total({. 2, 4, 6 .}), len({. 2, 4, 6 .}))
+print({: "a": 1 :} == {: "a": 1 :}, {. 1, 2 .} == {. 2, 1 .})
+print({: "x": (1, true) :})
+print(tuple_key({: (1, true): "yes", (2, false): "no" :}))
+print(float_key({: 1.5: "ok", 2.5: "no" :}))
+print(len({. (1, 2), (2, 3), (1, 2) .}))
+""",
     "typed_iteration": """#lang oort-core
 
 def total(xs: List[Int]) -> Int {

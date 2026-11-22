@@ -64,6 +64,7 @@ EXPECTED_OUTPUTS = {
         "120\n55\n10\n0\n4\n15\n1.5\n3.5\n-1 0 1\ntrue false\nfalse true\ntrue\n7 6\n"
     ),
     "08_core/08_16_typed_collections.ort": "10\n18\n4\ntroo\n11\n3 true true\n",
+    "08_core/08_17_typed_sets_dicts.ort": ("2 3\n6\n12 3\n0 0\ntrue\ntrue\n{: x: (1, true) :}\n"),
 }
 
 # The JSON showcase is covered by `test_json_example.py`, which compiles it

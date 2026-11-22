@@ -19,10 +19,12 @@ from typing import TYPE_CHECKING, NoReturn
 from ..ast import nodes
 from ..diagnostics.syntax_errors import UnsupportedSyntax
 from ..semantics.core.types import (
+    DictType,
     FunctionType,
     ListType,
     NeverType,
     PrimitiveType,
+    SetType,
     TupleType,
     Type,
     UnknownType,
@@ -32,7 +34,9 @@ from .dump import format_instruction
 from .lower import HirLowerer
 from .nodes import (
     BinOp,
+    BuildDict,
     BuildList,
+    BuildSet,
     BuildTuple,
     Call,
     DefineFunction,
@@ -89,7 +93,7 @@ _PRIMITIVE_IR = {
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ContainerType:
-    """A List/Tuple type with element types (Set/Dict arrive in S3)."""
+    """A container type with recursive element/key/value types."""
 
     kind: str
     args: tuple[IrTypeLike, ...] = ()
@@ -169,6 +173,16 @@ def _ir_type_from(type_: Type, position, *, allow_function: bool = False) -> IrT
         return ir_type
     if isinstance(type_, ListType):
         return list_type(_ir_type_from(type_.element, position))
+    if isinstance(type_, SetType):
+        return ContainerType("Set", (_ir_type_from(type_.element, position),))
+    if isinstance(type_, DictType):
+        return ContainerType(
+            "Dict",
+            (
+                _ir_type_from(type_.key, position),
+                _ir_type_from(type_.value, position),
+            ),
+        )
     if isinstance(type_, TupleType):
         return tuple_type(*(_ir_type_from(element, position) for element in type_.elements))
     if isinstance(type_, FunctionType) and allow_function:
@@ -381,9 +395,17 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
         _validate_block(node.body)
         _ir_type_for_node(node)
         return
-    if isinstance(node, (nodes.ListLiteral, nodes.TupleLiteral)):
+    if isinstance(node, (nodes.ListLiteral, nodes.TupleLiteral, nodes.SetLiteral)):
         for element in node.elements:
             _validate_expr(element)
+        _ir_type_for_node(node)
+        return
+    if isinstance(node, nodes.DictLiteral):
+        for key, value in node.items:
+            if key is None:
+                _reject(node, "Dict unpacking")
+            _validate_expr(key)
+            _validate_expr(value)
         _ir_type_for_node(node)
         return
     if isinstance(node, nodes.Subscript):
@@ -528,10 +550,12 @@ def _main_return_type(
 
 
 def _iterated_type(ir_type: IrTypeLike | None) -> IrTypeLike | None:
-    if isinstance(ir_type, ContainerType) and ir_type.kind == "List":
-        return ir_type.args[0]
-    if isinstance(ir_type, ContainerType) and ir_type.kind == "Tuple":
-        if len(set(ir_type.args)) == 1:
+    if isinstance(ir_type, ContainerType):
+        if ir_type.kind in ("List", "Set"):
+            return ir_type.args[0]
+        if ir_type.kind == "Dict":
+            return ir_type.args[0]
+        if ir_type.kind == "Tuple" and len(set(ir_type.args)) == 1:
             return ir_type.args[0]
     if ir_type is IrType.STRING:
         return IrType.STRING
@@ -644,7 +668,7 @@ def _check_binop(function: TypedFunction, instruction: BinOp) -> None:
         if (
             isinstance(lhs, ContainerType)
             and isinstance(rhs, ContainerType)
-            and lhs.kind in ("List", "Tuple")
+            and lhs.kind in ("List", "Tuple", "Set", "Dict")
             and lhs == rhs
         ):
             if result is not IrType.BOOL:
@@ -694,7 +718,7 @@ def _check_return(function: TypedFunction, instruction: Return) -> None:
 
 def _iterated_element_type(container: IrTypeLike, node: nodes.ASTNode) -> IrTypeLike:
     if isinstance(container, ContainerType):
-        if container.kind == "List":
+        if container.kind in ("List", "Set", "Dict"):
             return container.args[0]
         if container.kind == "Tuple":
             if len(set(container.args)) != 1:
@@ -705,22 +729,31 @@ def _iterated_element_type(container: IrTypeLike, node: nodes.ASTNode) -> IrType
     _reject(node, f"iteration over {container}")
 
 
-def _validate_sequence(function: TypedFunction, instruction: BuildList | BuildTuple) -> None:
+def _validate_sequence(
+    function: TypedFunction, instruction: BuildList | BuildSet | BuildTuple
+) -> None:
     table = function.register_types
     target = table[instruction.dst]
-    expected_kind = "List" if isinstance(instruction, BuildList) else "Tuple"
+    if isinstance(instruction, BuildList):
+        expected_kind = "List"
+    elif isinstance(instruction, BuildSet):
+        expected_kind = "Set"
+    else:
+        expected_kind = "Tuple"
     if not isinstance(target, ContainerType) or target.kind != expected_kind:
         _invalid(
             function, instruction, f"{expected_kind} literal has unexpected target type {target}"
         )
-    if expected_kind == "List":
+    if expected_kind in ("List", "Set"):
         if len(target.args) != 1:
-            _invalid(function, instruction, "List type must have one element type")
+            _invalid(function, instruction, f"{expected_kind} type must have one element type")
         element_type = target.args[0]
         for register in instruction.elements:
             if table[register] != element_type:
                 _invalid(
-                    function, instruction, f"List element type {table[register]} != {element_type}"
+                    function,
+                    instruction,
+                    f"{expected_kind} element type {table[register]} != {element_type}",
                 )
     else:
         if len(instruction.elements) != len(target.args):
@@ -732,25 +765,47 @@ def _validate_sequence(function: TypedFunction, instruction: BuildList | BuildTu
                 )
 
 
+def _validate_dict(function: TypedFunction, instruction: BuildDict) -> None:
+    table = function.register_types
+    target = table[instruction.dst]
+    if not isinstance(target, ContainerType) or target.kind != "Dict":
+        _invalid(function, instruction, f"Dict literal has unexpected target type {target}")
+    if len(target.args) != 2:
+        _invalid(function, instruction, "Dict type must have a key and a value type")
+    key_type, value_type = target.args
+    for key, value in instruction.items:
+        if table[key] != key_type:
+            _invalid(function, instruction, f"Dict key type {table[key]} != {key_type}")
+        if table[value] != value_type:
+            _invalid(function, instruction, f"Dict value type {table[value]} != {value_type}")
+
+
 def _validate_get_item(function: TypedFunction, instruction: GetItem) -> None:
     table = function.register_types
     container = table[instruction.container]
     index_type = table[instruction.index]
-    if index_type is not IrType.INT:
-        _invalid(function, instruction, "index is not Int")
-    if isinstance(container, ContainerType):
-        if container.kind == "List":
-            expected = container.args[0]
-        elif container.kind == "Tuple":
-            if len(set(container.args)) != 1:
-                _invalid(function, instruction, "heterogeneous tuple indexing is not supported")
-            expected = container.args[0]
-        else:
-            _invalid(function, instruction, f"cannot index {container.kind}")
-    elif container is IrType.STRING:
-        expected = IrType.STRING
+    if isinstance(container, ContainerType) and container.kind == "Dict":
+        if len(container.args) != 2:
+            _invalid(function, instruction, "Dict type must have a key and a value type")
+        if index_type != container.args[0]:
+            _invalid(function, instruction, f"Dict key type {index_type} != {container.args[0]}")
+        expected = container.args[1]
     else:
-        _invalid(function, instruction, f"cannot index {container}")
+        if index_type is not IrType.INT:
+            _invalid(function, instruction, "index is not Int")
+        if isinstance(container, ContainerType):
+            if container.kind == "List":
+                expected = container.args[0]
+            elif container.kind == "Tuple":
+                if len(set(container.args)) != 1:
+                    _invalid(function, instruction, "heterogeneous tuple indexing is not supported")
+                expected = container.args[0]
+            else:
+                _invalid(function, instruction, f"cannot index {container.kind}")
+        elif container is IrType.STRING:
+            expected = IrType.STRING
+        else:
+            _invalid(function, instruction, f"cannot index {container}")
     if table[instruction.dst] != expected:
         _invalid(function, instruction, f"index result {table[instruction.dst]} != {expected}")
 
@@ -809,8 +864,10 @@ def validate_typed_module(module: TypedModule) -> None:
                     _invalid(function, instruction, "non-function global")
             elif isinstance(instruction, StoreGlobal):
                 _invalid(function, instruction, "global stores")
-            elif isinstance(instruction, (BuildList, BuildTuple)):
+            elif isinstance(instruction, (BuildList, BuildSet, BuildTuple)):
                 _validate_sequence(function, instruction)
+            elif isinstance(instruction, BuildDict):
+                _validate_dict(function, instruction)
             elif isinstance(instruction, GetItem):
                 _validate_get_item(function, instruction)
             elif isinstance(instruction, SetItem):

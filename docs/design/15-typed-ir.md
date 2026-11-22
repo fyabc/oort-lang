@@ -541,7 +541,7 @@ wrapping、不引入 `unsafe` 或外部 crate。
 |---|---|---|
 | **S1 String** | `IrType.STRING`；`ADD_S`/`EQ_S`/`*_S`；`len` native；`TypedValue::Str(Rc<str>)`；kind=1 **v3** | **已完成** |
 | **S2 List / Tuple** | 递归类型描述 + 类型表；`NEW_LIST`/`NEW_TUPLE`/`GET_ITEM`/`LEN`；`for` 迭代；Tuple 不可变；List 可变（语言表面待开放） | **已完成（S2a + S2b）**；`SET_ITEM` 因核心检查器限制只预留 opcode |
-| **S3 Set / Dict** | `NEW_SET`/`NEW_DICT`、成员/下标/写入、键相等（先用线性查找，不实现哈希） | 待做 |
+| **S3 Set / Dict** | `NEW_SET`/`NEW_DICT`、Dict 下标读取、`len`、深相等、`for` 迭代；键相等用线性查找，不实现哈希 | **已完成（不可变集合）**；写入/`in`/集合运算受核心语言表面限制 |
 | **S4 ADT** | 构造器/`match`/布局；依赖集合与类型表的稳定 | 后做 |
 
 泛型类型表示的跨语言调研与 Oort 取舍见
@@ -590,6 +590,32 @@ S1 的约束与实现：
 - 验收样本 `examples/08_core/08_16_typed_collections.ort`（`-t tvm` 与 `-t vm`
   输出一致）；typed differential 新增 `typed_iteration`（List/Tuple/String）；
   Python typed 单测 28 passed；Rust 单测 14；ruff/mypy/mkdocs 通过。
+
+### S3 实现状态：Set / Dict（2026-11-23）
+
+- **类型表**：`ContainerType` 支持 `Set[T]`/`Dict[K,V]`，复用 v4 的 tag 8/9；
+  `TypedType`/`ContainerType` 的递归描述保持不变；
+- **Python**：`OortSet`/`OortDict`；`NEW_SET`/`NEW_DICT`（opcode 69/70）、
+  Dict `GET_ITEM`、`EQ_SET`/`NE_SET`/`EQ_DICT`/`NE_DICT`（71–74）；深相等复用
+  `values_equal`；`len`、`for`、`print` 复用运行时语义；
+- **Rust**：`TypedValue::Set(Rc<RefCell<Vec<TypedValue>>>)`、
+  `TypedValue::Dict(Rc<RefCell<Vec<(TypedValue, TypedValue)>>>)`；键查找与去重
+  用 `typed_equal` **线性扫描**；`Value::Set`/`Value::Dict` 仅用于主结果转换；
+- **顺序语义**：**Dict 保证插入顺序**（与 Python dict、现有打印测试一致）；
+  Set 的迭代/打印顺序不属语言保证。Rust Set 当前按插入顺序存储，但不把它写成
+  契约；
+- **不做 `std::HashMap`**：裸 `HashMap` 丢失 Dict 插入顺序，且要求键满足
+  `Eq + Hash`；Oort 键语义包含 Float/NaN、Tuple 结构相等与后续的 ADT/类键，
+  不能无损压成 `Eq`。S3 以语义对齐为先，使用有序 `Vec` + 线性查找；未来若
+  基准证明需要 O(1)，再换 `IndexMap` 或“Vec 顺序 + 自建哈希索引”，并单独定义
+  规范化键与 NaN 规则；
+- **范围**：Set/Dict 字面量、Dict 下标读取、`len`、深相等、`for` 迭代（Set
+  元素、Dict 键）、`print`；空字面量沿用检查器要求类型标注；
+- **未做**：`d[k] = v`/Set 增删（核心检查器仍禁止下标赋值）、`in`/集合交并差
+  （核心语言表面尚未支持）、ADT/类作为键（S4）、切片；
+- 验收样本 `examples/08_core/08_17_typed_sets_dicts.ort`；typed differential
+  新增 `typed_sets_dicts`；Python typed 单测覆盖 OBC round-trip；Rust 单测
+  覆盖插入顺序、键去重与无序相等。
 
 ## 9. 风险与开放问题
 

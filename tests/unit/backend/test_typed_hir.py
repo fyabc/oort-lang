@@ -16,7 +16,7 @@ from oort_lang.bytecode.serialize import ObcError, read_obc, write_obc
 from oort_lang.diagnostics.error_handler import CompilerErrorHandler
 from oort_lang.diagnostics.syntax_errors import UnsupportedSyntax
 from oort_lang.driver.compiler import CompilerError
-from oort_lang.hir import IrType, lower_module, lower_typed_module
+from oort_lang.hir import ContainerType, IrType, lower_module, lower_typed_module
 from oort_lang.hir.typed_exec import TypedInterpreter
 from oort_lang.runtime.interpreter import ASTInterpreter
 from tests.helpers import EXAMPLES_DIR, build_ast, get_compiler
@@ -101,7 +101,11 @@ def test_typed_subset_example_is_accepted():
 
 @pytest.mark.parametrize(
     "name",
-    ["08_15_typed_subset.ort", "08_16_typed_collections.ort"],
+    [
+        "08_15_typed_subset.ort",
+        "08_16_typed_collections.ort",
+        "08_17_typed_sets_dicts.ort",
+    ],
 )
 def test_tvm_matches_vm_on_example(name: str, run_file):
     path = EXAMPLES_DIR / "08_core" / name
@@ -385,6 +389,68 @@ print(first((1, "a")))
 """
     with pytest.raises(SystemExit):
         get_compiler("NOT_EXIST -t tvm").run_string(source)
+
+
+def test_typed_sets_and_dicts(capsys: pytest.CaptureFixture, tmp_path):
+    source = """#lang oort-core
+
+def dict_total(items: Dict[String, Int]) -> Int {
+    var total: Int = 0
+    for key in items { total = total + items[key] }
+    total
+}
+
+def set_total(items: Set[Int]) -> Int {
+    var total: Int = 0
+    for item in items { total = total + item }
+    total
+}
+
+def tuple_key(items: Dict[Tuple[Int, Bool], String]) -> String { items[(1, true)] }
+
+def float_key(items: Dict[Float, String]) -> String { items[1.5] }
+
+print({: "a": 1, "b": 2 :}["b"], len({: "a": 1, "b": 2 :}))
+print(dict_total({: "a": 1, "b": 2 :}))
+print(set_total({. 2, 4, 6 .}), len({. 2, 4, 6 .}))
+print({: "a": 1 :} == {: "a": 1 :}, {. 1, 2 .} == {. 2, 1 .})
+print({: "x": (1, true) :})
+print(tuple_key({: (1, true): "yes", (2, false): "no" :}))
+print(float_key({: 1.5: "ok", 2.5: "no" :}))
+print(len({. (1, 2), (2, 3), (1, 2) .}))
+"""
+    program = compile_typed_module(lower_typed_module(build_ast(source)))
+    ops = {
+        TypedOp(word >> 24) for proto in (program.main, *program.functions) for word in proto.code
+    }
+    assert TypedOp.NEW_SET in ops
+    assert TypedOp.NEW_DICT in ops
+    assert TypedOp.EQ_SET in ops
+    assert TypedOp.EQ_DICT in ops
+    assert TypedOp.OPEN_ITER in ops
+
+    path = tmp_path / "sets_dicts.obc"
+    write_typed_obc(program, path)
+    loaded = read_typed_obc(path)
+    loaded_types = {
+        ir_type for proto in (loaded.main, *loaded.functions) for ir_type in proto.types
+    }
+    assert any(
+        isinstance(ir_type, ContainerType) and ir_type.kind == "Set" for ir_type in loaded_types
+    )
+    assert any(
+        isinstance(ir_type, ContainerType) and ir_type.kind == "Dict" for ir_type in loaded_types
+    )
+
+    typed_compiler = get_compiler("NOT_EXIST -t tvm")
+    typed_compiler.run_string(source)
+    typed_out = capsys.readouterr().out
+
+    vm_compiler = get_compiler("NOT_EXIST -t vm")
+    vm_compiler.run_string(source)
+    vm_out = capsys.readouterr().out
+
+    assert typed_out == vm_out == "2 2\n3\n12 3\ntrue true\n{: x: (1, true) :}\nyes\nok\n2\n"
 
 
 def test_typed_collection_obc_round_trip(tmp_path):

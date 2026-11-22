@@ -19,10 +19,12 @@ from ..runtime.environment import Environment
 from ..runtime.functions import OortNativeFunction
 from ..runtime.objects import (
     OortBool,
+    OortDict,
     OortFloat,
     OortInt,
     OortList,
     OortObject,
+    OortSet,
     OortString,
     OortTuple,
 )
@@ -165,13 +167,34 @@ class TypedCodeVM:
                 registers[a] = self._string_compare(op, registers[b], registers[c], position)
             elif op is TypedOp.NEW_LIST:
                 registers[c] = OortList(registers[a : a + b])
+            elif op is TypedOp.NEW_SET:
+                registers[c] = OortSet(set(registers[a : a + b]))
             elif op is TypedOp.NEW_TUPLE:
                 registers[c] = OortTuple(tuple(registers[a : a + b]))
+            elif op is TypedOp.NEW_DICT:
+                mapping = {
+                    registers[a + 2 * index]: registers[a + 2 * index + 1] for index in range(b)
+                }
+                registers[c] = OortDict(mapping)
             elif op is TypedOp.GET_ITEM:
                 registers[a] = self._get_item(registers[b], registers[c], position)
-            elif op in (TypedOp.EQ_LIST, TypedOp.NE_LIST, TypedOp.EQ_TUPLE, TypedOp.NE_TUPLE):
+            elif op in (
+                TypedOp.EQ_LIST,
+                TypedOp.NE_LIST,
+                TypedOp.EQ_TUPLE,
+                TypedOp.NE_TUPLE,
+                TypedOp.EQ_SET,
+                TypedOp.NE_SET,
+                TypedOp.EQ_DICT,
+                TypedOp.NE_DICT,
+            ):
                 equal = self.interpreter.values_equal(registers[b], registers[c], position)
-                if op in (TypedOp.NE_LIST, TypedOp.NE_TUPLE):
+                if op in (
+                    TypedOp.NE_LIST,
+                    TypedOp.NE_TUPLE,
+                    TypedOp.NE_SET,
+                    TypedOp.NE_DICT,
+                ):
                     equal = not equal
                 registers[a] = OortBool.get_bool_value(equal)
             elif op is TypedOp.OPEN_ITER:
@@ -280,8 +303,11 @@ class TypedCodeVM:
         position: SourcePosition,
     ) -> None:
         if isinstance(expected, ContainerType):
-            ok = (expected.kind == "List" and type(value) is OortList) or (
-                expected.kind == "Tuple" and type(value) is OortTuple
+            ok = (
+                (expected.kind == "List" and type(value) is OortList)
+                or (expected.kind == "Tuple" and type(value) is OortTuple)
+                or (expected.kind == "Set" and type(value) is OortSet)
+                or (expected.kind == "Dict" and type(value) is OortDict)
             )
         else:
             ok = (
@@ -447,8 +473,13 @@ class TypedCodeVM:
         raise OortTypeError("Typed mixed comparison expects Int or Float.", position)
 
     def _get_item(self, container: Any, index: Any, position: SourcePosition) -> OortObject:
+        if type(container) is OortDict:
+            try:
+                return container[index]
+            except (KeyError, TypeError) as exc:
+                raise OortRuntimeError(str(exc), position) from exc
         if type(container) not in (OortList, OortTuple, OortString):
-            raise OortTypeError("Typed indexing expects a List, Tuple or String.", position)
+            raise OortTypeError("Typed indexing expects a List, Tuple, String or Dict.", position)
         if type(index) is not OortInt:
             raise OortTypeError("Typed index must be Int.", position)
         try:

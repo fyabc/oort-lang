@@ -66,6 +66,7 @@
 | [静态接口](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_14_interfaces.ort) | 方法契约、多接口实现、接口继承、接口类型派发 |
 | [类型化 IR 子集](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_15_typed_subset.ort) | typed HIR 标量子集、`-t tvm`、混合数值与早返回 |
 | [类型化集合迭代](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_16_typed_collections.ort) | typed List/Tuple/String、`for` 迭代、下标/`len`/相等 |
+| [类型化 Set/Dict](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_17_typed_sets_dicts.ort) | typed Set/Dict 字面量、Dict 下标、`len`、深相等、`for` 迭代 |
 
 ```bash
 oort examples/08_core/08_01_core_functions.ort
