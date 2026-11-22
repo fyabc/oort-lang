@@ -1,34 +1,48 @@
 #lang oort-core
 
 # 类型化 IR 子集（S3）：Dict / Set 字面量、下标、len、相等与 for 迭代。
-# Dict 保持插入顺序；Set 的迭代/打印顺序不属于语言保证。
+# - Dict 保持插入顺序，打印/迭代顺序稳定；Set 的迭代/打印顺序不作保证；
+# - Dict 的 for 迭代键，Set 的 for 迭代元素；
+# - 空字面量必须靠变量标注提供类型；当前没有 `in`、下标赋值或集合运算；
+# - 由 `-t tvm` 执行，并参与 Rust typed VM 差分。
 
+# Dict 迭代键；通过 `scores[key]` 读取值。Dict 的键类型固定为 String。
 def dict_total(scores: Dict[String, Int]) -> Int {
     var total: Int = 0
     for key in scores { total = total + scores[key] }
     total
 }
 
+# Set 迭代元素；集合元素类型固定为 Int。
 def set_total(values: Set[Int]) -> Int {
     var total: Int = 0
     for value in values { total = total + value }
     total
 }
 
+# 空 Dict 没有足够信息推断 K/V，必须写类型标注。
 def empty_dict_len() -> Int {
     var scores: Dict[String, Int] = {: :}
     len(scores)
 }
 
+# 空 Set 同理，必须写元素类型。
 def empty_set_len() -> Int {
     var values: Set[Int] = {. .}
     len(values)
 }
 
+# Dict 下标读取与 len。
 print({: "a": 1, "b": 2, "c": 3 :}["b"], len({: "a": 1, "b": 2, "c": 3 :}))
 print(dict_total({: "a": 1, "b": 2, "c": 3 :}))
+
+# Set 的遍历求和与 len；不依赖 Set 的打印顺序。
 print(set_total({. 2, 4, 6 .}), len({. 2, 4, 6 .}))
 print(empty_dict_len(), empty_set_len())
+
+# Dict/Set 深相等：Set 相等与元素顺序无关。
 print({: "a": 1, "b": 2 :} == {: "a": 1, "b": 2 :})
 print({. 2, 4, 6 .} == {. 6, 4, 2 .})
+
+# 嵌套值：Dict[String, Tuple[Int, Bool]]，打印顺序为插入顺序。
 print({: "x": (1, true) :})

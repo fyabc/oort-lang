@@ -1,8 +1,11 @@
 #lang oort-core
 
-# 类型化 IR 子集示例：标量、函数、递归、循环、早返回、混合算术与布尔逻辑。
-# 该程序只使用 Int/Float/Bool/Unit，也是 `-t thir` 的验收样本（design 15）。
+# 类型化 IR 标量子集示例（design 15）：
+# - 只使用 Int / Float / Bool / Unit，便于 `-t thir` 与 `-t tvm` 对照；
+# - 覆盖递归、while 循环、早返回、混合算术、布尔逻辑和 Unit 过程；
+# - `-t tvm` 执行 typed 字节码，`-t vm` 执行擦除式字节码，二者输出应一致。
 
+# 递归：阶乘与 Fibonacci。类型化路径保留静态返回类型 Int。
 def fact(n: Int) -> Int {
     if n <= 1 { 1 } else { n * fact(n - 1) }
 }
@@ -11,12 +14,14 @@ def fib(n: Int) -> Int {
     if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
 }
 
+# 早返回：两个边界检查都直接 `return`，函数体最后一条表达式给出普通返回值。
 def clamp(x: Int, low: Int, high: Int) -> Int {
     if x < low { return low }
     if x > high { return high }
     x
 }
 
+# while 循环与局部变量。类型化路径要求变量初始化类型与赋值类型一致。
 def sum_to(n: Int) -> Int {
     var total: Int = 0
     var i: Int = 1
@@ -27,22 +32,27 @@ def sum_to(n: Int) -> Int {
     total
 }
 
+# if/else 嵌套；每个分支都产生 Int。
 def sign(x: Int) -> Int {
     if x < 0 { -1 } else { if x > 0 { 1 } else { 0 } }
 }
 
+# Float 运算：`/` 的结果固定为 Float，即使两个操作数都是 Int。
 def average(a: Float, b: Float) -> Float {
     (a + b) / 2.0
 }
 
+# 混合算术：Int + Float 会先把 Int 转成 Float，结果为 Float。
 def mixed(a: Int, b: Float) -> Float {
     a + b
 }
 
+# 浮点比较使用严格的小于/大于；这里用容差判断“接近”。
 def close(a: Float, b: Float) -> Bool {
     a - b < 0.001 and b - a < 0.001
 }
 
+# 布尔运算与比较结果。
 def in_range(x: Int, low: Int, high: Int) -> Bool {
     x >= low and x <= high
 }
@@ -51,10 +61,12 @@ def not_zero(x: Int) -> Bool {
     not (x == 0)
 }
 
+# Unit 过程：只产生副作用；typed 路径不把 Unit 当作普通变量类型。
 def show(label: Int, value: Int) -> Unit {
     print(label, value)
 }
 
+# 输出顺序与函数定义顺序无关，只按调用顺序执行。
 print(fact(5))
 print(fib(10))
 print(clamp(12, 0, 10))

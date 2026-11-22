@@ -1,20 +1,26 @@
 #lang oort-core
 
 # 类型化 IR 子集（S2b）：List / Tuple / String 的 for 迭代与集合操作。
-# 与 08_15 一样可由 `-t tvm` 执行，并参与 Rust typed VM 差分。
+# - List/Set 的 for 迭代元素；Dict 迭代键；String 迭代单字符 String；
+# - Tuple 只有在元素类型齐次时才能直接 for 迭代；
+# - 集合操作只读：核心检查器尚未开放 `xs[i] = v`、`in` 和集合运算；
+# - 由 `-t tvm` 执行，并参与 Rust typed VM 差分。
 
+# List 求和：元素固定为 Int。
 def sum(xs: List[Int]) -> Int {
     var total: Int = 0
     for x in xs { total = total + x }
     total
 }
 
+# 元素类型齐次的 Tuple 也可以迭代；异质 Tuple 只能按下标访问。
 def tuple_sum(xs: Tuple[Int, Int, Int]) -> Int {
     var total: Int = 0
     for x in xs { total = total + x }
     total
 }
 
+# String 迭代得到单个字符（仍是 String）。
 def count_vowels(s: String) -> Int {
     var count: Int = 0
     for ch in s {
@@ -23,19 +29,25 @@ def count_vowels(s: String) -> Int {
     count
 }
 
+# 用前插实现反转：每次迭代生成新字符串，不修改原字符串。
 def reverse(s: String) -> String {
     var out: String = ""
     for ch in s { out = ch + out }
     out
 }
 
+# 下标读取返回元素静态类型 Int。
 def second(xs: List[Int]) -> Int { xs[1] }
 
+# List 字面量可出现在表达式位置；返回类型由检查器推断为 List[Int]。
 def make(n: Int) -> List[Int] { [n, n + 1, n + 2] }
 
+# List 遍历、Tuple 遍历、String 遍历。
 print(sum([1, 2, 3, 4]))
 print(tuple_sum((5, 6, 7)))
 print(count_vowels("oort language"))
 print(reverse("oort"))
+
+# 下标、List 字面量、len、List 深相等、String 字典序比较。
 print(second(make(10)))
 print(len([1, 2, 3]), [1, 2] == [1, 2], "a" < "b")
