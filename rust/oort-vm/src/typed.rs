@@ -401,8 +401,7 @@ fn iterator_next(value: &TypedValue) -> TResult<(TypedValue, bool)> {
 }
 
 fn get_item(container: &TypedValue, index: &TypedValue) -> TResult<TypedValue> {
-    let raw = as_int(index)?;
-    let index = if raw < 0 { raw } else { raw };
+    let index = as_int(index)?;
     match container {
         TypedValue::List(items) => {
             let items = items.borrow();
