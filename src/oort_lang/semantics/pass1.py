@@ -236,6 +236,17 @@ class Pass1Analyzer(ScopeResolverMixin, FunctionResolverMixin, ASTVisitor[T]):
                 self.input_info,
             )
 
+    def visit_interface_def(self, node: nodes.InterfaceDef) -> T | None:
+        if not self.dialect.features.type_checking:
+            self._unsupported("Interfaces are only supported in oort-core yet.", node)
+            return None
+        if self.scopes:
+            self._unsupported(
+                "Interface declarations are only allowed at module top level in oort-core.",
+                node,
+            )
+        return None
+
     def visit_enum_def(self, node: nodes.EnumDef) -> T | None:
         if not self.dialect.features.adt:
             self._unsupported("Enums are only supported in oort-core yet.", node)

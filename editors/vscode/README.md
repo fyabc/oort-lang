@@ -6,7 +6,8 @@ Oort 语言的 VSCode 基础支持（P0）：TextMate 语法高亮、括号匹�
 
 - `.ort` 文件自动使用 Oort 语言模式（`source.oort`）。
 - 关键字、控制流、声明、内建类型、字面量、容器与运算符高亮。
-- `enum` / `class` 声明名作为类型实体着色；`match`、`=>` 与 `Unit` 高亮。
+- `enum` / `class` / `interface` 声明名作为类型实体着色；`match`、`=>` 与
+  `Unit` 高亮。
 - 导入语句：`import` / `from` / `as` 统一使用 import 关键字 scope
   （`keyword.control.import.oort`）。
 - 首行 `#lang oort-object` 作为方言指令单独着色。
@@ -39,7 +40,7 @@ code .
 cd editors/vscode
 npm install
 npm run package
-code --install-extension oort-lang-0.1.3.vsix
+code --install-extension oort-lang-0.1.4.vsix
 ```
 
 如果 `code` 不在 PATH 中，可以在 VSCode 里执行

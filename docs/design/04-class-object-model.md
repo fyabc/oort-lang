@@ -225,6 +225,10 @@ Handler → 本地 Slot → Traits/Mixins (按引入顺序逆序) → 父类 →
 
 ## 5. Mixin/Trait 支持
 
+> **实现状态（2026-11-22）**：[OP 0026](../proposals/0026-static-interfaces.md)
+> 已实现静态接口子集：无状态、只有方法签名、多个接口实现与接口继承；
+> 默认方法、属性要求、`Self`、结构化 conformance 与多类继承仍未实现。
+
 ### 5.1 Mixin 与类的核心差异
 
 | 特性 | 普通类 (Class) | Mixin / Trait |

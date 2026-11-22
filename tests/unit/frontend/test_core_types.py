@@ -14,6 +14,7 @@ from oort_lang.semantics.core.types import (
     ClassType,
     ConstructorInfo,
     FunctionType,
+    InterfaceType,
     ListType,
     ModuleType,
     SlotInfo,
@@ -227,3 +228,42 @@ def test_function_parameters_are_contravariant():
     assert is_assignable(FunctionType((derived,), INT), FunctionType((base,), INT))
     assert not is_assignable(FunctionType((base,), INT), FunctionType((derived,), INT))
     assert is_assignable(FunctionType((base,), base), FunctionType((base,), derived))
+
+
+def _interface(
+    name: str,
+    interfaces: tuple[InterfaceType, ...] = (),
+    methods: tuple[tuple[str, FunctionType], ...] = (),
+) -> InterfaceType:
+    return InterfaceType("main.ort", name, interfaces=interfaces, methods=methods)
+
+
+def test_interface_inheritance_and_method_lookup():
+    named = _interface("Named", methods=(("name", FunctionType((), STRING)),))
+    sized = _interface("Sized", methods=(("size", FunctionType((), INT)),))
+    both = _interface("NamedSized", (named, sized))
+    assert both.extends_interface(named)
+    assert both.extends_interface(sized)
+    assert not named.extends_interface(both)
+    assert both.method("name") == named.method("name")
+    assert both.all_methods() == (
+        ("name", FunctionType((), STRING)),
+        ("size", FunctionType((), INT)),
+    )
+
+
+def test_class_implements_interface_through_base_classes():
+    named = _interface("Named")
+    base = _class("Base")
+    base.interfaces = (named,)
+    derived = _class("Derived", (base,))
+    direct = _class("Direct")
+    direct.interfaces = (named,)
+    assert base.implements_interface(named)
+    assert derived.implements_interface(named)
+    assert direct.implements_interface(named)
+    assert not _class("Other").implements_interface(named)
+    assert is_assignable(named, base)
+    assert is_assignable(named, derived)
+    assert is_assignable(named, direct)
+    assert not is_assignable(base, direct)

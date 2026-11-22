@@ -103,6 +103,12 @@ class ASTVisitor(Generic[T]):
     def visit_enum_def(self, node) -> T | None:
         return self.visit_children(node)
 
+    def visit_interface_def(self, node) -> T | None:
+        return self.visit_children(node)
+
+    def visit_interface_method(self, node) -> T | None:
+        return self.visit_children(node)
+
     def visit_enum_constructor(self, node) -> T | None:
         return self.visit_children(node)
 

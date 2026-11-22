@@ -3,7 +3,7 @@
 本页描述 `#lang oort-core` 当前**已实现**的最小静态子集。它不是完整的
 `oort-core` v1：已实现 Int/Float/Bool/String、集合与循环、函数、泛型 ADT
 （`enum E[T]`，含声明处变型）、内建 `Option`/`Result` 与 `match`、静态类、
-单继承与固定槽，但跨方言 FFI 尚未实现。
+单继承、静态接口与固定槽，但跨方言 FFI 尚未实现。
 设计取舍见 [OP 0017](../proposals/0017-oort-core-thin-probe.md) 与
 [OP 0022](../proposals/0022-generic-adts.md)。
 
@@ -37,6 +37,7 @@ print(add(1, 2))
 | 内建 ADT | `Option[T]`（`Some`/`None`）与 `Result[T,E]`（`Ok`/`Err`）；每个 core 模块隐式可用 |
 | 集合类型 | `List[T]`、`Set[T]`、`Dict[K, V]`、`Tuple[T1, ...]`；参数/变量/返回值/字段 |
 | 类类型 | 类名；参数、变量、返回值、槽类型；名义子类型（单继承） |
+| 接口类型 | `interface` 名；参数、变量、返回值、槽类型；名义接口子类型 |
 | 跨模块类型 | `m.Shape`、`m.Color`、`m.Tree[Int]`；仅类型标注，检查后擦除 |
 | 函数类型 | `Int -> Bool`、`(Int, Bool) -> Int`、`() -> Unit`；参数/变量/返回值/字段 |
 
@@ -49,7 +50,7 @@ print(add(1, 2))
 - `Unit` 与模块值不能存入集合；`Set` 元素与 `Dict` 键必须是
   `Int`/`Float`/`Bool`/`String`/enum/可哈希 `Tuple`。
 - 导入模块的类型用 `m.Type` 引用；`from` 导入类会同时带入构造器值与类类型，
-  enum 类型名只能模块限定（见“模块导入”）。
+  enum 类型名与接口名只能模块限定（见“模块导入”）。
 - 静态 `Unit` 在运行时对应 `null`；`print` 返回 Unit。
 - 内部还有 `Unknown`（错误恢复）与 `Never`（所有路径 `return`）。
 
@@ -134,11 +135,11 @@ print(match c { Red => "red", Green => "green" })
   `m.x = ...` 不可写。在**类型标注**中，`m.C` / `m.E` 查该模块的类型导出。
 - `from "m" import f, g as h` 直接绑定导出的名字；导入名不可变。
 - 模块导出所有顶层名字（函数、`val`/`var`、构造器与再导出的导入名）。
-  **类型导出**单独记录本模块自己声明的类与 enum：预置 `Option`/`Result`
+  **类型导出**单独记录本模块自己声明的类、接口与 enum：预置 `Option`/`Result`
   不导出，从其他模块导入的类型也不会被再导出。
 - 一个实体可以占两个命名空间：类同时是构造器值与类类型，`from` 导入类会
-  同时绑定两者；enum 构造器是值，enum 类型名没有运行时值。
-- `from "m" import E`（enum 类型名）显式拒绝：
+  同时绑定两者；接口与 enum 类型名都只有类型命名空间，没有运行时值。
+- `from "m" import E`（enum 类型名/接口名）显式拒绝：
   `'E' is a type-only export; use 'm.E' to name the type.`。本切片不提供
   `import type`；类型标注永远不参与运行时求值。
 - 值位置 `m.E` 仍是普通模块属性访问，没有该值就报
@@ -160,7 +161,7 @@ print(match c { Red => "red", Green => "green" })
 | `a + b`、`-`、`*`、`//`、`%` | 两个数值 -> `Int`，任一为 Float 则 `Float` |
 | `a / b` | 两个数值 -> `Float` |
 | `a < b`、`<=`、`>`、`>=` | 两个数值或两个 String -> Bool |
-| `a == b`、`!=` | 两个数值、两个 Bool、两个 String、同类型集合、同类型 ADT（结构相等）或同类实例（身份相等） -> Bool；`1 == 1.0` 允许 |
+| `a == b`、`!=` | 两个数值、两个 Bool、两个 String、同类型集合、同类型 ADT（结构相等）或兼容类/接口实例（身份相等） -> Bool；`1 == 1.0` 允许 |
 | `[1, 2]`、`(1, true)`、`{: ... :}`、`{. ... .}` | 集合字面量；同质 List/Set/Dict 推断，Tuple 可异构 |
 | `xs[i]` | List/Tuple/String 用 Int，Dict 用键类型；Tuple 字面量下标检查越界 |
 | `len(x)` | String 或集合 -> Int |
@@ -232,11 +233,11 @@ class Point {
 }
 ```
 
-- `class` 只能声明在模块顶层；支持**单继承**（至多一个基类），不支持元类、
-  泛型类、类方法、运算符方法与扩展方法，类体只允许槽（`val`/`var`）和方法
-  声明。多基类显式拒绝。
-- 基类必须是此前已声明的类（本模块或导入模块均可），不能是 enum/集合/标量，
-  也不支持自继承或前向引用。
+- `class` 只能声明在模块顶层；支持**单继承 + 多接口**（至多一个类基类，
+  其余基项为接口），不支持元类、泛型类、类方法、运算符方法与扩展方法，
+  类体只允许槽（`val`/`var`）和方法声明。多类基类显式拒绝。
+- base 列表中的类与接口都必须此前已声明（本模块或导入模块均可）；类基项必须
+  是类，接口项必须是接口；不能是 enum/集合/标量，也不支持自继承或前向引用。
 - 槽是**固定布局**：每个槽必须在类体中声明且带类型标注；子类不能重新声明
   基类槽，槽名也不能与继承来的方法同名；给未声明槽或方法赋值会报错，
   不存在动态字段。
@@ -288,6 +289,57 @@ class Derived < Base {
 val d: Base = Derived(1, 2)
 print(d.describe())          # base+derived（运行时派发到 Derived）
 ```
+
+## 静态接口
+
+```oort
+interface Named {
+    def name() -> String
+}
+
+interface Sized {
+    def size() -> Int
+}
+
+interface Described < Named, Sized {
+    def describe() -> String
+}
+
+class Point < Described {
+    val x: Int
+    val y: Int
+
+    def __init__(x: Int, y: Int) {
+        this.x = x
+        this.y = y
+    }
+
+    def name() -> String { "point" }
+    def size() -> Int { this.x + this.y }
+    def describe() -> String { this.name() }
+}
+
+val p: Described = Point(2, 3)
+print(p.describe(), p.size())
+```
+
+- `interface` 只能声明在模块顶层；接口体只允许**方法签名**
+  `def m(参数: 类型, ...) -> 返回类型`，参数与返回类型必须标注。
+  接口不能有槽/属性、`__init__`、类方法、运算符方法、方法体或嵌套声明；
+  默认方法留后续。
+- 接口可继承多个接口：`interface J < I1, I2`，父项必须都是接口；同名方法
+  签名必须一致，否则声明处报冲突。接口继承图不允许循环。
+- 本切片不支持泛型接口/泛型接口方法、`Self`、属性要求和结构化 conformance。
+- 类与接口共享类型命名空间。类的 `<` 列表至多一个**类基类**且必须第一，
+  其余项为接口；没有类基类时可只列接口。非类/非接口项报错。
+- 类必须实现直接接口（含继承来的要求）的全部方法：参数元组精确一致，返回
+  允许协变。基类已实现的接口由子类继承；类可以额外定义方法。
+- 接口类型可用于参数、变量、返回值、槽、集合与 ADT 载荷；接口值运行时是
+  对应类实例，按身份相等/作键。接口不能实例化，也不能作为值使用。
+- 接口是**纯静态**的：声明、接口基类与类型标注在 HIR/字节码前擦除；
+  接口不进入运行时 MRO，`.obc` 格式不变。
+- 跨模块时接口属于类型导出：标注/基类写 `m.I`；`from "m" import I` 与
+  enum 类型名一样报 type-only 导出诊断。
 
 ## ADT（`enum`）与 `match`
 
@@ -396,7 +448,7 @@ def at_origin(p: Tuple[Int, Int]) -> Bool {
   `out T` 只能出现在协变位置，`in T` 只能逆变；违反时定位到字段：
   `Type parameter 'T' is declared covariant ('out') but appears in a
   contravariant position in constructor 'B'.` 类单继承落地后，变型关系在
-  类实参之间可观察；接口仍未实现。
+  类与接口实参之间可观察。
 - **类型应用**：`Option[Int]`、`Pair[Int, String]`，可嵌套（`Option[List[Int]]`）；
   实参个数必须匹配；裸 `Option` 报“requires N type argument(s)”；单态 enum
   不接受实参。
@@ -447,8 +499,10 @@ enum Result[out T, out E] {
 
 | 类别 | 示例 | 诊断 |
 |------|------|------|
-| 多基类/元类/泛型类 | `class C < A, B`、`class C :: M`、`class C[T]` | 对应 "not supported / single base" 诊断 |
-| 非类基类/自继承/前向基类 | `class D < E`（E 为 enum）、`class D < D`、`class D < Later` | `Base class must be a class type...` / `Unknown type...` |
+| 多类基类/元类/泛型类 | `class C < A, B`（均为类）、`class C :: M`、`class C[T]` | `Only one class base...` / 对应 not supported |
+| 非类非接口基项/自继承/前向基类 | `class D < E`（E 为 enum）、`class D < D`、`class D < Later` | `Base entry must be a class or interface...` / `Unknown type...` |
+| 接口声明误用 | 泛型接口/方法、默认方法体、`__init__`、重复方法、非接口父项 | 对应 `interface ...` 诊断；方法体为语法错误 |
+| 类接口实现 | 缺方法、参数/返回不符、重复接口、类基类不在首位 | `does not implement` / `does not match` / `implements interface ... more than once` / `Class base must appear first` |
 | 继承槽冲突 | 子类重声明基类槽、槽与方法同名 | `Slot ... already declared in base class` / `... conflicts with inherited ...` |
 | 覆盖签名 | 参数不同、返回不是基类返回的子类型 | `Overriding method ... must use the base parameter types` / `... must return ...` |
 | 未初始化继承槽 | 派生类 `__init__` 不赋值/不调用 `super.__init__` | `Constructor must initialize slot(s)...` |
@@ -477,7 +531,7 @@ enum Result[out T, out E] {
 | 位运算/`in`/`is` | `1 & 2`、`x in xs` | 运算符不支持 |
 | 跨方言 import | core 导入 object 模块 | `Cannot import a 'oort-object' module...` |
 | native import | `import "math"` | `Native modules are not supported...` |
-| enum 类型名 from 导入 | `from "m" import E` | `'E' is a type-only export; use 'm.E' to name the type.` |
+| enum/接口类型名 from 导入 | `from "m" import E`、`from "m" import I` | `'E' is a type-only export; use 'm.E' to name the type.` |
 | 缺失/非法类型导出 | `m.Missing`、把值当类型 `m.f` | `Module 'm' does not export type...` / `... as a value, not a type.` |
 | 类型再导出 / `import type` | 尚不实现 | 类型导出只含本模块声明；后续提案 |
 | 类型参数上界/默认值 | `enum E[T: Int] { A }`、`enum E[T = Int] { A }` | `Type parameter bounds/defaults are not supported...` |
@@ -527,5 +581,5 @@ print(x)          # 1
 
 ## 尚未实现
 
-null、多继承/接口/属性访问器、元类、泛型类/函数/lambda、匿名 $n lambda、
+null、多继承、属性访问器、元类、泛型类/接口/函数/lambda、匿名 $n lambda、
 跨方言 FFI、REPL 方言切换。

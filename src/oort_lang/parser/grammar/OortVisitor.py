@@ -154,6 +154,11 @@ class OortVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by OortParser#InterfaceDefExpr.
+    def visitInterfaceDefExpr(self, ctx:OortParser.InterfaceDefExprContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by OortParser#ExplicitSuperExpr.
     def visitExplicitSuperExpr(self, ctx:OortParser.ExplicitSuperExprContext):
         return self.visitChildren(ctx)
@@ -226,6 +231,21 @@ class OortVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by OortParser#className.
     def visitClassName(self, ctx:OortParser.ClassNameContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by OortParser#interfaceDef.
+    def visitInterfaceDef(self, ctx:OortParser.InterfaceDefContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by OortParser#interfaceMethodList.
+    def visitInterfaceMethodList(self, ctx:OortParser.InterfaceMethodListContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by OortParser#interfaceMethod.
+    def visitInterfaceMethod(self, ctx:OortParser.InterfaceMethodContext):
         return self.visitChildren(ctx)
 
 

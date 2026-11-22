@@ -112,6 +112,7 @@ atomExpr
     | macroCallName LPA argumentList RPA lambdaDef?                     # MacroCallExpr
     | classDef                                                          # ClassDefExpr
     | enumDecl                                                          # EnumDefExpr
+    | interfaceDef                                                      # InterfaceDefExpr
     | matchExpr                                                         # MatchExprAtom
     | functionDef                                                       # FuncDefExpr
     | lambdaDef                                                         # LambdaDefExpr
@@ -159,6 +160,24 @@ classDef
 
 className
     : identifier (DOT identifier)*
+    ;
+
+/*
+    Interface declaration.
+
+    Members are method signatures only; an optional body is parsed so the
+    checker can report default methods as unsupported rather than a parse error.
+*/
+interfaceDef
+    : INTERFACE identifier typeParameterDef? baseClassDef? LBC interfaceMethodList? RBC
+    ;
+
+interfaceMethodList
+    : term? interfaceMethod (term interfaceMethod)* term?
+    ;
+
+interfaceMethod
+    : DEF identifier typeParameterDef? parameterDef returnTypeDef?
     ;
 
 /*
@@ -531,6 +550,7 @@ VAL: 'val';
 DO: 'do';
 DEF: 'def';
 CLASS: 'class';
+INTERFACE: 'interface';
 ENUM: 'enum';
 MATCH: 'match';
 THIS: 'this';

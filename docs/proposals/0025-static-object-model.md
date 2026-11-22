@@ -22,7 +22,8 @@ P6 静态对象模型的前两块：
 - **单继承**：`class Derived < Base`；子类沿基类链继承槽/方法，支持覆盖、
   `super` 与子类型赋值；多基类显式拒绝。
 
-接口（interface）与属性访问器（getter/setter）语法尚未确定，留作后续提案；
+接口（interface）与属性访问器（getter/setter）不在本提案：接口由
+[OP 0026](0026-static-interfaces.md) 实现，属性访问器留作后续提案；
 泛型类、多继承、元类仍不在本切片。
 
 ## 动机
@@ -132,7 +133,8 @@ def paint(shape: Shape, color: shapes.Color) -> String {
   没有。`from "m" import Color` 在检查器即被拒绝，不会进入运行时。
 - 基类子句是例外：`class C < shapes.Shape` 中的 `shapes.Shape` 是运行时
   表达式，取模块里的类对象（现有值导出）。检查器在基类位置解析类型表，
-  HIR 仍按普通属性表达式降低；两边一致。
+  HIR 仍按普通属性表达式降低；两边一致。接口基项没有运行时值，由
+  [OP 0026](0026-static-interfaces.md) 在 HIR/解释器中擦除。
 
 #### 跨方言行为
 
@@ -201,7 +203,8 @@ class Derived < Base {
 }
 ```
 
-- 仅允许**一个**基类；`class C < A, B` 显式拒绝（多继承留后）。
+- 仅允许**一个类基类**；`class C < A, B`（两个类）显式拒绝。接口实现
+  见 [OP 0026](0026-static-interfaces.md)。
 - `ClassType` 增加 `bases: tuple[ClassType, ...]`；`slot()`/`method()` 沿基类
   链查找（运行时仍用完整 C3 MRO）。
 - 名义相等仍按 `(origin, name)`；子类化不改变相等。
@@ -244,7 +247,8 @@ class Derived < Base {
 
 ### 3. 明确不在本切片
 
-- **接口**：需要新关键字/语法与“只有签名、无状态”的类型规则；另立提案。
+- **接口**：需要新关键字/语法与“只有签名、无状态”的类型规则；已由
+  [OP 0026](0026-static-interfaces.md) 实现。
 - **属性访问器**：`get`/`set` 语法未定；另立提案。
 - **多继承**：运行时支持，但静态槽布局、确定赋值、接口混用复杂；先拒绝。
 - **泛型类、元类、抽象方法、按需虚派发优化**。

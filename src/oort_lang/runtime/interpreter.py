@@ -983,10 +983,17 @@ class ASTInterpreter(ASTVisitor[OortObject]):
                 missing[0].position,
             )
 
+    def visit_interface_def(self, node: nodes.InterfaceDef) -> OortObject:
+        # Interfaces are a static-only construct; declarations are erased.
+        return OortNull.get_null_value()
+
     def visit_class_def(self, node: nodes.ClassDef) -> OortType:
         # Visit base classes and metaclasses.
         bases = []
         for base_node in node.bases:
+            if base_node.metadata.get("interface_base"):
+                # Interface bases are static-only and must not be evaluated.
+                continue
             base = base_node.accept(self)
             if not isinstance(base, OortType):
                 raise OortTypeError(f"{base.type.name!r} object is not a class", base_node.position)

@@ -101,6 +101,7 @@ nav:
       - OP 0023 完整模式匹配: proposals/0023-full-pattern-matching.md
       - OP 0024 ADT 相等与槽对象相等: proposals/0024-adt-and-slot-equality.md
       - OP 0025 静态对象模型（单继承与跨模块类型）: proposals/0025-static-object-model.md
+      - OP 0026 静态接口: proposals/0026-static-interfaces.md
   - 设计:
       - 设计索引: design/00-INDEX.md
       - 运行时值表示: design/01-runtime-value-representation.md

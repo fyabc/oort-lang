@@ -34,9 +34,12 @@ source
 
 - `PrimitiveType("Int"|"Float"|"Bool"|"String"|"Unit")`；
 - `ListType`/`SetType`/`DictType`/`TupleType`：结构相等的集合类型；
-- `ClassType(origin, name, slots, methods, bases)`：名义相等，槽/方法/基类在注册
-  后填充；`mro`/`slot`/`method`/`all_slots` 实现单继承查找；
+- `ClassType(origin, name, slots, methods, bases, interfaces)`：名义相等，
+  槽/方法/基类/接口在注册后填充；`mro`/`slot`/`method`/`all_slots` 实现单继承
+  查找，`implements_interface` 沿 MRO 检查直接接口；
 - `SlotInfo(name, slot_type, mutable, has_initializer)`；
+- `InterfaceType(origin, name, interfaces, methods)`：名义接口，
+  `interface_closure`/`extends_interface`/`method`/`all_methods` 处理接口继承；
 - `FunctionType(params, ret)`、`ModuleType(name, exports, type_exports)`；
 - `AdtTemplate(origin, name, params, constructors)`：enum 声明（类型构造器），
   `constructors` 在声明注册后填充，以支持自递归 payload；
@@ -87,16 +90,20 @@ source
   （Tuple 可异构）；空字面量用期望类型；下标、`len`、集合相等。
 - 循环：`while` 条件 Bool；`for` 遍历 List/Set/Dict 键/String/同质 Tuple；
   循环变量单目标且不可变；`break`/`continue` 走 `Never`，`break value` 拒绝。
-- 类：先解析并注册基类（`bases`），再收集槽/方法签名并注册 `ClassType`，最后
-  检查槽初始化器与方法体；方法体作用域绑定 `this: ClassType`；槽赋值按
-  `val`/`var` 检查。继承槽禁止重声明；方法覆盖参数精确、返回协变；`super`
-  通过 `visit_attribute` 特殊解析（不新增静态值类型）。
+- 类：先解析 base 列表并分类（至多一个类基类且第一，其余接口），再收集槽/
+  方法签名并注册 `ClassType`，最后检查槽初始化器与方法体；方法体作用域绑定
+  `this: ClassType`；槽赋值按 `val`/`var` 检查。继承槽禁止重声明；方法覆盖
+  参数精确、返回协变；接口实现逐方法检查；`super` 通过 `visit_attribute`
+  特殊解析（不新增静态值类型）。
 - 构造器确定赋值：`semantics/core/definite_assignment.py` 用 (definite, maybe)
   集合分析 `__init__`，处理分支交集、循环保守、提前 return、赋值前读取与
   `val` 单次赋值；`SlotFact.from_base` 纳入继承槽，`super.__init__(...)` 视为
   初始化基类未赋值槽。运行时另有槽初始化与缺失槽兜底。
-- 子类型：`is_assignable` 对类沿 `bases` 判定，`join_types` 取最近公共基类；
-  函数类型参数逆变、返回协变。
+- 接口：`interface` 顶层声明只收方法签名（文法拒绝方法体）；接口继承与方法
+  冲突在声明处检查；接口 base 表达式由检查器写 `metadata["interface_base"]`，
+  HIR/解释器据此跳过，运行时无接口对象。
+- 子类型：`is_assignable` 对类沿 `bases`、对接口沿实现/继承判定；
+  `join_types` 取最近公共类基类；函数类型参数逆变、返回协变。
 - `print`：特殊内建，返回 Unit；用户绑定优先；ADT 值可打印，函数值不可打印。
 - expected-type 传播：标注、赋值、返回、函数体与调用实参的期望类型会下推到
   `if` 分支、块最后表达式和 `match` arm；不匹配时定位到具体分支/实参。
@@ -167,10 +174,12 @@ source
 
 ## 相等（OP 0024）
 
-- `_supports_value_equality`：ADT 递归载荷（seen 收敛）、类实例身份；函数载荷拒绝。
-- `_is_valid_key_type`：ADT 递归检查 key-safe 载荷，类实例身份键；不可键 ADT
-  在 Set/Dict 注解与字面量处报错。
-- `_check_equality`：同类型 ADT/类放行；ADT 类型不同或函数载荷给专用诊断。
+- `_supports_value_equality`：ADT 递归载荷（seen 收敛）、类/接口实例身份；
+  函数载荷拒绝。
+- `_is_valid_key_type`：ADT 递归检查 key-safe 载荷，类/接口实例身份键；不可键
+  ADT 在 Set/Dict 注解与字面量处报错。
+- `_check_equality`：同类型 ADT、兼容类/接口实例（互相可赋值）放行；ADT 类型
+  不同或函数载荷给专用诊断。
 - 运行时：`OortADT.__eq__`/`__hash__` 实现键语义；`values_equal` 与
   `apply_binary` 的 `==`/`!=` 实现 ADT 值语义；类继续走 Object 身份相等。
 
@@ -244,6 +253,10 @@ Checker.visit_import -> Compiler._resolve_core_module
 - `tests/unit/frontend/test_core_inheritance.py`：槽/方法继承、`super`、
   子类型赋值、覆盖协变、继承槽确定赋值、无 `__init__` 派生类规则与误用拒绝；
   `test_core_types.py` 覆盖类子类型、LUB、槽/方法查找与函数参数逆变。
+- `tests/unit/frontend/test_core_interfaces.py`：多接口实现、接口继承、
+  接口类型派发、跨模块接口、默认方法/泛型接口/`__init__`/签名冲突等拒绝；
+  `test_core_cross_module.py` 覆盖导入接口与类实现；`test_core_types.py`
+  覆盖接口继承/实现与 assignability。
 - `tests/unit/frontend/test_core_checker.py`：正向/拒绝/错误恢复矩阵。
 - `tests/unit/frontend/test_analyzer_dispatch.py`：分析器选择。
 - `tests/unit/runtime/test_core_execution.py`：检查后执行与 Unit/null 映射。

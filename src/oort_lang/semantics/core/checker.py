@@ -40,6 +40,7 @@ from .types import (
     DictType,
     ForallType,
     FunctionType,
+    InterfaceType,
     ListType,
     ModuleType,
     NeverType,
@@ -102,8 +103,8 @@ def _supports_value_equality(type_: Type, seen: set[AdtType] | None = None) -> b
         )
     if isinstance(type_, TupleType):
         return all(_supports_value_equality(element, seen) for element in type_.elements)
-    if isinstance(type_, ClassType):
-        # Class instances use identity equality.
+    if isinstance(type_, (ClassType, InterfaceType)):
+        # Static class instances (including interface-typed values) use identity.
         return True
     if isinstance(type_, AdtType):
         if seen is None:
@@ -122,7 +123,7 @@ def _supports_value_equality(type_: Type, seen: set[AdtType] | None = None) -> b
 def _is_valid_key_type(type_: Type, seen: set[AdtType] | None = None) -> bool:
     if isinstance(type_, UnknownType):
         return True
-    if type_ in (INT, FLOAT, BOOL, STRING) or isinstance(type_, ClassType):
+    if type_ in (INT, FLOAT, BOOL, STRING) or isinstance(type_, (ClassType, InterfaceType)):
         return True
     if isinstance(type_, TupleType):
         return all(_is_valid_key_type(element, seen) for element in type_.elements)
@@ -368,6 +369,8 @@ class CoreTypeChecker(ASTVisitor[Type]):
         self.current_function: FunctionType | None = None
         self.current_function_name: str | None = None
         self.module_level = True
+        # Top-level statement identities; declarations must be direct children.
+        self._module_statements: set[int] = set()
         self.module_exports: tuple[tuple[str, Type], ...] = ()
         # Type exports are separate from value exports: a class contributes to
         # both namespaces, an enum type name only to this one.
@@ -377,6 +380,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
         # Type parameters are only in scope while resolving one enum's payloads.
         self.type_parameters: dict[str, TypeParameterType] = {}
         self.classes: dict[str, ClassType] = {}
+        self.interfaces: dict[str, InterfaceType] = {}
         # `from "m" import C` binds C in the value scope (the constructor) and
         # in this type-alias table (the class type). Enum type names are never
         # imported this way; they stay module-qualified as `m.E`.
@@ -398,6 +402,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
 
     def visit_module(self, node: nodes.ModuleNode) -> Type:
         statements = list(node.body.statements)
+        self._module_statements = {id(stmt) for stmt in statements}
         # Match runtime hoisting: bind imports before checking any body.
         imports = [
             stmt
@@ -419,6 +424,11 @@ class CoreTypeChecker(ASTVisitor[Type]):
         origin = self._module_origin()
         self.module_type_exports = tuple(
             [(name, type_) for name, type_ in self.classes.items() if type_.origin == origin]
+            + [
+                (name, interface)
+                for name, interface in self.interfaces.items()
+                if interface.origin == origin
+            ]
             + [
                 (name, template)
                 for name, template in self.enums.items()
@@ -710,10 +720,6 @@ class CoreTypeChecker(ASTVisitor[Type]):
             )
         if node.type_params:
             return self._unsupported(node, "Generic classes are not supported in oort-core yet.")
-        if len(node.bases) > 1:
-            return self._unsupported(
-                node, "Only a single base class is supported in oort-core yet."
-            )
         if node.meta is not None:
             return self._unsupported(node, "Metaclasses are not supported in oort-core yet.")
         if len(node.names) != 1:
@@ -728,28 +734,65 @@ class CoreTypeChecker(ASTVisitor[Type]):
             name in _RESERVED_TYPE_NAMES
             or name in self.classes
             or name in self.enums
+            or name in self.interfaces
             or name in self.imported_types
         ):
             self._error(f"Type name '{name}' is already declared or reserved.", node.name_position)
             return UNIT
 
-        # Resolve the base before registering this class, so a class cannot
-        # inherit from itself or from a class declared later in the module.
+        # Resolve the base list before registering this class, so a class
+        # cannot inherit from itself or from a class declared later in the
+        # module. Exactly one class base may appear, and it must be first;
+        # the remaining entries are interfaces.
         base: ClassType | None = None
-        if node.bases:
-            base_type = self.resolve_annotation(node.bases[0], allow_unit=False)
+        implemented_interfaces: list[InterfaceType] = []
+        seen_interfaces: set[tuple[str, str]] = set()
+        for index, base_expr in enumerate(node.bases):
+            base_type = self.resolve_annotation(base_expr, allow_unit=False)
             if isinstance(base_type, UnknownType):
-                pass
-            elif isinstance(base_type, ClassType):
+                base_expr.metadata["interface_base"] = True
+                continue
+            if isinstance(base_type, ClassType):
+                if base is not None:
+                    self._error(
+                        "Only one class base is allowed; other base-list "
+                        "entries must be interfaces.",
+                        base_expr.position,
+                    )
+                    # Keep the extra class out of the runtime base list.
+                    base_expr.metadata["interface_base"] = True
+                    continue
+                if index != 0:
+                    self._error(
+                        "Class base must appear first in the base list; "
+                        "other entries must be interfaces.",
+                        base_expr.position,
+                    )
                 base = base_type
-            else:
-                self._error(
-                    f"Base class must be a class type, got {describe_type(base_type)}.",
-                    node.bases[0].position,
-                )
+                continue
+            if isinstance(base_type, InterfaceType):
+                base_expr.metadata["interface_base"] = True
+                key = (base_type.origin, base_type.name)
+                if key in seen_interfaces:
+                    self._error(
+                        f"Class '{name}' implements interface '{base_type.name}' more than once.",
+                        base_expr.position,
+                    )
+                    continue
+                seen_interfaces.add(key)
+                implemented_interfaces.append(base_type)
+                continue
+            base_expr.metadata["interface_base"] = True
+            self._error(
+                f"Base entry must be a class or interface, got {describe_type(base_type)}.",
+                base_expr.position,
+            )
 
         class_type = ClassType(
-            self._module_origin(), name, bases=(base,) if base is not None else ()
+            self._module_origin(),
+            name,
+            bases=(base,) if base is not None else (),
+            interfaces=tuple(implemented_interfaces),
         )
         self.classes[name] = class_type
 
@@ -895,6 +938,9 @@ class CoreTypeChecker(ASTVisitor[Type]):
 
         self._infer_and_check_methods(methods, class_type, name, method_names)
         self._check_overrides(methods, class_type, base)
+        self._check_interface_implementations(
+            class_type, implemented_interfaces, node.name_position
+        )
 
         inherited_slots = base.all_slots() if base is not None else ()
         slot_facts = [
@@ -964,6 +1010,31 @@ class CoreTypeChecker(ASTVisitor[Type]):
                     f"{describe_type(derived_signature.ret)}.",
                     function.name_position,
                 )
+
+    def _check_interface_implementations(
+        self,
+        class_type: ClassType,
+        interfaces: list[InterfaceType],
+        position,
+    ) -> None:
+        for interface in interfaces:
+            for method_name, required in interface.all_methods():
+                actual = class_type.method(method_name)
+                if actual is None:
+                    self._error(
+                        f"Class '{class_type.name}' does not implement interface "
+                        f"'{interface.name}' method '{method_name}'.",
+                        position,
+                    )
+                    continue
+                if actual.params != required.params or not is_assignable(required.ret, actual.ret):
+                    params = ", ".join(describe_type(param) for param in required.params)
+                    expected = f"({params}) -> {describe_type(required.ret)}"
+                    self._error(
+                        f"Method '{class_type.name}.{method_name}' does not match "
+                        f"interface '{interface.name}.{method_name}'; expected {expected}.",
+                        position,
+                    )
 
     def _check_init_signature(self, node: nodes.FunctionDef, display_name: str) -> FunctionType:
         if node.ret_type is not None:
@@ -1097,6 +1168,104 @@ class CoreTypeChecker(ASTVisitor[Type]):
                     is_initializer=method_name == "__init__",
                 )
 
+    def visit_interface_def(self, node: nodes.InterfaceDef) -> Type:
+        if not self.module_level or id(node) not in self._module_statements:
+            return self._unsupported(
+                node,
+                "Interface declarations are only allowed at module top level in oort-core.",
+            )
+        if node.type_params:
+            return self._unsupported(node, "Generic interfaces are not supported in oort-core yet.")
+        name = node.name
+        if name in _RESERVED_TYPE_NAMES:
+            self._error(f"Type name '{name}' is reserved in oort-core.", node.name_position)
+            return UNIT
+        if name in self.classes or name in self.enums or name in self.imported_types:
+            self._error(f"Type name '{name}' is already declared.", node.name_position)
+            return UNIT
+        existing = self.interfaces.get(name)
+        if existing is not None:
+            self._error(f"Interface '{name}' is already declared.", node.name_position)
+            return UNIT
+
+        parents: list[InterfaceType] = []
+        seen_parents: set[tuple[str, str]] = set()
+        for base_expr in node.bases:
+            base_type = self.resolve_annotation(base_expr, allow_unit=False)
+            if isinstance(base_type, UnknownType):
+                continue
+            if not isinstance(base_type, InterfaceType):
+                self._error(
+                    f"Interface base must be an interface, got {describe_type(base_type)}.",
+                    base_expr.position,
+                )
+                continue
+            key = (base_type.origin, base_type.name)
+            if key in seen_parents:
+                self._error(
+                    f"Interface '{name}' inherits interface '{base_type.name}' more than once.",
+                    base_expr.position,
+                )
+                continue
+            seen_parents.add(key)
+            parents.append(base_type)
+
+        interface = InterfaceType(self._module_origin(), name, tuple(parents))
+        self.interfaces[name] = interface
+
+        inherited: dict[str, FunctionType] = {}
+        conflicts: set[str] = set()
+        for parent in parents:
+            for method_name, signature in parent.all_methods():
+                previous = inherited.get(method_name)
+                if previous is not None and previous != signature:
+                    conflicts.add(method_name)
+                inherited[method_name] = signature
+        for method_name in sorted(conflicts):
+            self._error(
+                f"Interface '{name}' inherits conflicting signatures for method '{method_name}'.",
+                node.name_position,
+            )
+
+        methods: list[tuple[str, FunctionType]] = []
+        method_names: set[str] = set()
+        for method in node.methods:
+            method_name = method.name
+            display_name = f"{name}.{method_name}"
+            if method_name == "__init__":
+                self._error(
+                    f"Interface method '{display_name}' cannot be named '__init__'.",
+                    method.name_position,
+                )
+                continue
+            if _is_special_name(method_name):
+                self._error(
+                    f"Special method '{method_name}' is not supported in interfaces.",
+                    method.name_position,
+                )
+                continue
+            if method_name in method_names:
+                self._error(
+                    f"Duplicate member '{method_name}' in interface '{name}'.",
+                    method.name_position,
+                )
+                continue
+            signature = self._build_interface_signature(method, display_name)
+            inherited_signature = inherited.get(method_name)
+            if inherited_signature is not None and inherited_signature != signature:
+                self._error(
+                    f"Interface '{name}' redeclares inherited method '{method_name}' "
+                    "with a different signature.",
+                    method.name_position,
+                )
+            method.metadata["type"] = describe_type(signature)
+            method_names.add(method_name)
+            methods.append((method_name, signature))
+
+        interface.methods = tuple(methods)
+        node.metadata["type"] = describe_type(interface)
+        return UNIT
+
     def visit_enum_def(self, node: nodes.EnumDef) -> Type:
         if not self.module_level:
             return self._unsupported(
@@ -1110,7 +1279,11 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 node.name_position,
             )
             return UNIT
-        if node.name in self.classes or node.name in self.imported_types:
+        if (
+            node.name in self.classes
+            or node.name in self.interfaces
+            or node.name in self.imported_types
+        ):
             self._error(f"Type name '{node.name}' is already declared.", node.name_position)
             return UNIT
         if node.name in self.enums:
@@ -1353,15 +1526,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
         node.metadata["type"] = describe_type(signature)
         return signature
 
-    def _build_signature(
-        self,
-        node: nodes.FunctionDef,
-        display_name: str,
-        *,
-        default_return: Type | None = None,
-        forced_return: Type | None = None,
-        infer_return: bool = False,
-    ) -> FunctionType:
+    def _build_parameter_types(self, node: nodes.FunctionDef | nodes.InterfaceMethod) -> list[Type]:
         param_types: list[Type] = []
         for param in node.params:
             if param.kind != nodes.ParameterKind.DEFAULT or param.default_value is not None:
@@ -1380,6 +1545,34 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 param_types.append(UNKNOWN)
                 continue
             param_types.append(self.resolve_annotation(param.type_expr, allow_unit=False))
+        return param_types
+
+    def _build_interface_signature(
+        self, node: nodes.InterfaceMethod, display_name: str
+    ) -> FunctionType:
+        if node.type_params:
+            self._unsupported(node, "Generic interface methods are not supported in oort-core yet.")
+        param_types = self._build_parameter_types(node)
+        if node.ret_type is None:
+            self._error(
+                f"Interface method '{display_name}' requires a return type annotation.",
+                node.name_position,
+            )
+            return_type: Type = UNKNOWN
+        else:
+            return_type = self.resolve_annotation(node.ret_type, allow_unit=True)
+        return FunctionType(tuple(param_types), return_type)
+
+    def _build_signature(
+        self,
+        node: nodes.FunctionDef,
+        display_name: str,
+        *,
+        default_return: Type | None = None,
+        forced_return: Type | None = None,
+        infer_return: bool = False,
+    ) -> FunctionType:
+        param_types = self._build_parameter_types(node)
 
         return_type: Type
         if forced_return is not None:
@@ -1564,6 +1757,11 @@ class CoreTypeChecker(ASTVisitor[Type]):
                     "The built-in 'print' can only be called directly in oort-core.",
                     node.position,
                 )
+            elif node.id in self.interfaces:
+                self._error(
+                    f"Interface '{node.id}' has no runtime value; use it only in type positions.",
+                    node.position,
+                )
             else:
                 self._error(f"Unknown name '{node.id}'.", node.position)
             return self._record(node, UNKNOWN)
@@ -1600,7 +1798,13 @@ class CoreTypeChecker(ASTVisitor[Type]):
                     return self._check_print_call(node)
                 if name == "len":
                     return self._check_len_call(node)
-                self._error(f"Unknown function '{name}'.", node.func.position)
+                if name in self.interfaces:
+                    self._error(
+                        f"Interface '{name}' cannot be instantiated.",
+                        node.func.position,
+                    )
+                else:
+                    self._error(f"Unknown function '{name}'.", node.func.position)
                 self._infer_arguments(node)
                 return self._record(node, UNKNOWN)
             if isinstance(info.type, ForallType):
@@ -1959,11 +2163,17 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 )
                 return self._record(node, UNKNOWN)
             return self._record(node, BOOL)
-        if isinstance(left, ClassType) or isinstance(right, ClassType):
-            if not (isinstance(left, ClassType) and isinstance(right, ClassType) and left == right):
+        if isinstance(left, (ClassType, InterfaceType)) or isinstance(
+            right, (ClassType, InterfaceType)
+        ):
+            compatible = isinstance(left, (ClassType, InterfaceType)) and isinstance(
+                right, (ClassType, InterfaceType)
+            )
+            if not compatible or not (is_assignable(left, right) or is_assignable(right, left)):
                 self._error(
-                    f"Operator '{node.op.text}' requires both operands to have the "
-                    f"same type, got {describe_type(left)} and {describe_type(right)}.",
+                    f"Operator '{node.op.text}' requires both operands to have "
+                    f"compatible class or interface types, got "
+                    f"{describe_type(left)} and {describe_type(right)}.",
                     node.position,
                 )
                 return self._record(node, UNKNOWN)
@@ -2362,6 +2572,9 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 )
                 return UNKNOWN
             return AdtType(enum_template, ())
+        interface = self.interfaces.get(node.id)
+        if interface is not None:
+            return interface
         known = ", ".join(
             [
                 "Int",
@@ -2372,6 +2585,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 *self.type_parameters,
                 *self.classes,
                 *self.enums,
+                *self.interfaces,
                 *self.imported_types,
             ]
         )
@@ -2431,7 +2645,12 @@ class CoreTypeChecker(ASTVisitor[Type]):
 
     def _bind_imported_type(self, name: str, type_export: Type | AdtTemplate, position) -> None:
         """Bind a class imported by `from` into the annotation type table."""
-        if name in _RESERVED_TYPE_NAMES or name in self.classes or name in self.enums:
+        if (
+            name in _RESERVED_TYPE_NAMES
+            or name in self.classes
+            or name in self.enums
+            or name in self.interfaces
+        ):
             self._error(f"Type name '{name}' is already declared or reserved.", position)
             return
         if name in self.imported_types:
@@ -2687,6 +2906,15 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 )
                 return self._record(node, UNKNOWN)
             return self._record(node, export_type)
+        if isinstance(value_type, InterfaceType):
+            method = value_type.method(node.attribute)
+            if method is not None:
+                return self._record(node, method)
+            self._error(
+                f"Interface '{value_type.name}' has no method '{node.attribute}'.",
+                node.position,
+            )
+            return self._record(node, UNKNOWN)
         if isinstance(value_type, ClassType):
             slot = value_type.slot(node.attribute)
             if slot is not None:
@@ -3002,13 +3230,13 @@ class CoreTypeChecker(ASTVisitor[Type]):
             imported_type = self.imported_types.get(name)
             if isinstance(imported_type, AdtTemplate):
                 template = imported_type
-            elif isinstance(imported_type, ClassType):
+            elif isinstance(imported_type, (ClassType, InterfaceType)):
                 self._error(f"Type '{name}' does not take type arguments.", node.position)
                 return UNKNOWN
         if template is not None:
             return self._apply_type_arguments(template, name, arguments, node)
 
-        if name in self.classes:
+        if name in self.classes or name in self.interfaces:
             self._error(f"Type '{name}' does not take type arguments.", node.position)
             return UNKNOWN
         if name not in {"List", "Set", "Dict", "Tuple"}:

@@ -63,7 +63,7 @@ REPL 逐行判断输入是否完整，无法预知下一行是否以 `.` 开头�
 
 ```text
 and or not in !in is !is as
-var val do def class enum match this super
+var val do def class interface enum match this super
 if else elif for while break continue return
 macro import yield await
 true false null

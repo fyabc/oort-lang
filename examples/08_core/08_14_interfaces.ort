@@ -1,0 +1,60 @@
+#lang oort-core
+
+# 静态接口（OP 0026）：
+# - interface 只有方法签名，没有槽、构造器或运行时对象。
+# - class 的 `<` 列表至多一个类基类（必须第一），其余是接口。
+# - 接口可继承多个接口；类通过继承得到接口实现，子类同样是接口子类型。
+# - 接口类型只存在于检查期，标注在 HIR/字节码前擦除。
+
+interface Named {
+    def name() -> String
+}
+
+interface Sized {
+    def size() -> Int
+}
+
+# 接口继承：Described 同时要求 Named 与 Sized 的方法。
+interface Described < Named, Sized {
+    def describe() -> String
+}
+
+# 没有类基类时，`< Described` 只表示实现接口。
+class Point < Described {
+    val x: Int
+    val y: Int
+
+    def __init__(x: Int, y: Int) {
+        this.x = x
+        this.y = y
+    }
+
+    def name() -> String { "point" }
+    def size() -> Int { this.x + this.y }
+    def describe() -> String { this.name() }
+}
+
+# 子类继承 Point 的接口实现；Tagged 也自动是 Described 的子类型。
+class Tagged < Point {
+    val tag: String
+
+    def __init__(x: Int, y: Int, tag: String) {
+        super.__init__(x, y)
+        this.tag = tag
+    }
+
+    # 覆盖 name；describe 里的 this.name() 会动态派发到这里。
+    def name() -> String { this.tag }
+}
+
+# 接口类型可作为参数/变量；调用按运行时类方法分派。
+def show(item: Described) -> String {
+    item.describe()
+}
+
+val p: Described = Point(2, 3)
+val t: Described = Tagged(2, 3, "tag")
+
+print(show(p), p.size())
+print(show(t), t.size())
+print(p == p, p == t)

@@ -355,6 +355,11 @@ class HirLowerer:
                     )
                     last = None
                     continue
+                if isinstance(stmt, nodes.InterfaceDef):
+                    # Interfaces are static-only: declarations and interface
+                    # bases are erased before HIR.
+                    last = None
+                    continue
                 last = self._lower_stmt(stmt)
             if last is None:
                 last = self._const(None, constants_source(statements))
@@ -435,7 +440,12 @@ class HirLowerer:
         operators: tuple[tuple[nodes.FunctionDef, int], ...],
         slots: tuple[tuple[nodes.VarDecl, int | None], ...],
     ) -> None:
-        bases = tuple(self._require_value(base) for base in node.bases)
+        # Interface entries are type-only and must not be evaluated at runtime.
+        bases = tuple(
+            self._require_value(base)
+            for base in node.bases
+            if not base.metadata.get("interface_base")
+        )
         metaclass = None if node.meta is None else self._require_value(node.meta)
         dst = self._alloc(node.position)
         slot_specs = [
@@ -729,6 +739,8 @@ class HirLowerer:
         if isinstance(node, nodes.EnumDef):
             self._lower_enum_def(node)
             return None
+        if isinstance(node, nodes.InterfaceDef):
+            self._reject(node, "nested interface definitions")
         if isinstance(node, nodes.BreakExpr):
             value = None if node.value is None else self._require_value(node.value)
             self._emit_loop_jump(node, break_target=True, value=value)
@@ -875,6 +887,8 @@ class HirLowerer:
             self._reject(node, "class expressions")
         if isinstance(node, nodes.EnumDef):
             self._reject(node, "enum expressions")
+        if isinstance(node, nodes.InterfaceDef):
+            self._reject(node, "interface expressions")
         if isinstance(node, nodes.MatchExpr):
             return self._lower_match(node)
         if isinstance(node, nodes.UnaryExpr):

@@ -2006,7 +2006,7 @@ class TestCoreClasses:
         check_error(
             caplog,
             "class A {}\nclass B {}\nclass C < A, B {}\n",
-            "Only a single base class is supported",
+            "Only one class base is allowed",
         )
 
     def test_metaclass_is_rejected(self, caplog):

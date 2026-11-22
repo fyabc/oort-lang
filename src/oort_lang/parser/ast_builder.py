@@ -236,6 +236,45 @@ class ASTBuilder(ExpressionParsingMixin, ParameterParsingMixin, OortVisitor):
             name_position=name_position,
         )
 
+    def visitInterfaceDef(self, ctx: OortParser.InterfaceDefContext) -> InterfaceDef:
+        name_ctx = ctx.identifier()
+        type_param_def_ctx = ctx.typeParameterDef()
+        type_params = self.parseTypeParameterList(
+            None if type_param_def_ctx is None else type_param_def_ctx.typeParameterList()
+        )
+        bases = self.parseBaseClassDef(ctx.baseClassDef())
+        method_list = ctx.interfaceMethodList()
+        methods = (
+            []
+            if method_list is None
+            else [self.visitInterfaceMethod(method) for method in method_list.interfaceMethod()]
+        )
+        return InterfaceDef(
+            ctx,
+            name_ctx.getText(),
+            type_params,
+            bases,
+            methods,
+            name_position=SourcePosition.from_context(name_ctx),
+        )
+
+    def visitInterfaceMethod(self, ctx: OortParser.InterfaceMethodContext) -> InterfaceMethod:
+        type_param_def_ctx = ctx.typeParameterDef()
+        type_params = self.parseTypeParameterList(
+            None if type_param_def_ctx is None else type_param_def_ctx.typeParameterList()
+        )
+        ret_type = (
+            None if ctx.returnTypeDef() is None else self.visitReturnTypeDef(ctx.returnTypeDef())
+        )
+        return InterfaceMethod(
+            ctx,
+            ctx.identifier().getText(),
+            type_params,
+            self.parseParameterDef(ctx.parameterDef()),
+            ret_type,
+            name_position=SourcePosition.from_context(ctx.identifier()),
+        )
+
     def visitEnumDecl(self, ctx: OortParser.EnumDeclContext) -> EnumDef:
         name_ctx = ctx.identifier()
         type_param_def_ctx = ctx.typeParameterDef()

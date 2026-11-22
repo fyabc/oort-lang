@@ -11,7 +11,11 @@ from tests.helpers import get_compiler
 SHAPES = """\
 #lang oort-core
 
-class Shape {
+interface Nameable {
+    def label() -> String
+}
+
+class Shape < Nameable {
     val name: String
 
     def __init__(name: String) {
@@ -188,6 +192,44 @@ print(item.label(), item.extra)
 """,
     )
     assert capsys.readouterr().out == "tag 4\n"
+
+
+def test_imported_interface_type_and_implementation(tmp_path: Path, capsys) -> None:
+    _run_main(
+        tmp_path,
+        """\
+import "./shapes" as shapes
+
+class Tagged < shapes.Nameable {
+    val tag: String
+
+    def __init__(tag: String) {
+        this.tag = tag
+    }
+
+    def label() -> String {
+        this.tag
+    }
+}
+
+def show(item: shapes.Nameable) -> String {
+    item.label()
+}
+
+val a: shapes.Nameable = shapes.Shape("shape")
+val b: shapes.Nameable = Tagged("tagged")
+print(show(a), show(b))
+""",
+    )
+    assert capsys.readouterr().out == "shape tagged\n"
+
+
+def test_interface_name_cannot_be_imported_as_a_value(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    text = _diagnostics(tmp_path, caplog=caplog, source='from "./shapes" import Nameable\n')
+    assert "'Nameable' is a type-only export" in text
+    assert "use 'shapes.Nameable' to name the type." in text
 
 
 def test_enum_type_name_cannot_be_imported_as_a_value(

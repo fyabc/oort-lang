@@ -160,7 +160,7 @@ lambda、嵌套/泛型/运算符定义、`yield`/`await`、宏、编译器属性
   标注，类方法按依赖序推断，见 [design 14](../design/14-core-typechecking.md)）；
   更强的 expected-type 传播仍待做。
 - null、类继承/元类、泛型 ADT/HKT、`Option[T]`/`Result[T,E]`。（类单继承已由
-  OP 0025 增量 B 实现；多继承/接口仍未。）
+  OP 0025 增量 B 实现；接口由 OP 0026 实现；多继承仍未。）
 - 集合切片/原地修改、`in`、排序、惰性视图。
 - 字面量/元组/列表/守卫/或模式、嵌套穷尽性、ADT 相等与迭代。
 - 跨方言 FFI trampoline/blame；更完整的模块接口版本管理与增量编译。

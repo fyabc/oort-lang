@@ -64,6 +64,10 @@ enum Shape {}
 # <--- storage.type.oort
 #    ^^^^^ entity.name.type.oort
 
+interface Named {}
+# <------- storage.type.oort
+#         ^^^^^ entity.name.type.oort
+
 enum IntOption {
     Some(value: Int)
     None

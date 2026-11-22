@@ -173,7 +173,8 @@ c.f = 2             # 错误：不能用一个实例字段遮蔽方法 f
   缺失属性只读 fallback：`def on_missing(name)`。
 - 不提供 `__getattr__` / `__setattr__` 等 Python 魔术名，也没有全量属性写钩子；
   写入仍直接进入开放字段袋。
-- Trait/接口、属性访问器与 Handler 未实现。
+- Trait/接口在 `oort-object` 中未实现；`oort-core` 的静态接口见
+  [spec 11](11-core-probe.md#静态接口)。属性访问器与 Handler 未实现。
 - 扩展方法与扩展运算符（类外 `def C.f` / `def C.operator`）见
   [10-extensions.md](10-extensions.md)；它们不会被写入类本身。
 - 类属性的修改（`C.x = ...`）规则尚未定义。

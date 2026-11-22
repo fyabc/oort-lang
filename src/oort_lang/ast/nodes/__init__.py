@@ -50,6 +50,7 @@ from .expressions import (
 )
 from .function_def import FunctionDef
 from .import_stmt import ImportFromStmt, ImportStmt
+from .interface_def import InterfaceDef, InterfaceMethod
 from .literal_constants import (
     BooleanConstant,
     Constant,

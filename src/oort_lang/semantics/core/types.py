@@ -121,6 +121,62 @@ class SlotInfo:
 
 
 @dataclasses.dataclass(eq=False, slots=True)
+class InterfaceType(Type):
+    """A nominal static interface: method requirements and parent interfaces."""
+
+    origin: str
+    name: str
+    interfaces: tuple[InterfaceType, ...] = ()
+    methods: tuple[tuple[str, FunctionType], ...] = ()
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, InterfaceType)
+            and self.origin == other.origin
+            and self.name == other.name
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.origin, self.name))
+
+    def __repr__(self) -> str:
+        return f"<InterfaceType {self.name!r} @ {self.origin!r}>"
+
+    def interface_closure(self) -> tuple[InterfaceType, ...]:
+        """This interface followed by its transitively inherited interfaces."""
+        result: list[InterfaceType] = []
+        seen: set[tuple[str, str]] = set()
+        stack = [self]
+        while stack:
+            current = stack.pop()
+            key = (current.origin, current.name)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(current)
+            stack.extend(reversed(current.interfaces))
+        return tuple(result)
+
+    def extends_interface(self, other: InterfaceType) -> bool:
+        return other in self.interface_closure()
+
+    def method(self, name: str) -> FunctionType | None:
+        for interface in self.interface_closure():
+            for method_name, method_type in interface.methods:
+                if method_name == name:
+                    return method_type
+        return None
+
+    def all_methods(self) -> tuple[tuple[str, FunctionType], ...]:
+        """Required methods, one entry per name, including parent interfaces."""
+        methods: dict[str, FunctionType] = {}
+        for interface in self.interface_closure():
+            for name, method_type in interface.methods:
+                methods.setdefault(name, method_type)
+        return tuple(methods.items())
+
+
+@dataclasses.dataclass(eq=False, slots=True)
 class ClassType(Type):
     """A nominal static class with fixed slots and methods.
 
@@ -134,6 +190,7 @@ class ClassType(Type):
     slots: tuple[SlotInfo, ...] = ()
     methods: tuple[tuple[str, FunctionType], ...] = ()
     bases: tuple[ClassType, ...] = ()
+    interfaces: tuple[InterfaceType, ...] = ()
 
     def __eq__(self, other: object) -> bool:
         return (
@@ -159,6 +216,14 @@ class ClassType(Type):
 
     def is_subclass_of(self, other: ClassType) -> bool:
         return other in self.mro()
+
+    def implements_interface(self, interface: InterfaceType) -> bool:
+        """Directly or through a base class, including interface inheritance."""
+        for class_type in self.mro():
+            for implemented in class_type.interfaces:
+                if implemented.extends_interface(interface):
+                    return True
+        return False
 
     def slot(self, name: str) -> SlotInfo | None:
         """Look up a slot on this class or an ancestor; derived classes win."""
@@ -306,7 +371,7 @@ def describe_type(type_: Type) -> str:
     if isinstance(type_, ForallType):
         params = ", ".join(param.name for param in type_.params)
         return f"forall {params}. {describe_type(type_.body)}"
-    if isinstance(type_, ClassType):
+    if isinstance(type_, (ClassType, InterfaceType)):
         return type_.name
     if isinstance(type_, UnknownType):
         return "Unknown"
@@ -371,6 +436,12 @@ def is_assignable(expected: Type, actual: Type) -> bool:
             ):
                 return False
         return True
+    if isinstance(expected, InterfaceType):
+        if isinstance(actual, InterfaceType):
+            return actual.extends_interface(expected)
+        if isinstance(actual, ClassType):
+            return actual.implements_interface(expected)
+        return False
     if isinstance(expected, ClassType) and isinstance(actual, ClassType):
         return actual.is_subclass_of(expected)
     if isinstance(expected, ForallType) and isinstance(actual, ForallType):

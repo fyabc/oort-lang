@@ -167,7 +167,7 @@ class TestCoreInheritanceRejections:
         check_error(
             caplog,
             "enum E { A }\nclass D < E {}\n",
-            "Base class must be a class type, got E.",
+            "Base entry must be a class or interface, got E.",
         )
 
     def test_self_and_forward_base_are_unknown(self, caplog):

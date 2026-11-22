@@ -47,6 +47,7 @@
 | [0023](0023-full-pattern-matching.md) | 完整模式匹配（字面量/元组/或/守卫/嵌套穷尽性） | Accepted（语义切片已实现） |
 | [0024](0024-adt-and-slot-equality.md) | ADT 相等与槽对象相等 | Implemented |
 | [0025](0025-static-object-model.md) | 静态对象模型：单继承与跨模块类型标注 | Implemented |
+| [0026](0026-static-interfaces.md) | 静态接口：显式契约、多接口实现与接口继承 | Implemented |
 
 ## 流程
 

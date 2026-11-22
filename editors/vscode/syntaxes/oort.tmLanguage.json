@@ -19,6 +19,9 @@
       "include": "#enum-name"
     },
     {
+      "include": "#interface-name"
+    },
+    {
       "include": "#comments"
     },
     {
@@ -328,6 +331,17 @@
           "match": "@"
         }
       ]
+    },
+    "interface-name": {
+      "match": "(\\binterface[ \\t]+)([\\p{L}_][\\p{L}\\p{N}_]*!?)",
+      "captures": {
+        "1": {
+          "name": "storage.type.oort"
+        },
+        "2": {
+          "name": "entity.name.type.oort"
+        }
+      }
     },
     "enum-name": {
       "match": "(\\benum[ \\t]+)([\\p{L}_][\\p{L}\\p{N}_]*!?)",
