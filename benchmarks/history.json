@@ -29,7 +29,7 @@
   {
     "date": "2026-11-22",
     "status": "热路径快赢",
-    "fib_ms": 31.90,
+    "fib_ms": 31.9,
     "fib_speedup": 2.88,
     "loop_ms": 69.07,
     "loop_speedup": 2.21,
@@ -43,5 +43,14 @@
     "loop_ms": 68.92,
     "loop_speedup": 2.05,
     "note": "get 去冗余 import/Type 检查、for_class 记忆化、动态字段直写、LOAD_K 整数快路径；methods 1.44×；默认后端切 VM（fib/loop 口径）"
+  },
+  {
+    "date": "2026-11-22",
+    "status": "0.5.0",
+    "fib_ms": 30.49,
+    "fib_speedup": 3.0,
+    "loop_ms": 69.63,
+    "loop_speedup": 2.09,
+    "note": "语义收口：泛型 ADT/模式匹配/相等/跨模块类型/单继承/静态接口；VM 未改动"
   }
 ]
