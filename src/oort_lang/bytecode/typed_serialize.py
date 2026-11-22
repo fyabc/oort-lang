@@ -80,6 +80,7 @@ def _write_proto(
     w: _Writer,
     proto: TypedProto,
     adt_index: dict[tuple[str, str], int],
+    filename: str | None = None,
 ) -> None:
     w.string(proto.name)
     w.boolean(proto.is_main)
@@ -99,7 +100,7 @@ def _write_proto(
         _write_constant(w, constant)
     w.boolean(bool(proto.positions))
     if proto.positions:
-        w.string(proto.positions[0].filename)
+        w.string(filename if filename is not None else proto.positions[0].filename)
         w.u32(len(proto.positions))
         for position in proto.positions:
             w.u32(position.start_line)

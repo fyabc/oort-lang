@@ -36,9 +36,20 @@ from .typed import AdtDecl, TypedFunction, TypedModule, lower_typed_module
 
 ResolveModule = Callable[[str, Path | None, SourcePosition], tuple[Path, nodes.ModuleNode] | None]
 
+IMPORT_KINDS = ("module", "function", "adt", "constructor")
+
+
+@dataclasses.dataclass(frozen=True)
+class TypedImportRef:
+    """One resolved import edge, recorded for the module artifact ABI."""
+
+    module_id: str
+    kind: str
+    name: str
+
 
 @dataclasses.dataclass
-class _TypedUnit:
+class TypedUnit:
     path: Path | None
     module_id: str
     ast: nodes.ModuleNode
@@ -46,6 +57,7 @@ class _TypedUnit:
     functions: set[str]
     constructors: set[str]
     adts: set[str]
+    imports: tuple[TypedImportRef, ...] = ()
 
 
 def _module_id(path: Path | None, root_dir: Path | None) -> str:
@@ -84,7 +96,7 @@ def _exports(module: TypedModule) -> tuple[set[str], set[str], set[str]]:
     return functions, constructors, adts
 
 
-def _merged_decls(units: list[_TypedUnit]) -> tuple[AdtDecl, ...]:
+def _merged_decls(units: list[TypedUnit]) -> tuple[AdtDecl, ...]:
     merged: list[AdtDecl] = []
     seen: set[tuple[str, str]] = set()
     for unit in units:
@@ -97,7 +109,7 @@ def _merged_decls(units: list[_TypedUnit]) -> tuple[AdtDecl, ...]:
     return tuple(merged)
 
 
-def _constructor_map(unit: _TypedUnit, merged: tuple[AdtDecl, ...]) -> dict[int, int]:
+def _constructor_map(unit: TypedUnit, merged: tuple[AdtDecl, ...]) -> dict[int, int]:
     bases: dict[tuple[str, str], int] = {}
     offset = 0
     for decl in merged:
@@ -140,7 +152,7 @@ def _check_imported_main(hir: HirFunction) -> None:
         )
 
 
-def _link(units: list[_TypedUnit]) -> TypedModule:
+def _link(units: list[TypedUnit]) -> TypedModule:
     merged_decls = _merged_decls(units)
     root = units[-1]
     root_mapping = _constructor_map(root, merged_decls)
@@ -168,19 +180,19 @@ def _link(units: list[_TypedUnit]) -> TypedModule:
     return TypedModule(main, tuple(functions), merged_decls)
 
 
-def link_typed_modules(
+def load_typed_units(
     root_ast: nodes.ModuleNode,
     root_path: Path | None,
     resolve: ResolveModule,
-) -> TypedModule:
-    """Lower root and its typed imports into one typed module."""
+) -> tuple[TypedUnit, ...]:
+    """Load the root module and its typed imports, dependencies first."""
 
     root_dir = root_path.parent if root_path is not None else None
-    loaded: dict[Path, _TypedUnit] = {}
+    loaded: dict[Path, TypedUnit] = {}
     active: set[Path] = set()
-    units: list[_TypedUnit] = []
+    units: list[TypedUnit] = []
 
-    def load(ast: nodes.ModuleNode, path: Path | None) -> _TypedUnit:
+    def load(ast: nodes.ModuleNode, path: Path | None) -> TypedUnit:
         if path is not None and path in loaded:
             return loaded[path]
         if path is not None:
@@ -189,6 +201,7 @@ def link_typed_modules(
             active.add(path)
 
         module_functions: dict[str, set[str]] = {}
+        imports: list[TypedImportRef] = []
         for stmt in ast.body.statements:
             if not isinstance(stmt, (nodes.ImportStmt, nodes.ImportFromStmt)):
                 continue
@@ -204,9 +217,11 @@ def link_typed_modules(
                         f"Duplicate typed import binding '{alias}'.", stmt.position
                     )
                 module_functions[alias] = set(dependency.functions)
+                imports.append(TypedImportRef(dependency.module_id, "module", alias))
                 continue
             for source_name in stmt.names:
                 if source_name in dependency.functions:
+                    imports.append(TypedImportRef(dependency.module_id, "function", source_name))
                     continue
                 if source_name in dependency.constructors:
                     raise UnsupportedSyntax(
@@ -225,7 +240,7 @@ def link_typed_modules(
 
         module = lower_typed_module(ast, module_functions)
         functions, constructors, adts = _exports(module)
-        unit = _TypedUnit(
+        unit = TypedUnit(
             path,
             _module_id(path, root_dir),
             ast,
@@ -233,6 +248,7 @@ def link_typed_modules(
             functions,
             constructors,
             adts,
+            tuple(imports),
         )
         if path is not None:
             active.discard(path)
@@ -241,7 +257,24 @@ def link_typed_modules(
         return unit
 
     load(root_ast, root_path)
-    return _link(units)
+    return tuple(units)
 
 
-__all__ = ["link_typed_modules"]
+def link_typed_modules(
+    root_ast: nodes.ModuleNode,
+    root_path: Path | None,
+    resolve: ResolveModule,
+) -> TypedModule:
+    """Lower root and its typed imports into one typed module."""
+
+    return _link(list(load_typed_units(root_ast, root_path, resolve)))
+
+
+__all__ = [
+    "IMPORT_KINDS",
+    "ResolveModule",
+    "TypedImportRef",
+    "TypedUnit",
+    "link_typed_modules",
+    "load_typed_units",
+]

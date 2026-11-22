@@ -208,8 +208,8 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
 - 除零、类型守卫失败、未知全局/函数索引、未知操作码都必须显式报错，禁止静默
   执行；
 - `DEF_FUN` 的绑定可在主函数执行时发生；实现可以预绑定全部函数，语义等价；
-- kind=1 文件本身不编码模块 import；P1 linker 在编译前把 `from` 依赖合并成
-  单模块，因此字节码没有 import opcode；
+- v6 单模块文件不编码 import；v7 module artifact 用文件头的 import/export
+  表描述模块边，但函数体仍没有 import opcode——loader 在加载时完成链接；
 - kind=1 **没有全局存储**（无顶层变量、无 `STORE_G`），因此实现可以在加载时
   预解析 `LOAD_G` 并缓存；若未来版本加入全局存储，写入时必须使缓存失效
   （实现采用全局版本号 + 惰性重解析）；动态 kind=0 仍走名字查找；
@@ -225,21 +225,25 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   作为 ADT 实例身份保留；match 支持 ADT/Int/Float/Bool/String/Tuple
   scrutinee，构造器/通配/变量/守卫/字面量/Tuple/或模式与嵌套组合；
 - 无集合原地修改（`SET_ITEM` 预留；核心检查器尚未允许 `xs[i] = v`）、`in`/
-  集合运算、类/接口/泛型/lambda、切片；typed 模块导入由 P1 linker 在编译前
-  解析，不进入 kind=1 字节码；
-- kind=1 **v6 是当前唯一版本**；ADT 模块声明表位于文件头；旧读者遇到未知
-  version/opcode/tag 必须报错而不是猜测；破坏既有布局的变更必须提升 version；
+  集合运算、类/接口/泛型/lambda、切片；typed 模块导入在 loader 中解析，
+  函数体不进入 kind=1 字节码；
+- kind=1 有两个不再互读的版本：**v6** 为单模块程序，**v7** 为 module
+  artifact（module_id/export/import 表）；ADT 模块声明表位于文件头；旧读者
+  遇到未知 version/opcode/tag 必须报错而不是猜测；破坏既有布局的变更必须
+  提升 version；
+- `-t tvm` 走 v7 artifact + loader；`-t thir`/`-t tbc` 仍用 P1a/P1b 的 HIR
+  拍平器，两者共享 typed HIR 语义；
 - kind=1 本身不编码跨方言边界；`oort-object → oort-core` 由 B1
   边界（OP 0028）处理，反向仍拒绝；`box`/`unbox`/blame 的稳定 ABI
   尚未定义；
-- 格式版本 `version=6`；不兼容变更必须提升 version，并保持 kind=1 的独立
-  命名空间。
+- 单模块格式版本 `version=6`，module artifact 版本 `version=7`；不兼容变更
+  必须提升 version，并保持 kind=1 的独立命名空间。
 
 ## 6. 参考实现入口
 
 | 实现 | 入口 |
 |---|---|
-| Python | `bytecode/typed_compile.py`、`typed_vm.py`、`typed_serialize.py` |
+| Python | `bytecode/typed_compile.py`、`typed_artifact.py`、`typed_vm.py`、`typed_serialize.py` |
 | CLI | `-t tbc`（反汇编）、`-t tvm`（执行） |
 | Rust | `rust/oort-vm/src/typed.rs`；`oort-vm <file.obc>` 按 kind 分派 |
 | 差分 | `scripts/rust_vm_check.py --diff-only`（含 typed 程序） |

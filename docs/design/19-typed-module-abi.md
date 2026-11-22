@@ -1,8 +1,9 @@
 # 类型化模块 ABI（Typed Module ABI）
 
-> **状态**：设计草案（2026-11-23）。配合 [OP 0027](../proposals/0027-typed-modules.md)
-> 与 [spec 14](../spec/14-typed-bytecode.md)；当前 P1a/P1b 仍是编译期拍平，
-> 本文描述 P1c 的 artifact/loader 方向。
+> **状态**：设计（2026-11-23）。配合 [OP 0027](../proposals/0027-typed-modules.md)
+> 与 [spec 14](../spec/14-typed-bytecode.md)；P1c-1 的 v7 artifact 与 Python
+> loader 已实现（`bytecode/typed_artifact.py`），P1a/P1b 的 HIR 拍平器仍服务
+> `-t thir`/`-t tbc`。
 
 ## 1. 目标
 
@@ -35,42 +36,47 @@ module artifacts → import/export validation → relocation → linked program
 - 后续 package manager 使用 `package::module`；
 - source path 与 module_id 的映射由 loader/清单提供。
 
-## 3. Artifact 布局（v7 草案）
+## 3. Artifact 布局（v7，已实现）
 
 ```text
 OBC | kind=1 | version=7
 string module_id
-u16    abi_version
+u16    abi_version            # 当前 1
 
 u32 export_count
 export:
-  u8   kind          # function / adt / constructor / type
-  string name
-  u32  symbol
-  type_desc signature_or_type
-  u64  abi_hash
+  u8     kind                 # 1 function / 2 adt / 3 constructor
+  string name                 # function/ADT 名，或构造器名
+  string adt_name             # 构造器所属 ADT；其他为空串
+  u32    symbol               # 函数/ADT 表下标；构造器为本地 id
+  i64    abi_hash             # P1c-1 预留 0
 
 u32 import_count
 import:
   string module_id
-  u8   kind
-  string name
-  u64  expected_abi_hash
+  u8     kind                 # 1 module / 2 function / 3 adt / 4 constructor
+  string name                 # namespace 别名或导入名
+  i64    expected_abi_hash    # P1c-1 预留 0
 
 u32 adt_decl_count
-adt_decl[...]
+adt_decl:
+  string origin               # module_id 或 <core-prelude>
+  string name
+  u16    constructor_count
+  constructor:
+    string name
+    u8     arity
 
 u32 function_count
 proto[...]
 proto(main)
 ```
 
-具体字段在 P1c-1 实现前再收敛；先固定：
-
-- 模块限定符号；
-- 类型/ADT 的模块引用；
-- ABI hash/version；
-- 不写宿主路径。
+- 类型表仍按 v6 的 tag 12 引用本 artifact 的 ADT 声明下标；
+- 投影/寄存器/返回类型中的 `AdtType.origin` 在 artifact 构建时统一改写为
+  `module_id`（prelude 除外），因此生成的文件不含宿主路径；
+- proto 位置表的 filename 写 `module_id`；
+- loader 接受 `abi_version=1`；`abi_hash` 字段留给 P1c-2 的类型 ABI。
 
 ## 4. 符号模型
 
@@ -97,16 +103,19 @@ proto(main)
 
 ## 5. Loader / linker
 
-Python `TypedModuleLoader`：
+Python loader/linker（P1c-1：`load_typed_units` + `build_typed_program`）：
 
-1. 解析 import spec → path；
-2. 读取 artifact，或从 checked AST 编译并缓存；
-3. 校验 module_id、kind/version、ABI hash；
-4. 构建依赖图，检测循环；
-5. 拓扑初始化；
-6. 构建函数/ADT/构造器/类型全局表；
-7. 生成 linked program；
+1. 从 root checked AST 出发解析 import spec → path，得到 unit 图（依赖在前）；
+2. 每个 unit lowering 后编译为 v7 artifact（内存或磁盘）；
+3. 校验 module_id、kind/version、ABI 版本、import/export 边；
+4. 检测循环，得到拓扑序；
+5. 合并 ADT 声明（prelude 去重），按 `module_id` 重写 origin；
+6. 重映射 `NEW_ADT` 构造器 id 与主函数 `DEF_FUN` 函数 id；
+7. 生成 single-module linked program；
 8. 交给现有 typed VM。
+
+磁盘路径由 `write_typed_artifact`/`read_typed_artifact` 覆盖；编译器当前在
+内存中构建 artifact，磁盘缓存留给 P1c-3。
 
 Rust：
 
@@ -131,11 +140,11 @@ Rust：
 
 ## 8. 分阶段
 
-| 阶段 | 内容 |
-|---|---|
-| P1c-1 | v7 metadata、Python loader、linked program |
-| P1c-2 | 导入构造器/类型、ABI hash、B1 多模块、Rust linked bundle |
-| P1c-3 | 独立缓存、Rust 原生 loader、兼容策略 |
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| P1c-1 | module id/export/import 校验、v7 artifact、Python loader、linked program | 已实现 |
+| P1c-2 | 导入构造器/类型、ABI hash、B1 多模块、Rust linked bundle | 待做 |
+| P1c-3 | 独立缓存、Rust 原生 loader、兼容策略 | 待做 |
 
 ## 9. 开放问题
 

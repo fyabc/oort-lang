@@ -27,6 +27,16 @@ from .opcodes import (
     encode_asbx,
     encode_ax,
 )
+from .typed_artifact import (
+    TypedArtifact,
+    TypedExport,
+    TypedImport,
+    build_typed_artifact,
+    build_typed_program,
+    link_typed_artifacts,
+    read_typed_artifact,
+    write_typed_artifact,
+)
 from .typed_compile import TypedProgram, TypedProto, compile_typed_module
 from .typed_disasm import disassemble_typed_program
 from .typed_opcodes import TypedOp
@@ -48,11 +58,16 @@ __all__ = [
     "Op",
     "PatternSpec",
     "Proto",
+    "TypedArtifact",
     "TypedCodeFunction",
     "TypedCodeVM",
+    "TypedExport",
+    "TypedImport",
     "TypedOp",
     "TypedProgram",
     "TypedProto",
+    "build_typed_artifact",
+    "build_typed_program",
     "compile_module",
     "compile_typed_module",
     "decode",
@@ -63,6 +78,9 @@ __all__ = [
     "encode_abx",
     "encode_asbx",
     "encode_ax",
+    "link_typed_artifacts",
+    "read_typed_artifact",
     "read_typed_obc",
+    "write_typed_artifact",
     "write_typed_obc",
 ]

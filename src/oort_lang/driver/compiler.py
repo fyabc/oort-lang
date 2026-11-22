@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     import argparse
     import os
 
+    from ..bytecode import TypedProgram
     from ..hir.typed import TypedModule
     from ..runtime.bytecode_vm import BytecodeVM
     from ..runtime.environment import Environment
@@ -193,7 +194,7 @@ class Compiler:
             return None
 
         if self.args.target == "tvm":
-            from ..bytecode import TypedCodeVM, compile_typed_module
+            from ..bytecode import TypedCodeVM
 
             interpreter = ASTInterpreter(self.error_handler)
             interpreter.script_args = tuple(getattr(self.args, "script_args", ()) or ())
@@ -202,7 +203,7 @@ class Compiler:
             )
             assert isinstance(ast, nodes.ModuleNode)
             try:
-                typed_bytecode = compile_typed_module(self._link_typed_entry(ast, input_info))
+                typed_bytecode = self._compile_typed_entry(ast, input_info)
                 result = TypedCodeVM(interpreter).run(typed_bytecode)
             except OortException as e:
                 matched = self.error_handler.input_info_for(e.position) or input_info
@@ -276,6 +277,10 @@ class Compiler:
     ) -> TypedModule:
         from ..hir.typed_link import link_typed_modules
 
+        resolve = self._make_typed_resolver(entry_dir)
+        return link_typed_modules(ast, path, resolve)
+
+    def _make_typed_resolver(self, entry_dir: Path):
         def resolve(spec: str, importer_path: Path | None, position: SourcePosition):
             importer_dir = importer_path.parent if importer_path else entry_dir
             dep_path = resolve_module_path(
@@ -297,7 +302,22 @@ class Compiler:
                 )
             return dep_path, unit.ast
 
-        return link_typed_modules(ast, path, resolve)
+        return resolve
+
+    def _compile_typed_entry(
+        self,
+        ast: nodes.ModuleNode,
+        input_info: InputInfo,
+    ) -> TypedProgram:
+        """Lower, compile and link typed modules through v7 artifacts."""
+
+        from ..bytecode import build_typed_program
+        from ..hir.typed_link import load_typed_units
+
+        entry_dir = self._entry_dir or input_info.module_dir
+        resolve = self._make_typed_resolver(entry_dir)
+        units = load_typed_units(ast, input_info.module_path, resolve)
+        return build_typed_program(units)
 
     def _link_typed_entry(
         self,

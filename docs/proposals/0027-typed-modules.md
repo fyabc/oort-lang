@@ -1,6 +1,6 @@
 # OP 0027: `oort-core` typed modules 与模块 ABI
 
-- **状态**：Draft
+- **状态**：Draft（P1c-1 已实现）
 - **作者**：Oort 设计讨论
 - **创建日期**：2026-11-23
 - **相关**：[OP 0006](0006-modules-and-imports.md)、[OP 0017](0017-oort-core-thin-probe.md)、[design 18](../design/18-typed-adt.md)、[design 19](../design/19-typed-module-abi.md)
@@ -108,9 +108,10 @@ artifact 至少记录：
 
 ## 实现计划
 
-1. **P1c-1**：v7 artifact header/export/import 表；Python loader；linked program。
-2. **P1c-2**：导入构造器/类型、ABI hash、B1 多模块、Rust linked bundle。
-3. **P1c-3**：独立编译缓存、Rust 原生 loader、版本兼容策略。
+1. **P1c-1（已实现）**：module id/export/import 校验；v7 artifact；Python
+   loader/linker；linked program 接入 `-t tvm`；artifact 不含宿主路径。
+2. **P1c-2（待做）**：导入构造器/类型、ABI hash、B1 多模块、Rust linked bundle。
+3. **P1c-3（待做）**：独立编译缓存、Rust 原生 loader、版本兼容策略。
 
 ## 未解决问题
 
