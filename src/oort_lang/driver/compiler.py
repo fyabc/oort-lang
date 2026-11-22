@@ -33,7 +33,7 @@ from ..runtime.modules import CompiledModule, ModuleLoader, resolve_module_path
 from ..runtime.stdlib import NATIVE_MODULE_NAMES, native_module_factories
 from ..semantics.analyzer import SemanticAnalyzer, create_semantic_analyzer
 from ..semantics.core.prelude import inject_core_prelude
-from ..semantics.core.types import CoreModuleInfo, Type
+from ..semantics.core.types import AdtTemplate, CoreModuleInfo, Type
 from ..source.input_info import FileInputInfo, InputInfo, StringInputInfo
 from ..source.source_position import SourcePosition
 
@@ -81,6 +81,7 @@ class CompiledUnit:
     ast: nodes.ModuleNode
     dialect: DialectConfig
     exports: tuple[tuple[str, Type], ...] = ()
+    type_exports: tuple[tuple[str, Type | AdtTemplate], ...] = ()
 
 
 class Compiler:
@@ -252,7 +253,10 @@ class Compiler:
         assert isinstance(ast, nodes.ModuleNode)
 
         exports: tuple[tuple[str, Type], ...] = tuple(getattr(analyzer, "exports", ()))
-        unit = CompiledUnit(ast, dialect, exports)
+        type_exports: tuple[tuple[str, Type | AdtTemplate], ...] = tuple(
+            getattr(analyzer, "type_exports", ())
+        )
+        unit = CompiledUnit(ast, dialect, exports, type_exports)
         if path is not None:
             self._unit_cache[path] = unit
         return unit
@@ -692,6 +696,7 @@ class Compiler:
             name=spec,
             dialect_name=unit.dialect.name,
             exports=unit.exports,
+            type_exports=unit.type_exports,
         )
 
     def _add_import_diagnostic(self, message: str, position: SourcePosition) -> None:

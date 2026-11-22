@@ -369,11 +369,18 @@ class CoreTypeChecker(ASTVisitor[Type]):
         self.current_function_name: str | None = None
         self.module_level = True
         self.module_exports: tuple[tuple[str, Type], ...] = ()
+        # Type exports are separate from value exports: a class contributes to
+        # both namespaces, an enum type name only to this one.
+        self.module_type_exports: tuple[tuple[str, Type | AdtTemplate], ...] = ()
         self.enums: dict[str, AdtTemplate] = {}
         self.constructor_names: dict[str, AdtTemplate] = {}
         # Type parameters are only in scope while resolving one enum's payloads.
         self.type_parameters: dict[str, TypeParameterType] = {}
         self.classes: dict[str, ClassType] = {}
+        # `from "m" import C` binds C in the value scope (the constructor) and
+        # in this type-alias table (the class type). Enum type names are never
+        # imported this way; they stay module-qualified as `m.E`.
+        self.imported_types: dict[str, Type | AdtTemplate] = {}
         self.current_class: ClassType | None = None
         self._in_initializer = False
         self._loop_depth = 0
@@ -406,6 +413,17 @@ class CoreTypeChecker(ASTVisitor[Type]):
         )
         self.module_exports = tuple(
             (name, info.type) for name, info in self.scopes[0].items() if not info.from_prelude
+        )
+        # Only types declared by this module are re-exported. Prelude types are
+        # implicitly visible everywhere, and imported types are not re-exported.
+        origin = self._module_origin()
+        self.module_type_exports = tuple(
+            [(name, type_) for name, type_ in self.classes.items() if type_.origin == origin]
+            + [
+                (name, template)
+                for name, template in self.enums.items()
+                if template.origin == origin
+            ]
         )
         return UNIT
 
@@ -557,7 +575,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
         position,
         is_function: bool = False,
         from_prelude: bool = False,
-    ) -> None:
+    ) -> bool:
         scope = self.scopes[-1]
         existing = scope.get(name)
         if existing is not None:
@@ -565,8 +583,9 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 self._error(f"Name '{name}' is declared in the core prelude.", position)
             else:
                 self._error(f"Duplicate declaration of '{name}' in oort-core.", position)
-            return
+            return False
         scope[name] = NameInfo(type_, mutable, is_function, from_prelude)
+        return True
 
     # ------------------------------------------------------------------
     # Declarations and statements
@@ -703,7 +722,12 @@ class CoreTypeChecker(ASTVisitor[Type]):
         if existing_enum is not None and existing_enum.origin == CORE_PRELUDE_ORIGIN:
             self._error(f"Type '{name}' is declared in the core prelude.", node.name_position)
             return UNIT
-        if name in _RESERVED_TYPE_NAMES or name in self.classes or name in self.enums:
+        if (
+            name in _RESERVED_TYPE_NAMES
+            or name in self.classes
+            or name in self.enums
+            or name in self.imported_types
+        ):
             self._error(f"Type name '{name}' is already declared or reserved.", node.name_position)
             return UNIT
 
@@ -991,7 +1015,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 node.name_position,
             )
             return UNIT
-        if node.name in self.classes:
+        if node.name in self.classes or node.name in self.imported_types:
             self._error(f"Type name '{node.name}' is already declared.", node.name_position)
             return UNIT
         if node.name in self.enums:
@@ -2193,6 +2217,8 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 node.position,
             )
             return UNKNOWN
+        if isinstance(node, nodes.Attribute):
+            return self._resolve_qualified_type(node)
         if not isinstance(node, nodes.Name):
             self._error(
                 "Only Int, Float, Bool, String, Unit and enum type names are supported "
@@ -2203,6 +2229,9 @@ class CoreTypeChecker(ASTVisitor[Type]):
         type_parameter = self.type_parameters.get(node.id)
         if type_parameter is not None:
             return type_parameter
+        imported_type = self.imported_types.get(node.id)
+        if imported_type is not None:
+            return self._exported_type(imported_type, node.id, node.position)
         if node.id == "Int":
             return INT
         if node.id == "Float":
@@ -2248,6 +2277,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 *self.type_parameters,
                 *self.classes,
                 *self.enums,
+                *self.imported_types,
             ]
         )
         self._error(
@@ -2255,6 +2285,67 @@ class CoreTypeChecker(ASTVisitor[Type]):
             node.position,
         )
         return UNKNOWN
+
+    def _module_type_for_annotation_base(self, base: nodes.Name) -> ModuleType | None:
+        """Resolve the `m` in a `m.Type` annotation through the value scope."""
+        info = self.lookup(base.id)
+        if info is not None and isinstance(info.type, ModuleType):
+            return info.type
+        self._error(f"Unknown module '{base.id}' in a type annotation.", base.position)
+        return None
+
+    def _resolve_qualified_type(self, node: nodes.Attribute) -> Type:
+        if not isinstance(node.value, nodes.Name):
+            self._error(
+                "Qualified type names are written 'module.Type' in oort-core.",
+                node.position,
+            )
+            return UNKNOWN
+        base = node.value
+        module_type = self._module_type_for_annotation_base(base)
+        if module_type is None:
+            return UNKNOWN
+        display = f"{base.id}.{node.attribute}"
+        type_export = module_type.get_type(node.attribute)
+        if type_export is None:
+            if module_type.get(node.attribute) is not None:
+                self._error(
+                    f"Module '{base.id}' exports '{node.attribute}' as a value, not a type.",
+                    node.position,
+                )
+            else:
+                self._error(
+                    f"Module '{base.id}' does not export type '{node.attribute}'.",
+                    node.position,
+                )
+            return UNKNOWN
+        return self._exported_type(type_export, display, node.position)
+
+    def _exported_type(self, type_export: Type | AdtTemplate, display: str, position) -> Type:
+        """Turn one type export into a usable annotation type."""
+        if isinstance(type_export, AdtTemplate):
+            if type_export.params:
+                self._error(
+                    f"Type '{display}' requires {len(type_export.params)} "
+                    f"type argument(s); write {display}[...].",
+                    position,
+                )
+                return UNKNOWN
+            return AdtType(type_export, ())
+        return type_export
+
+    def _bind_imported_type(self, name: str, type_export: Type | AdtTemplate, position) -> None:
+        """Bind a class imported by `from` into the annotation type table."""
+        if name in _RESERVED_TYPE_NAMES or name in self.classes or name in self.enums:
+            self._error(f"Type name '{name}' is already declared or reserved.", position)
+            return
+        if name in self.imported_types:
+            self._error(
+                f"Duplicate imported type '{name}'; use 'as' to rename one.",
+                position,
+            )
+            return
+        self.imported_types[name] = type_export
 
     def _resolve_function_params(self, node: nodes.ASTNode) -> list[Type]:
         if isinstance(node, nodes.Name):
@@ -2415,20 +2506,41 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 )
             return UNIT
         for source_name, alias in node.names.items():
+            bind_name = alias or source_name
             export_type = module_type.get(source_name)
+            type_export = module_type.get_type(source_name)
             if export_type is None:
-                self._error(
-                    f"Module {node.module_path!r} does not export {source_name!r}.",
-                    node.position,
-                )
-                export_type = UNKNOWN
-            self.declare(
-                alias or source_name,
+                if type_export is not None:
+                    # Enum type names have no runtime value. Keeping them
+                    # module-qualified avoids a type/value erasure mechanism.
+                    label = self._module_reference_label(module_type, node.module_path)
+                    self._error(
+                        f"'{source_name}' is a type-only export; "
+                        f"use '{label}.{source_name}' to name the type.",
+                        node.position,
+                    )
+                else:
+                    self._error(
+                        f"Module {node.module_path!r} does not export {source_name!r}.",
+                        node.position,
+                    )
+                continue
+            declared = self.declare(
+                bind_name,
                 export_type,
                 mutable=False,
                 position=node.position,
             )
+            if declared and type_export is not None:
+                self._bind_imported_type(bind_name, type_export, node.position)
         return UNIT
+
+    def _module_reference_label(self, module_type: ModuleType, spec: str) -> str:
+        """Prefer an existing module binding for user-facing hints."""
+        for name, info in self.scopes[0].items():
+            if isinstance(info.type, ModuleType) and info.type.name == module_type.name:
+                return name
+        return self._derive_binding_name(spec) or "module"
 
     def _resolve_import(
         self, node: nodes.ImportStmt | nodes.ImportFromStmt, spec: str
@@ -2456,7 +2568,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 node.position,
             )
             return None
-        return ModuleType(info.name, info.exports)
+        return ModuleType(info.name, info.exports, info.type_exports)
 
     @staticmethod
     def _derive_binding_name(spec: str) -> str | None:
@@ -2722,8 +2834,63 @@ class CoreTypeChecker(ASTVisitor[Type]):
         )
         return UNKNOWN
 
+    def _apply_type_arguments(
+        self,
+        template: AdtTemplate,
+        display: str,
+        arguments: list[nodes.ASTNode],
+        node: nodes.ASTNode,
+    ) -> Type:
+        if not template.params:
+            self._error(f"Enum '{display}' does not take type arguments.", node.position)
+            return AdtType(template, ())
+        param_count = len(template.params)
+        if len(arguments) != param_count:
+            self._error(
+                f"Type '{display}' expects {param_count} type argument(s), got {len(arguments)}.",
+                node.position,
+            )
+        resolved = [self.resolve_annotation(argument, allow_unit=False) for argument in arguments]
+        if len(resolved) != param_count:
+            resolved = (resolved + [UNKNOWN] * param_count)[:param_count]
+        return AdtType(template, tuple(resolved))
+
     def _resolve_container_type(self, node: nodes.Subscript) -> Type:
         base = node.value
+        if isinstance(node.index, nodes.TupleLiteral):
+            arguments = node.index.elements
+        else:
+            arguments = [node.index]
+
+        if isinstance(base, nodes.Attribute):
+            if not isinstance(base.value, nodes.Name):
+                self._error(
+                    "Qualified type names are written 'module.Type' in oort-core.",
+                    node.position,
+                )
+                return UNKNOWN
+            module_type = self._module_type_for_annotation_base(base.value)
+            if module_type is None:
+                return UNKNOWN
+            display = f"{base.value.id}.{base.attribute}"
+            type_export = module_type.get_type(base.attribute)
+            if isinstance(type_export, AdtTemplate):
+                return self._apply_type_arguments(type_export, display, arguments, node)
+            if type_export is not None:
+                self._error(f"Type '{display}' does not take type arguments.", node.position)
+                return UNKNOWN
+            if module_type.get(base.attribute) is not None:
+                self._error(
+                    f"Module '{base.value.id}' exports '{base.attribute}' as a value, not a type.",
+                    node.position,
+                )
+            else:
+                self._error(
+                    f"Module '{base.value.id}' does not export type '{base.attribute}'.",
+                    node.position,
+                )
+            return UNKNOWN
+
         if not isinstance(base, nodes.Name):
             self._error(
                 "Generic type applications are only supported for List, Set, Dict, "
@@ -2732,30 +2899,21 @@ class CoreTypeChecker(ASTVisitor[Type]):
             )
             return UNKNOWN
 
-        if isinstance(node.index, nodes.TupleLiteral):
-            arguments = node.index.elements
-        else:
-            arguments = [node.index]
-
         name = base.id
         template = self.enums.get(name)
+        if template is None:
+            imported_type = self.imported_types.get(name)
+            if isinstance(imported_type, AdtTemplate):
+                template = imported_type
+            elif isinstance(imported_type, ClassType):
+                self._error(f"Type '{name}' does not take type arguments.", node.position)
+                return UNKNOWN
         if template is not None:
-            if not template.params:
-                self._error(f"Enum '{name}' does not take type arguments.", node.position)
-                return AdtType(template, ())
-            param_count = len(template.params)
-            if len(arguments) != param_count:
-                self._error(
-                    f"Type '{name}' expects {param_count} type argument(s), got {len(arguments)}.",
-                    node.position,
-                )
-            resolved = [
-                self.resolve_annotation(argument, allow_unit=False) for argument in arguments
-            ]
-            if len(resolved) != param_count:
-                resolved = (resolved + [UNKNOWN] * param_count)[:param_count]
-            return AdtType(template, tuple(resolved))
+            return self._apply_type_arguments(template, name, arguments, node)
 
+        if name in self.classes:
+            self._error(f"Type '{name}' does not take type arguments.", node.position)
+            return UNKNOWN
         if name not in {"List", "Set", "Dict", "Tuple"}:
             self._error(
                 "Generic type applications are only supported for List, Set, Dict, "

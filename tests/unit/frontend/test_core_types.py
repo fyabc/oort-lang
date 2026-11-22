@@ -77,6 +77,15 @@ def test_module_type_exports():
     assert is_assignable(module, module)
 
 
+def test_module_type_namespace_is_separate_from_values():
+    template = _template("Color")
+    module = ModuleType("./lib", (("Red", AdtType(template, ())),), (("Color", template),))
+    assert module.get("Red") == AdtType(template, ())
+    assert module.get_type("Color") is template
+    assert module.get("Color") is None
+    assert module.get_type("Red") is None
+
+
 def _template(
     name: str = "Option", origin: str = "main.ort", params: tuple[str, ...] = ()
 ) -> AdtTemplate:

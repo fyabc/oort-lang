@@ -8,6 +8,12 @@
 
 ### 新增
 
+- **oort-core 跨模块类型标注**（OP 0025 增量 A）：模块检查结束时快照本模块
+  声明的类与 enum 到独立的类型导出，`m.Shape` / `m.Color` / `m.Tree[Int]`
+  可用于参数、变量、返回值、槽与集合标注；`from` 导入类会同时绑定构造器值
+  与类类型，enum 类型名只能模块限定（`from "m" import E` 报
+  type-only 导出诊断，提示 `m.E`）。类型标注检查后擦除，运行时与 `.obc`
+  格式不变；预置 `Option`/`Result` 与导入类型不会被再导出。
 - **oort-core 泛型 ADT**（OP 0022 增量 A）：`enum Maybe[T] { Just(value: T), Nothing }`
   形式的类型参数声明与 `Maybe[Int]` 类型应用。构造器类型实参由期望类型
   （`val x: Option[Int] = Some(1)`、`Some([])`）或实参类型（`Some(1)`）确定；

@@ -96,8 +96,10 @@ lambda + 类方法，递归仍需标注，类方法按依赖序推断；算法�
 （[OP 0023](proposals/0023-full-pattern-matching.md)：字面量/元组/或/守卫、
 嵌套穷尽性 witness；决策树编译留作性能切片）。**已完成 ADT 结构相等、
 key-safe ADT 键与静态类身份相等**（[OP 0024](proposals/0024-adt-and-slot-equality.md)）。
-后续：静态对象模型扩展（继承/接口/访问器/跨模块类类型）、决策树编译与跨方言
-FFI 边界。
+**已完成静态对象模型增量 A：跨模块类型标注**（[OP 0025](proposals/0025-static-object-model.md)：
+类型导出与值导出分表；`from` 导入类同时带入构造器与类类型；enum 类型名用
+`m.E`；标注检查后擦除，后端零改动）。后续：OP 0025 增量 B 单继承与 `super`、
+接口/访问器、决策树编译与跨方言 FFI 边界。
 
 ### 阶段 3：共享后端
 

@@ -334,7 +334,9 @@ enum Result[out T, out E] {
 - reified 泛型、运行时类型实参、泛型相等（ADT 相等仍是后续切片）；
 - 嵌套穷尽性与决策树编译（沿用顶层构造器覆盖）；
 - `?` 传播糖（单独提案；本提案只保证它能降级为 `match`）；
-- 跨模块**类型名**导入（泛型与单态 enum 一视同仁；预置 origin 是唯一例外）。
+- 跨模块**类型名**导入（本提案落地时；预置 origin 是唯一例外）。该限制已由
+  [OP 0025](0025-static-object-model.md) 增量 A 解除：类可 `from` 导入类型，
+  enum 类型名用 `m.E`。
 
 ## 正交性检查
 
@@ -343,7 +345,8 @@ enum Result[out T, out E] {
 - **与类/对象**：`ClassType` 不变；泛型类仍拒绝；`ForallType` 的结构为未来泛型
   类/函数预留。
 - **与函数/闭包**：`FunctionType` 不变；lambda 的期望下推不变。
-- **与模块**：enum 类型名仍不导出；预置 enum 用固定 origin 解决跨模块类型统一。
+- **与模块**：本提案落地时 enum 类型名不导出；预置 enum 用固定 origin 解决跨
+  模块类型统一。后续 OP 0025 增量 A 增加独立类型导出（`m.E` / `from` 类）。
 - **与宏/编译期**：无交互。
 - **与后端**：HIR/字节码/VM/`.obc` 均无改动，由差分测试验证。
 - **是否引入特例**：三处，全部显式记录——(1) 预置注入与保留名，(2) `out` 软
@@ -417,7 +420,7 @@ enum Result[out T, out E] {
 - match：`Option[Int]`/`Result[Int, String]` 绑定类型、嵌套构造器模式、零参泛型
   构造器、穷尽性、跨构造器错误。
 - 模块：函数返回 `Option[Int]` 跨模块可用（固定 origin）；用户泛型 enum 的类型名
-  仍不可导入（现状）。
+  在本提案落地时不可导入（后续由 OP 0025 增量 A 以 `m.E` 支持）。
 - 变型：`Option[out T]`/`Result[out T, out E]` 通过；函数反转极性拒绝；`in` 的
   对称用例。
 - 后端：同一批 ADT 程序在 `-t vm` 与 `-t eval` 下结果一致；`.obc` round-trip

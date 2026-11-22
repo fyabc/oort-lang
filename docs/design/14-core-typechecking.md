@@ -275,7 +275,43 @@ arm（不回溯或模式其他分支）；解释器同语义。决策树编译�
   `_check_equality` 校验。
 - 跨模块预置 `Option` 按 enum 类型名比较，checked 代码不会混淆同名用户 enum。
 
-## 10. 边界与后续
+## 10. 跨模块类型（OP 0025 增量 A，2026-11-22）
+
+**目标**：值导出之外增加**类型导出**，使导入模块的类/enum 能出现在标注中，
+同时不引入运行时类型值或“类型导入擦除”机制。
+
+**类型导出快照**。`ModuleType` 与 `CoreModuleInfo` 增加
+`type_exports: tuple[(name, Type | AdtTemplate), ...]`（与值 `exports` 分开，
+`get_type` 查询）。`visit_module` 在检查结束时只快照**本模块声明**的
+`ClassType` 与 `AdtTemplate`：预置 `Option`/`Result` 被过滤，导入的类型不
+再导出。`CompiledUnit` 携带同一快照，供 `ModuleResolver` 返回。
+
+**导入绑定**。
+
+- `import "m" as m` 的值绑定是 `ModuleType`；在类型标注里，`m.C` / `m.E`
+  查 `type_exports`，值位置仍查值导出。
+- `from "m" import C`（类）先 `declare` 构造器值，成功后再把同一
+  `ClassType` 写入检查器的 `imported_types`；`resolve_annotation(Name)`
+  查这张表，因此类导入在值与类型两个位置同名可用。
+- `from "m" import E`（enum 类型名）只有类型导出：报
+  `'E' is a type-only export; use 'm.E' to name the type.`，不建立值绑定。
+- 类型空间冲突（本地类/enum、保留名、重复导入类型）在检查期报错；导入类型
+  不会进入 `self.classes`/`self.enums`，避免污染本地名义表。
+
+**类型解析**。`resolve_annotation` 新增 `Attribute` 分支
+（`_resolve_qualified_type`）与 `imported_types` 分支；
+`_resolve_container_type` 的基类型接受 `m.E`，把导出的 `AdtTemplate`
+交给统一的 `_apply_type_arguments`（实参数目、泛型 payload 代换仍复用
+OP 0022 的路径）；非泛型类型加实参、值导出当类型、缺失类型都有专用诊断。
+
+**擦除边界**。类型标注不进入 HIR/字节码，`m.Type` 从不在运行时求值；
+普通 import 仍是值导入，`from` enum 类型名在检查期即被拒绝。因此后端零改动，
+`.obc` 格式不变。
+
+**与对象模型的关系**。这是 OP 0025 的 A 增量；单继承（`bases`、子类型、
+`super`、函数参数逆变）是 B 增量，接口/访问器仍留后续。
+
+## 11. 边界与后续
 
 - **决策树编译 / 对象模型 / FFI 边界**：OP 0005/0023 后续切片，建立在本文的
   双向检查 + 局部推断基线上。

@@ -124,7 +124,8 @@ lambda、嵌套/泛型/运算符定义、`yield`/`await`、宏、编译器属性
 - core 模块可以导入其他 core 模块：`import "m"` 绑定模块命名空间，
   `from "m" import f` 绑定导出名。模块导出顶层函数、变量、构造器与再导出的
   导入名；导入名不可变，模块命名空间属性不可写。enum 类型名只进入类型
-  命名空间，暂不支持跨模块类型注解；函数签名可携带 `AdtType`。
+  命名空间，本切片不支持跨模块类型注解；函数签名可携带 `AdtType`。后续
+  [OP 0025](0025-static-object-model.md) 增量 A 增加了独立类型导出与 `m.Type`。
 - 静态检查器通过编译器注入的 resolver 递归编译目标模块，取得导出类型，
   并缓存 `CompiledUnit`；编译期循环导入显式报错。
 - `ModuleLoader` 在编译后比较目标模块与导入方方言；object↔core 双向导入

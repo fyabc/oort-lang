@@ -58,7 +58,8 @@ Oort 的命名来自天文学中的“[奥尔特云](https://en.wikipedia.org/wi
   `if`/`return`、ADT（`enum`，单态与泛型 `enum E[T]`，含 `[out T]`/`[in T]`
   声明处变型）、内建 `Option`/`Result`、完整模式匹配（字面量/元组/或/守卫、
   嵌套穷尽性）、ADT 结构相等与静态类身份相等、函数类型/lambda/高阶函数、独立
-  静态检查器；同方言模块导入与导出类型接口；
+  静态检查器；同方言模块导入与跨模块类型标注（`m.Type`、类导入带入类型、
+  跨模块泛型 enum）；
   `oort-object` 仍忽略标注。见 [规范](docs/spec/11-core-probe.md)
 
 ### 待实现（见 proposals）

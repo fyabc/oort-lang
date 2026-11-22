@@ -1,0 +1,49 @@
+#lang oort-core
+
+# 跨模块类型标注（OP 0025 增量 A）。一个实体可占两个命名空间：
+#
+# - 类 Shape 导入后同时是构造器值 Shape(...) 和类型 Shape。
+# - enum 类型 Color/Tree 只存在于类型命名空间；构造器 Red/Leaf 才是值。
+# - 类型标注在检查后擦除，运行时不会为了 m.Type 新增任何值。
+
+import "./shapeslib" as shapes
+
+# from 导入类 = 同时绑定值（构造器）与类型（类）。
+from "./shapeslib" import Shape
+
+# from 只导入 enum 的构造器值；类型名要通过上面的模块别名写 shapes.Color。
+# 若写 `from "./shapeslib" import Color`，检查器会提示这是 type-only 导出。
+from "./shapeslib" import Red, Green, Blue, Leaf, Node
+
+# 同一个类类型有两种写法：模块限定 shapes.Shape，或 from 导入后的裸 Shape。
+val box: Shape = Shape("box")
+val wild: shapes.Shape = shapes.Shape("wild")
+val color: shapes.Color = Red
+
+def describe(item: Shape) -> String {
+    item.label()
+}
+
+# 泛型 enum 的跨模块类型应用写作 shapes.Tree[Int]。
+def total(tree: shapes.Tree[Int]) -> Int {
+    match tree {
+        Leaf(value) => value,
+        Node(left, right) => total(left) + total(right)
+    }
+}
+
+def paint(color: shapes.Color) -> String {
+    match color {
+        Red => "red",
+        Green => "green",
+        Blue => "blue"
+    }
+}
+
+# 类型实参 Int 从标注确定；构造器本身仍来自 from 导入。
+val tree: shapes.Tree[Int] = Node(Leaf(1), Leaf(2))
+
+print(describe(box))
+print(describe(wild))
+print(paint(color), paint(Green), paint(shapes.Blue))
+print(total(tree))

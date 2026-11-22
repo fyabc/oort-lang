@@ -12,6 +12,8 @@ add a small template/applied-type split: an ``AdtTemplate`` is the declaration
 not reused here; this module belongs to semantic analysis only.
 """
 
+from __future__ import annotations
+
 import dataclasses
 from enum import Enum
 
@@ -62,13 +64,20 @@ class FunctionType(Type):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ModuleType(Type):
-    """A read-only module namespace with typed exports."""
+    """A read-only module namespace with typed value and type exports."""
 
     name: str
     exports: tuple[tuple[str, Type], ...]
+    type_exports: tuple[tuple[str, Type | AdtTemplate], ...] = ()
 
     def get(self, name: str) -> Type | None:
         for export_name, export_type in self.exports:
+            if export_name == name:
+                return export_type
+        return None
+
+    def get_type(self, name: str) -> Type | AdtTemplate | None:
+        for export_name, export_type in self.type_exports:
             if export_name == name:
                 return export_type
         return None
@@ -81,6 +90,7 @@ class CoreModuleInfo:
     name: str
     dialect_name: str
     exports: tuple[tuple[str, Type], ...]
+    type_exports: tuple[tuple[str, Type | AdtTemplate], ...] = ()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

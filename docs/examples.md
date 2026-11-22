@@ -61,6 +61,7 @@
 | [泛型 ADT](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_09_generic_adt.ort) | `enum E[T]`、类型应用、构造器实参推断、递归泛型载荷、内建 `Option` |
 | [完整模式匹配](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_10_patterns.ort) | 字面量、元组、或模式、守卫、嵌套穷尽性 |
 | [相等](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_11_equality.ort) | ADT 结构相等、静态类身份相等、ADT 键 |
+| [跨模块类型](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_12_cross_module_types.ort) | `m.Type`、类导入同时带入值与类型、跨模块泛型 enum |
 
 ```bash
 oort examples/08_core/08_01_core_functions.ort

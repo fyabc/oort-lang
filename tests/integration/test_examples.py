@@ -57,6 +57,7 @@ EXPECTED_OUTPUTS = {
         "true false\n"
     ),
     "08_core/08_11_equality.ort": "true false false\ntrue\n1 true\ntrue false\n",
+    "08_core/08_12_cross_module_types.ort": "box\nwild\nred green blue\n3\n",
 }
 
 # The JSON showcase is covered by `test_json_example.py`, which compiles it

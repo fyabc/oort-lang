@@ -16,7 +16,7 @@ from .core.checker import CoreTypeChecker, ModuleResolver
 from .pass1 import Pass1Analyzer
 
 if TYPE_CHECKING:
-    from .core.types import Type
+    from .core.types import AdtTemplate, Type
 
 
 class SemanticAnalyzer(Protocol):
@@ -38,6 +38,7 @@ class CoreAnalyzer:
             error_handler, input_info, dialect, module_resolver=module_resolver
         )
         self.exports: tuple[tuple[str, Type], ...] = ()
+        self.type_exports: tuple[tuple[str, Type | AdtTemplate], ...] = ()
 
     def parse(self, node: nodes.ASTNode) -> object:
         start = self.pass1.error_handler.error_count
@@ -47,6 +48,7 @@ class CoreAnalyzer:
             return None
         result = self.checker.parse(node)
         self.exports = self.checker.module_exports
+        self.type_exports = self.checker.module_type_exports
         return result
 
 

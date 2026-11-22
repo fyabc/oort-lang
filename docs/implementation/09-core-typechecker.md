@@ -200,17 +200,23 @@ core 检查器通过 `ModuleResolver` 回调取得导入模块的导出类型：
 Checker.visit_import -> Compiler._resolve_core_module
   -> resolve_module_path
   -> compile_unit_details(target)   # 递归、缓存、循环检测
-  -> CoreModuleInfo(dialect, exports)
+  -> CoreModuleInfo(dialect, exports, type_exports)
 ```
 
-- `CompiledUnit` 缓存 AST、方言与 `CoreAnalyzer.exports`；
+- `CompiledUnit` 缓存 AST、方言与 `CoreAnalyzer.exports`/`type_exports`；
   `ModuleLoader` 后续执行时复用同一份 AST。
 - 顶层 import 在 `visit_module` 中先于正文绑定，匹配运行时的 import 提升。
-- `ModuleType` 保存模块命名空间导出；`visit_attribute` 只允许在模块上取属性，
-  `visit_call` 同时接受 `Name` 与模块属性作为被调者。
-- `from` 直接绑定导出名；导入名与模块别名均为不可变绑定。
-- 导出包括顶层函数、变量、构造器与再导出的导入名，因此支持 re-export；
-  enum 类型名只进类型命名空间，暂不支持跨模块类型注解。
+- `ModuleType` 保存模块命名空间的值导出与类型导出（`get` / `get_type`）；
+  `visit_attribute` 只允许在模块上取属性；`visit_call` 同时接受 `Name` 与
+  模块属性作为被调者。
+- `from` 直接绑定导出名；导入名与模块别名均为不可变绑定。导入类时检查器
+  还在 `imported_types` 建立同名类型别名（实体导入）；enum 类型名没有值，
+  `from` 导入时给 type-only 诊断，只能写 `m.E`。
+- 类型导出在 `visit_module` 末尾快照，只含本模块声明的类/enum；预置
+  `Option`/`Result` 与导入类型不导出。标注解析新增 `Attribute` 分支，
+  `m.Tree[Int]` 复用 `_apply_type_arguments`；标注检查后擦除，后端零改动。
+- 导出包括顶层函数、变量、构造器与再导出的导入名，因此值命名空间支持
+  re-export；类型命名空间本切片不 re-export。
 - 编译期检测循环导入；跨方言与 native 导入在检查器中拒绝。
 
 `runtime/modules.py` 的 `CompiledModule` 仍携带方言名，`ModuleLoader` 在执行前
@@ -224,7 +230,11 @@ Checker.visit_import -> Compiler._resolve_core_module
 
 ## 测试
 
-- `tests/unit/frontend/test_core_types.py`：类型模型。
+- `tests/unit/frontend/test_core_types.py`：类型模型（含 `ModuleType` 值与类型
+  命名空间分离）。
+- `tests/integration/test_core_cross_module.py`：跨模块类/enum/泛型 enum 标注、
+  `from` 类双命名空间导入、enum type-only 拒绝、缺失/非法类型导出、两个后端
+  的跨模块类执行。
 - `tests/unit/frontend/test_core_checker.py`：正向/拒绝/错误恢复矩阵。
 - `tests/unit/frontend/test_analyzer_dispatch.py`：分析器选择。
 - `tests/unit/runtime/test_core_execution.py`：检查后执行与 Unit/null 映射。

@@ -33,10 +33,11 @@ print(add(1, 2))
 | `Bool` | 参数、变量、返回值、条件、逻辑运算 |
 | `String` | 参数、变量、返回值、表达式 |
 | `Unit` | **仅函数返回类型**；声明的内部类型，不是变量类型 |
-| `enum` 类型 | 参数、变量、返回值、字段类型；单态 `Shape` 或泛型 `Option[Int]`，名称在模块内唯一 |
+| `enum` 类型 | 参数、变量、返回值、字段类型；单态 `Shape` 或泛型 `Option[Int]`，本模块内名称唯一 |
 | 内建 ADT | `Option[T]`（`Some`/`None`）与 `Result[T,E]`（`Ok`/`Err`）；每个 core 模块隐式可用 |
 | 集合类型 | `List[T]`、`Set[T]`、`Dict[K, V]`、`Tuple[T1, ...]`；参数/变量/返回值/字段 |
 | 类类型 | 类名；参数、变量、返回值、槽类型；名义相等 |
+| 跨模块类型 | `m.Shape`、`m.Color`、`m.Tree[Int]`；仅类型标注，检查后擦除 |
 | 函数类型 | `Int -> Bool`、`(Int, Bool) -> Int`、`() -> Unit`；参数/变量/返回值/字段 |
 
 - `Int`、`Float`、`Bool`、`String` 严格区分，没有隐式转换或 truthiness：
@@ -47,6 +48,8 @@ print(add(1, 2))
 - 空集合字面量必须能从期望类型推断（标注、参数、返回值等）。
 - `Unit` 与模块值不能存入集合；`Set` 元素与 `Dict` 键必须是
   `Int`/`Float`/`Bool`/`String`/enum/可哈希 `Tuple`。
+- 导入模块的类型用 `m.Type` 引用；`from` 导入类会同时带入构造器值与类类型，
+  enum 类型名只能模块限定（见“模块导入”）。
 - 静态 `Unit` 在运行时对应 `null`；`print` 返回 Unit。
 - 内部还有 `Unknown`（错误恢复）与 `Never`（所有路径 `return`）。
 
@@ -105,23 +108,46 @@ def show(n: Int) -> Unit {
 val base: Int = 10
 def add(a: Int, b: Int) -> Int { a + b }
 
+class Shape {
+    val name: String
+    def __init__(name: String) { this.name = name }
+    def label() -> String { this.name }
+}
+enum Color { Red, Green }
+
 # main.ort
 #lang oort-core
-from "./lib" import add, base
+from "./lib" import add, base, Shape
 import "./lib" as l
 
+val s: Shape = Shape("box")        # from 导入类：值 + 类型
+val t: l.Shape = l.Shape("ball")   # 模块限定类型 + 模块里的构造器值
+val c: l.Color = l.Red             # enum 类型只存在于类型命名空间
+
 print(add(base, 2))
-print(l.add(1, 2))
+print(l.add(1, 2), s.label(), t.label())
+print(match c { Red => "red", Green => "green" })
 ```
 
 - 只允许 core→core；目标模块必须是同一方言。
 - `import "m"` 绑定模块命名空间；`m.f(...)` 与 `m.x` 可用，但
-  `m.x = ...` 不可写。
+  `m.x = ...` 不可写。在**类型标注**中，`m.C` / `m.E` 查该模块的类型导出。
 - `from "m" import f, g as h` 直接绑定导出的名字；导入名不可变。
-- 模块导出所有顶层名字（函数、`val`/`var`、再导出的导入名）。
+- 模块导出所有顶层名字（函数、`val`/`var`、构造器与再导出的导入名）。
+  **类型导出**单独记录本模块自己声明的类与 enum：预置 `Option`/`Result`
+  不导出，从其他模块导入的类型也不会被再导出。
+- 一个实体可以占两个命名空间：类同时是构造器值与类类型，`from` 导入类会
+  同时绑定两者；enum 构造器是值，enum 类型名没有运行时值。
+- `from "m" import E`（enum 类型名）显式拒绝：
+  `'E' is a type-only export; use 'm.E' to name the type.`。本切片不提供
+  `import type`；类型标注永远不参与运行时求值。
+- 值位置 `m.E` 仍是普通模块属性访问，没有该值就报
+  `Module 'm' does not export 'E'.`；`m.f` 作类型报
+  `Module 'm' exports 'f' as a value, not a type.`。
 - import 与运行时一致，会被提升到模块正文之前；因此函数体可以引用
   稍后出现的 import。
-- 循环导入在编译期报错；缺失导出、跨方言导入与 native 模块导入也会报错。
+- 循环导入在编译期报错；缺失导出、缺失类型导出、跨方言导入与 native 模块
+  导入也会报错。
 
 ## 表达式
 
@@ -303,7 +329,7 @@ def at_origin(p: Tuple[Int, Int]) -> Bool {
 - 构造器是普通可调用值：`Circle(2)`；零参构造器是值：`Empty`。
 - 字段名用于声明/文档；构造与模式都按**位置**绑定，暂不支持命名字段。
 - 构造器名进入模块值命名空间，可被 `from`/`import` 导出；enum 类型名只进入
-  类型命名空间，暂不支持跨模块类型注解。
+  类型命名空间，跨模块时写作 `m.E`（不能 `from` 导入类型名）。
 - `match` 的 scrutinee 可为 enum、`Bool`、`Int`、`Float`、`String` 或 `Tuple`；
   arm 用 `,` 或换行分隔。
 - 模式：`_`、绑定名、构造器（可嵌套）、字面量（Int/Float/String/Bool，数字可带
@@ -409,6 +435,9 @@ enum Result[out T, out E] {
 | 位运算/`in`/`is` | `1 & 2`、`x in xs` | 运算符不支持 |
 | 跨方言 import | core 导入 object 模块 | `Cannot import a 'oort-object' module...` |
 | native import | `import "math"` | `Native modules are not supported...` |
+| enum 类型名 from 导入 | `from "m" import E` | `'E' is a type-only export; use 'm.E' to name the type.` |
+| 缺失/非法类型导出 | `m.Missing`、把值当类型 `m.f` | `Module 'm' does not export type...` / `... as a value, not a type.` |
+| 类型再导出 / `import type` | 尚不实现 | 类型导出只含本模块声明；后续提案 |
 | 类型参数上界/默认值 | `enum E[T: Int] { A }`、`enum E[T = Int] { A }` | `Type parameter bounds/defaults are not supported...` |
 | 变型误用 | `enum E[out T] { A(f: (T) -> Int) }`、`enum E[in T] { A(v: T) }` | `Type parameter 'T' is declared covariant/contravariant ... but appears in a ... position ...` |
 | 非法变型文本 | `enum E[foo T] { A }` | `Expected 'in' or 'out' before type parameter 'T', got 'foo'.` |
