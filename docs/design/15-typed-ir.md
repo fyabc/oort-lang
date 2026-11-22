@@ -547,6 +547,7 @@ wrapping、不引入 `unsafe` 或外部 crate。
 泛型类型表示的跨语言调研与 Oort 取舍见
 [design 03 §2.5](03-type-system-design.md)。S2/S3 只存具体类型；
 `TypeParam`/`Forall`/`App(Nominal, args)` 等到实现泛型时再进类型表。
+跨方言调用与 FFI 的设计见 [design 17](17-boundary-ffi.md)。
 
 S1 的约束与实现：
 

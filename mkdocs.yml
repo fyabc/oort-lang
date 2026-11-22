@@ -121,6 +121,7 @@ nav:
       - oort-core 类型检查与推断: design/14-core-typechecking.md
       - 类型化 IR 研究: design/15-typed-ir.md
       - 数值语义: design/16-numeric-semantics.md
+      - 跨方言边界与 FFI: design/17-boundary-ffi.md
   - 实现:
       - 实现笔记: implementation/index.md
       - 参考资料: implementation/00-references.md

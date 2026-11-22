@@ -214,6 +214,9 @@ Oort 是模块级渐进类型：`oort-core` 静态、`oort-object` 动态。§2.
 5. **开放问题**：多态递归、跨模块 ABI/mangling、特化策略（`@inline`/`final`）、
    运行时类型测试的边界语义，留到泛型实现阶段裁决。
 
+跨方言边界与 FFI（object→core、值映射/守卫/blame、C profile）的落地设计见
+[design 17](17-boundary-ffi.md)。
+
 ---
 
 ## 3. 类型检查器架构
