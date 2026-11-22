@@ -47,10 +47,10 @@
   {
     "date": "2026-11-22",
     "status": "0.5.0",
-    "fib_ms": 30.49,
-    "fib_speedup": 3.0,
-    "loop_ms": 69.63,
-    "loop_speedup": 2.09,
+    "fib_ms": 30.2,
+    "fib_speedup": 3.08,
+    "loop_ms": 67.42,
+    "loop_speedup": 2.16,
     "note": "语义收口：泛型 ADT/模式匹配/相等/跨模块类型/单继承/静态接口；VM 未改动"
   }
 ]

@@ -2,10 +2,10 @@
 
 > 本文件由 `benchmarks/report.py` 从机器可读结果生成，请勿手改数字。
 > 手工维护的只有 `benchmarks/history.json` 的历史里程碑元数据。
-> 快照日期：2026-11-21  
-> 提交：`9e0ee90`  
+> 快照日期：2026-11-22  
+> 提交：`4187196`  
 > 环境：AMD Ryzen 7 5800H with Radeon Graphics / Windows 11 / Python 3.12.12  
-> 版本：Oort 0.4.0
+> 版本：Oort 0.5.0
 
 本文件是 Oort **当前结果的唯一人工入口**。运行方式、统计规则与 profiling
 见 [README.md](README.md)；跨语言套件的 caveat 见
@@ -15,9 +15,9 @@ benchmark 工作流维护。
 生成命令：
 
 ```bash
-uv run --frozen pytest benchmarks/ -q --benchmark-json=benchmark.json
-uv run --frozen python benchmarks/reference/run.py --repeat 5 --runtime oort --runtime oort-vm --runtime oort-rust --runtime python --runtime node --runtime 'ruby=<path-to-ruby>' --runtime 'lua=<path-to-lua>' --json > refvm.json
-uv run --frozen python benchmarks/report.py --benchmark benchmark.json --reference refvm.json
+uv run --frozen pytest benchmarks/ -q --benchmark-json=benchmark-050-clean.json
+uv run --frozen python benchmarks/reference/run.py --repeat 5 --runtime oort --runtime oort-vm --runtime oort-rust --runtime python --runtime node --runtime 'ruby=<path-to-ruby>' --runtime 'lua=<path-to-lua>' --json > ref050.json
+uv run --frozen python benchmarks/report.py --benchmark benchmark-050-clean.json --reference ref050.json
 ```
 
 ## 1. pytest-benchmark 当前结果
@@ -28,65 +28,65 @@ uv run --frozen python benchmarks/report.py --benchmark benchmark.json --referen
 
 | 基准 | 中位数 |
 |---|---:|
-| arithmetic | 0.046 ms |
-| variable lookup | 0.044 ms |
-| function call | 0.032 ms |
+| arithmetic | 0.045 ms |
+| variable lookup | 0.045 ms |
+| function call | 0.033 ms |
 | attribute | 0.047 ms |
 | index | 0.018 ms |
-| dict | 0.020 ms |
-| closure | 0.049 ms |
+| dict | 0.019 ms |
+| closure | 0.047 ms |
 | class instantiation | 0.054 ms |
 
 ### 宏基准
 
 | 基准 | 中位数 |
 |---|---:|
-| recursion fib(10) | 54.84 ms |
-| recursion fib(20) | 893.3 ms |
-| fibonacci (fib 10) | 11.25 ms |
-| loop (1000) | 14.36 ms |
-| method dispatch (1000) | 32.63 ms |
+| recursion fib(10) | 52.83 ms |
+| recursion fib(20) | 896.3 ms |
+| fibonacci (fib 10) | 10.94 ms |
+| loop (1000) | 13.95 ms |
+| method dispatch (1000) | 32.33 ms |
 
 ### 标准库与宿主边界
 
 | 基准 | 中位数 |
 |---|---:|
-| map | 18.92 ms |
-| filter | 27.34 ms |
-| sorted | 2.37 ms |
-| zip + enumerate | 5.25 ms |
-| string join | 16.63 ms |
-| host list equality projection | 2.16 ms |
-| host `len` without projection | 0.031 ms |
+| map | 19.84 ms |
+| filter | 27.31 ms |
+| sorted | 2.43 ms |
+| zip + enumerate | 4.97 ms |
+| string join | 16.53 ms |
+| host list equality projection | 2.19 ms |
+| host `len` without projection | 0.032 ms |
 
 ### 迭代器
 
 | 基准 | 中位数 |
 |---|---:|
-| builtin loop | 13.85 ms |
-| user closure | 56.05 ms |
-| infinite + break | 37.03 ms |
+| builtin loop | 14.43 ms |
+| user closure | 57.09 ms |
+| infinite + break | 38.05 ms |
 
 ### 扩展方法/运算符
 
 | 基准 | 中位数 |
 |---|---:|
-| member call | 54.77 ms |
-| method call | 62.04 ms |
-| operator call | 66.04 ms |
+| member call | 55.06 ms |
+| method call | 62.05 ms |
+| operator call | 66.68 ms |
 
 ### 启动与编译
 
 | 基准 | 中位数 |
 |---|---:|
-| compiler construction | 0.556 ms |
-| empty program | 1.37 ms |
-| empty program (vm) | 1.53 ms |
-| runtime construction | 0.133 ms |
+| compiler construction | 0.545 ms |
+| empty program | 1.33 ms |
+| empty program (vm) | 1.46 ms |
+| runtime construction | 0.131 ms |
 | HIR lowering (empty) | 0.016 ms |
 | HIR lowering (fib) | 0.129 ms |
 | bytecode compile (empty) | 0.016 ms |
-| bytecode compile (fib) | 0.110 ms |
+| bytecode compile (fib) | 0.109 ms |
 
 ### 内存上限
 
@@ -99,9 +99,9 @@ uv run --frozen python benchmarks/report.py --benchmark benchmark.json --referen
 
 | 基准 | 树遍历解释器 | 字节码 VM | 加速 |
 |---|---:|---:|---:|
-| fib(15) | 91.33 ms | 31.29 ms | **2.92×** |
-| loop 10000 | 141.5 ms | 68.92 ms | **2.05×** |
-| method dispatch (5000) | 164.8 ms | 114.5 ms | **1.44×** |
+| fib(15) | 92.94 ms | 30.20 ms | **3.08×** |
+| loop 10000 | 145.7 ms | 67.42 ms | **2.16×** |
+| method dispatch (5000) | 167.2 ms | 116.0 ms | **1.44×** |
 
 完整子集进入 VM 后的当前结论见下方历史表；目标与预算见
 `docs/design/08-performance-benchmarking.md`。
@@ -112,15 +112,15 @@ uv run --frozen python benchmarks/report.py --benchmark benchmark.json --referen
 
 | 运行时 | fib(20) | loop 20000 | methods 5000 | 启动 |
 |---|---:|---:|---:|---:|
-| Oort 树遍历 0.4.0 | 928.5 ms | 298.7 ms | 167.2 ms | 502.2 ms |
-| Oort VM 0.4.0 | 334.4 ms | 131.7 ms | 121.0 ms | 553.3 ms |
-| Oort Rust VM (spike) | 5.37 ms | 1.10 ms | 1.91 ms | 89.80 ms |
-| Python 3.12.12 | 1.34 ms | 1.33 ms | 0.574 ms | 42.45 ms |
-| Node 24.15.0 | 0.065 ms | 0.006 ms | 0.002 ms | 50.54 ms |
-| Ruby 4.0.10 | 0.567 ms | 0.324 ms | 0.269 ms | 145.0 ms |
-| Lua 5.4.8 | 0.405 ms | 0.075 ms | 0.159 ms | 6.80 ms |
+| Oort 树遍历 0.5.0 | 935.1 ms | 300.4 ms | 165.7 ms | 459.9 ms |
+| Oort VM 0.5.0 | 331.1 ms | 128.6 ms | 121.1 ms | 503.4 ms |
+| Oort Rust VM (spike) | 5.23 ms | 1.08 ms | 1.85 ms | 86.32 ms |
+| Python 3.12.12 | 1.29 ms | 1.29 ms | 0.569 ms | 40.08 ms |
+| Node 24.15.0 | 0.064 ms | 0.007 ms | 0.002 ms | 48.82 ms |
+| Ruby 4.0.10 | 0.549 ms | 0.343 ms | 0.261 ms | 139.2 ms |
+| Lua 5.4.8 | 0.378 ms | 0.073 ms | 0.154 ms | 6.46 ms |
 
-当前 Oort（解释器及 VM）约为 CPython 的 **99–691 倍**耗时。Node 的优化 JIT 可能折叠简单循环/字段更新，其数字只作下限；Ruby/Lua 作语境参考。
+当前 Oort（解释器及 VM）约为 CPython 的 **100–727 倍**耗时。Node 的优化 JIT 可能折叠简单循环/字段更新，其数字只作下限；Ruby/Lua 作语境参考。
 
 详细运行方式与 Node/JIT、Ruby/Lua 的 caveat 见
 [reference/README.md](reference/README.md)。
@@ -134,6 +134,7 @@ uv run --frozen python benchmarks/report.py --benchmark benchmark.json --referen
 | 2026-11-22 | 0.4.0 | 34.65 ms（2.97×） | 94.19 ms（1.99×） | VM 动态子集完整（闭包/元类/super/扩展/协议） |
 | 2026-11-22 | 热路径快赢 | 31.90 ms（2.88×） | 69.07 ms（2.21×） | STORE_G 快路径、惰性环境日志、循环不变量提升；loop 稳定过 2×（methods 1.35× 待调用点缓存） |
 | 2026-11-22 | 属性路径优化 + 默认切 VM | 31.29 ms（2.92×） | 68.92 ms（2.05×） | get 去冗余 import/Type 检查、for_class 记忆化、动态字段直写、LOAD_K 整数快路径；methods 1.44×；默认后端切 VM（fib/loop 口径） |
+| 2026-11-22 | 0.5.0 | 30.20 ms（3.08×） | 67.42 ms（2.16×） | 语义收口：泛型 ADT/模式匹配/相等/跨模块类型/单继承/静态接口；VM 未改动 |
 
 第一切片数字保留用于对照，不作为当前性能承诺。每次后端/优化改动后，
 应重新生成当前快照并在 `benchmarks/history.json` 追加里程碑。
