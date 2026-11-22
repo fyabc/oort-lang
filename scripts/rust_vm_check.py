@@ -178,6 +178,18 @@ print(len("abc"), len(""))
 print("a" < "b", "a" == "a", "a" != "b")
 print(before("b", "a"))
 """,
+    "typed_collections": """#lang oort-core
+
+def first(xs: List[Int]) -> Int { xs[0] }
+
+def pair(a: Int, b: String) -> Tuple[Int, String] { (a, b) }
+
+print([1, 2, 3])
+print(len([1, 2, 3]))
+print(first([4, 5]))
+print(pair(7, "x"))
+print([1, 2] == [1, 2], [1, 2] != [1, 3])
+""",
 }
 
 

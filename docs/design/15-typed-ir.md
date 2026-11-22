@@ -540,7 +540,7 @@ wrapping、不引入 `unsafe` 或外部 crate。
 | 阶段 | 范围 | 状态 |
 |---|---|---|
 | **S1 String** | `IrType.STRING`；`ADD_S`/`EQ_S`/`*_S`；`len` native；`TypedValue::Str(Rc<str>)`；kind=1 **v3** | **已完成** |
-| **S2 List / Tuple** | 递归类型描述 + 类型表；`NEW_LIST`/`NEW_TUPLE`/`GET_ITEM`/`LEN`/`OPEN_ITER`/`ITER_NEXT`；List 可变、Tuple 不可变 | 待做 |
+| **S2 List / Tuple** | 递归类型描述 + 类型表；`NEW_LIST`/`NEW_TUPLE`/`GET_ITEM`/`LEN`；List 可变、Tuple 不可变 | **已完成（S2a）**；`SET_ITEM`/`for` 迭代留 S2b |
 | **S3 Set / Dict** | `NEW_SET`/`NEW_DICT`、成员/下标/写入、键相等（先用线性查找，不实现哈希） | 待做 |
 | **S4 ADT** | 构造器/`match`/布局；依赖集合与类型表的稳定 | 后做 |
 
@@ -557,6 +557,21 @@ S1 的约束与实现：
 - String 索引/切片暂不做（需要 `GET_ITEM`/`BUILD_SLICE`，留到 S2 一并设计）；
 - 集合阶段需要把类型表从“每寄存器一字节”升级为**递归类型描述表**，届时
   再提升 kind=1 version。
+
+### S2 实现状态：List / Tuple（2026-11-23）
+
+- **类型表 v4**：`TypedProto` 增加 `types`（后序、去重）、寄存器/参数/返回的
+  类型 ID；`ContainerType` 表示 `List[T]`/`Tuple[...]`；kind=1 `version=4`；
+- **Python**：`OortList`/`OortTuple`；`NEW_LIST`/`NEW_TUPLE`/`GET_ITEM`/
+  `EQ_LIST`/`NE_LIST`/`EQ_TUPLE`/`NE_TUPLE`；深相等复用运行时
+  `values_equal`；`len` 对 String/List/Tuple 生效；
+- **Rust**：`TypedValue::List(Rc<RefCell<Vec<TypedValue>>>)`、
+  `TypedValue::Tuple(Rc<[TypedValue]>)`；`Value::Tuple` 用于主结果转换；
+  深相等、下标（含负索引）、`len`、`print` 格式对齐 Python；
+- **S2a 范围**：List/Tuple 字面量、下标读取、`len`、深相等、打印；
+  **未做**：集合原地修改（`SET_ITEM`）、`for` 迭代、切片、Set/Dict；
+- 验证：typed differential 新增 `typed_collections`；Python 1271 passed；
+  Rust 单测 14；ruff/mypy/mkdocs 通过。
 
 ## 9. 风险与开放问题
 

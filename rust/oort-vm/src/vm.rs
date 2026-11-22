@@ -20,6 +20,7 @@ pub enum Value {
     Float(f64),
     Str(Rc<str>),
     List(Rc<RefCell<Vec<Value>>>),
+    Tuple(Rc<[Value]>),
     Closure(Rc<Closure>),
     BoundMethod(Rc<BoundMethod>),
     Type(Rc<TypeObj>),
@@ -157,6 +158,7 @@ fn type_name(v: &Value) -> &'static str {
         Value::Float(_) => "Float",
         Value::Str(_) => "String",
         Value::List(_) => "List",
+        Value::Tuple(_) => "Tuple",
         Value::Closure(_) | Value::BoundMethod(_) | Value::Native(_) => "Function",
         Value::Type(_) => "Type",
         Value::Instance(_) => "Instance",
@@ -343,6 +345,14 @@ pub fn display(v: &Value) -> String {
         Value::List(l) => {
             let items: Vec<String> = l.borrow().iter().map(display).collect();
             format!("[{}]", items.join(", "))
+        }
+        Value::Tuple(items) => {
+            if items.len() == 1 {
+                format!("({},)", display(&items[0]))
+            } else {
+                let parts: Vec<String> = items.iter().map(display).collect();
+                format!("({})", parts.join(", "))
+            }
         }
         Value::Type(t) => format!("<Type '{}'>", t.name),
         Value::Instance(inst) => format!("<{} object>", inst.ty.name),

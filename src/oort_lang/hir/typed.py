@@ -20,8 +20,10 @@ from ..ast import nodes
 from ..diagnostics.syntax_errors import UnsupportedSyntax
 from ..semantics.core.types import (
     FunctionType,
+    ListType,
     NeverType,
     PrimitiveType,
+    TupleType,
     Type,
     UnknownType,
     describe_type,
@@ -30,9 +32,12 @@ from .dump import format_instruction
 from .lower import HirLowerer
 from .nodes import (
     BinOp,
+    BuildList,
+    BuildTuple,
     Call,
     DefineFunction,
     FreshLocals,
+    GetItem,
     HirFunction,
     Instruction,
     Jump,
@@ -77,6 +82,50 @@ _PRIMITIVE_IR = {
     "String": IrType.STRING,
 }
 
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ContainerType:
+    """A List/Tuple type with element types (Set/Dict arrive in S3)."""
+
+    kind: str
+    args: tuple[IrTypeLike, ...] = ()
+
+    def __str__(self) -> str:
+        if self.kind == "Tuple":
+            return "Tuple[" + ", ".join(str(arg) for arg in self.args) + "]"
+        return f"{self.kind}[{', '.join(str(arg) for arg in self.args)}]"
+
+
+IrTypeLike = IrType | ContainerType
+
+
+def list_type(element: IrTypeLike) -> ContainerType:
+    return ContainerType("List", (element,))
+
+
+def tuple_type(*elements: IrTypeLike) -> ContainerType:
+    return ContainerType("Tuple", tuple(elements))
+
+
+_TYPE_TAGS = {
+    IrType.INT: 1,
+    IrType.FLOAT: 2,
+    IrType.BOOL: 3,
+    IrType.UNIT: 4,
+    IrType.FUNCTION: 5,
+    IrType.STRING: 6,
+}
+_CONTAINER_TAGS = {"List": 7, "Set": 8, "Dict": 9, "Tuple": 10}
+
+
+def ir_type_tag(ir_type: IrTypeLike) -> int:
+    """Wire tag for a type-table descriptor (spec 14)."""
+
+    if isinstance(ir_type, ContainerType):
+        return _CONTAINER_TAGS[ir_type.kind]
+    return _TYPE_TAGS[ir_type]
+
+
 _ARITHMETIC_OPS = {"+", "-", "*", "//", "%"}
 _COMPARISON_OPS = {"<", "<=", ">", ">="}
 _EQUALITY_OPS = {"==", "!="}
@@ -89,9 +138,9 @@ class TypedFunction:
     """One HIR function plus its static signature and register types."""
 
     hir: HirFunction
-    param_types: tuple[IrType, ...]
-    ret_type: IrType
-    register_types: tuple[IrType | None, ...]
+    param_types: tuple[IrTypeLike, ...]
+    ret_type: IrTypeLike
+    register_types: tuple[IrTypeLike | None, ...]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -104,7 +153,7 @@ def _reject(node: nodes.ASTNode, detail: str) -> NoReturn:
     raise UnsupportedSyntax(f"Typed HIR backend does not support {detail}.", node.position)
 
 
-def _ir_type_from(type_: Type, position, *, allow_function: bool = False) -> IrType:
+def _ir_type_from(type_: Type, position, *, allow_function: bool = False) -> IrTypeLike:
     if isinstance(type_, PrimitiveType):
         ir_type = _PRIMITIVE_IR.get(type_.name)
         if ir_type is None:
@@ -113,6 +162,10 @@ def _ir_type_from(type_: Type, position, *, allow_function: bool = False) -> IrT
                 position,
             )
         return ir_type
+    if isinstance(type_, ListType):
+        return list_type(_ir_type_from(type_.element, position))
+    if isinstance(type_, TupleType):
+        return tuple_type(*(_ir_type_from(element, position) for element in type_.elements))
     if isinstance(type_, FunctionType) and allow_function:
         return IrType.FUNCTION
     if isinstance(type_, FunctionType):
@@ -131,7 +184,7 @@ def _ir_type_from(type_: Type, position, *, allow_function: bool = False) -> IrT
     )
 
 
-def _ir_type_for_node(node: nodes.ASTNode, *, allow_function: bool = False) -> IrType:
+def _ir_type_for_node(node: nodes.ASTNode, *, allow_function: bool = False) -> IrTypeLike:
     type_ = node.metadata.get("type_obj")
     if not isinstance(type_, Type):
         raise UnsupportedSyntax(
@@ -179,8 +232,6 @@ def _validate_function(node: nodes.FunctionDef) -> None:
     if not isinstance(signature, FunctionType):
         _reject(node, "function without a checked signature")
     for param_type in signature.params:
-        if not isinstance(param_type, PrimitiveType):
-            _reject(node, "higher-order or non-scalar parameters")
         _ir_type_from(param_type, node.position)
     _ir_type_from(signature.ret, node.position)
     _validate_statements(node.body.statements)
@@ -224,8 +275,8 @@ def _validate_var_decl(node: nodes.VarDecl) -> None:
     if node.init_value is None:
         _reject(node, "declarations without an initializer")
     target_type = node.decl_targets[0].metadata.get("type_obj")
-    if not isinstance(target_type, PrimitiveType):
-        _reject(node, "variables without a scalar type")
+    if not isinstance(target_type, Type):
+        _reject(node, "variables without a type")
     if _ir_type_from(target_type, node.position) is IrType.UNIT:
         _reject(node, "Unit variables")
     _validate_expr(node.init_value)
@@ -237,8 +288,9 @@ def _validate_assignment(node: nodes.Assignment) -> None:
     if not isinstance(node.lhs, nodes.Name):
         _reject(node, "assignment targets other than plain names")
     lhs_type = node.lhs.metadata.get("type_obj")
-    if not isinstance(lhs_type, PrimitiveType):
-        _reject(node, "assignments without a scalar type")
+    if not isinstance(lhs_type, Type):
+        _reject(node, "assignments without a type")
+    _ir_type_from(lhs_type, node.position)
     _validate_expr(node.rhs)
 
 
@@ -317,6 +369,16 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
         _validate_block(node.body)
         _ir_type_for_node(node)
         return
+    if isinstance(node, (nodes.ListLiteral, nodes.TupleLiteral)):
+        for element in node.elements:
+            _validate_expr(element)
+        _ir_type_for_node(node)
+        return
+    if isinstance(node, nodes.Subscript):
+        _validate_expr(node.value)
+        _validate_expr(node.index)
+        _ir_type_for_node(node)
+        return
     _reject(node, type(node).__name__)
 
 
@@ -328,11 +390,11 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
 class _TypedHirLowerer(HirLowerer):
     def __init__(self) -> None:
         super().__init__()
-        self.register_types: dict[str, dict[int, IrType]] = {}
+        self.register_types: dict[str, dict[int, IrTypeLike]] = {}
         self.function_types: dict[str, FunctionType] = {}
-        self._current_ret = IrType.UNIT
+        self._current_ret: IrTypeLike = IrType.UNIT
 
-    def _record(self, register: int, ir_type: IrType, position) -> None:
+    def _record(self, register: int, ir_type: IrTypeLike, position) -> None:
         table = self.register_types.setdefault(self.state.name, {})
         existing = table.get(register)
         # A register may first be written by the Unit placeholder used to
@@ -388,9 +450,9 @@ class _TypedHirLowerer(HirLowerer):
 
 
 def _filled_register_types(
-    function: HirFunction, recorded: dict[int, IrType]
-) -> tuple[IrType | None, ...]:
-    table: list[IrType | None] = [None] * function.local_count
+    function: HirFunction, recorded: dict[int, IrTypeLike]
+) -> tuple[IrTypeLike | None, ...]:
+    table: list[IrTypeLike | None] = [None] * function.local_count
     for register, ir_type in recorded.items():
         if 0 <= register < function.local_count:
             table[register] = ir_type
@@ -430,7 +492,9 @@ def _user_module(module: nodes.ModuleNode) -> nodes.ModuleNode:
     return filtered
 
 
-def _main_return_type(function: HirFunction, register_types: tuple[IrType | None, ...]) -> IrType:
+def _main_return_type(
+    function: HirFunction, register_types: tuple[IrTypeLike | None, ...]
+) -> IrTypeLike:
     """The main body's value type is the final return register's type."""
 
     for instruction in reversed(function.code):
@@ -495,8 +559,8 @@ def _invalid(function: TypedFunction, instruction: Instruction, message: str) ->
     )
 
 
-def _is_numeric(ir_type: IrType | None) -> bool:
-    return ir_type in (IrType.INT, IrType.FLOAT)
+def _is_numeric(ir_type: IrTypeLike | None) -> bool:
+    return isinstance(ir_type, IrType) and ir_type in (IrType.INT, IrType.FLOAT)
 
 
 def _check_binop(function: TypedFunction, instruction: BinOp) -> None:
@@ -529,6 +593,15 @@ def _check_binop(function: TypedFunction, instruction: BinOp) -> None:
             _invalid(function, instruction, f"{op} result {result} != Bool")
         return
     if op in _EQUALITY_OPS:
+        if (
+            isinstance(lhs, ContainerType)
+            and isinstance(rhs, ContainerType)
+            and lhs.kind in ("List", "Tuple")
+            and lhs == rhs
+        ):
+            if result is not IrType.BOOL:
+                _invalid(function, instruction, f"{op} result {result} != Bool")
+            return
         if lhs is IrType.STRING and rhs is IrType.STRING:
             if result is not IrType.BOOL:
                 _invalid(function, instruction, f"{op} result {result} != Bool")
@@ -563,12 +636,62 @@ def _check_unop(function: TypedFunction, instruction: UnOp) -> None:
 
 def _check_return(function: TypedFunction, instruction: Return) -> None:
     value = function.register_types[instruction.src]
-    if value is not function.ret_type:
+    if value != function.ret_type:
         _invalid(
             function,
             instruction,
             f"return type {value} != {function.ret_type}",
         )
+
+
+def _validate_sequence(function: TypedFunction, instruction: BuildList | BuildTuple) -> None:
+    table = function.register_types
+    target = table[instruction.dst]
+    expected_kind = "List" if isinstance(instruction, BuildList) else "Tuple"
+    if not isinstance(target, ContainerType) or target.kind != expected_kind:
+        _invalid(
+            function, instruction, f"{expected_kind} literal has unexpected target type {target}"
+        )
+    if expected_kind == "List":
+        if len(target.args) != 1:
+            _invalid(function, instruction, "List type must have one element type")
+        element_type = target.args[0]
+        for register in instruction.elements:
+            if table[register] != element_type:
+                _invalid(
+                    function, instruction, f"List element type {table[register]} != {element_type}"
+                )
+    else:
+        if len(instruction.elements) != len(target.args):
+            _invalid(function, instruction, "Tuple literal arity does not match its type")
+        for register, expected in zip(instruction.elements, target.args, strict=True):
+            if table[register] != expected:
+                _invalid(
+                    function, instruction, f"Tuple element type {table[register]} != {expected}"
+                )
+
+
+def _validate_get_item(function: TypedFunction, instruction: GetItem) -> None:
+    table = function.register_types
+    container = table[instruction.container]
+    index_type = table[instruction.index]
+    if index_type is not IrType.INT:
+        _invalid(function, instruction, "index is not Int")
+    if isinstance(container, ContainerType):
+        if container.kind == "List":
+            expected = container.args[0]
+        elif container.kind == "Tuple":
+            if len(set(container.args)) != 1:
+                _invalid(function, instruction, "heterogeneous tuple indexing is not supported")
+            expected = container.args[0]
+        else:
+            _invalid(function, instruction, f"cannot index {container.kind}")
+    elif container is IrType.STRING:
+        expected = IrType.STRING
+    else:
+        _invalid(function, instruction, f"cannot index {container}")
+    if table[instruction.dst] != expected:
+        _invalid(function, instruction, f"index result {table[instruction.dst]} != {expected}")
 
 
 def validate_typed_module(module: TypedModule) -> None:
@@ -606,7 +729,7 @@ def validate_typed_module(module: TypedModule) -> None:
             elif isinstance(instruction, Move):
                 source = function.register_types[instruction.src]
                 target = function.register_types[instruction.dst]
-                if source is not target:
+                if source != target:
                     _invalid(function, instruction, f"move {source} -> {target}")
             elif isinstance(instruction, Call):
                 if function.register_types[instruction.callee] is not IrType.FUNCTION:
@@ -623,6 +746,10 @@ def validate_typed_module(module: TypedModule) -> None:
                     _invalid(function, instruction, "non-function global")
             elif isinstance(instruction, StoreGlobal):
                 _invalid(function, instruction, "global stores")
+            elif isinstance(instruction, (BuildList, BuildTuple)):
+                _validate_sequence(function, instruction)
+            elif isinstance(instruction, GetItem):
+                _validate_get_item(function, instruction)
             elif isinstance(
                 instruction,
                 (LoadConst, LoadLocal, StoreLocal, Label, Jump, DefineFunction, FreshLocals),
@@ -639,7 +766,7 @@ def validate_typed_module(module: TypedModule) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _register_type_name(types: tuple[IrType | None, ...], register: int) -> str:
+def _register_type_name(types: tuple[IrTypeLike | None, ...], register: int) -> str:
     if 0 <= register < len(types) and types[register] is not None:
         return str(types[register])
     return "?"

@@ -16,9 +16,12 @@ from typing import TYPE_CHECKING
 from ..diagnostics.syntax_errors import UnsupportedSyntax
 from ..hir.nodes import (
     BinOp,
+    BuildList,
+    BuildTuple,
     Call,
     DefineFunction,
     FreshLocals,
+    GetItem,
     Instruction,
     Jump,
     JumpIfFalse,
@@ -33,7 +36,13 @@ from ..hir.nodes import (
     StoreLocal,
     UnOp,
 )
-from ..hir.typed import IrType, TypedFunction, TypedModule
+from ..hir.typed import (
+    ContainerType,
+    IrType,
+    IrTypeLike,
+    TypedFunction,
+    TypedModule,
+)
 from .typed_opcodes import TypedOp, encode_abc, encode_abx
 
 if TYPE_CHECKING:
@@ -82,9 +91,10 @@ class TypedProto:
     constants: tuple[object, ...]
     positions: tuple[SourcePosition, ...]
     register_count: int
-    register_types: tuple[IrType | None, ...]
-    param_types: tuple[IrType, ...]
-    ret_type: IrType
+    types: tuple[IrTypeLike, ...]
+    register_types: tuple[int | None, ...]  # type-table indices
+    param_types: tuple[int, ...]  # type-table indices
+    ret_type: int  # type-table index
     is_main: bool = False
 
 
@@ -118,24 +128,44 @@ class _ProtoBuilder:
         self.code: list[int] = []
         self.positions: list[SourcePosition] = []
         self.constants = _ConstantPool()
-        self.register_types: list[IrType | None] = list(function.register_types)
+        self.register_types: list[IrTypeLike | None] = list(function.register_types)
         self.next_register = len(self.register_types)
         self.labels: dict[str, int] = {}
         self.fixups: list[tuple[int, TypedOp, int, str]] = []
+        self.types: list[IrTypeLike] = []
+        self.type_index: dict[IrTypeLike, int] = {}
+
+    def _intern_type(self, ir_type: IrTypeLike) -> int:
+        existing = self.type_index.get(ir_type)
+        if existing is not None:
+            return existing
+        if isinstance(ir_type, ContainerType):
+            for arg in ir_type.args:
+                self._intern_type(arg)
+        index = len(self.types)
+        self.types.append(ir_type)
+        self.type_index[ir_type] = index
+        return index
 
     def build(self) -> TypedProto:
         for instruction in self.function.hir.code:
             self._emit_instruction(instruction)
         self._resolve_jumps()
+        register_type_ids: list[int | None] = []
+        for ir_type in self.register_types:
+            register_type_ids.append(None if ir_type is None else self._intern_type(ir_type))
+        param_type_ids = tuple(self._intern_type(t) for t in self.function.param_types)
+        ret_type_id = self._intern_type(self.function.ret_type)
         return TypedProto(
             name=self.function.hir.name,
             code=tuple(self.code),
             constants=tuple(self.constants.values),
             positions=tuple(self.positions),
             register_count=len(self.register_types),
-            register_types=tuple(self.register_types),
-            param_types=self.function.param_types,
-            ret_type=self.function.ret_type,
+            types=tuple(self.types),
+            register_types=tuple(register_type_ids),
+            param_types=param_type_ids,
+            ret_type=ret_type_id,
             is_main=self.function.hir.is_main,
         )
 
@@ -147,7 +177,7 @@ class _ProtoBuilder:
         self.code.append(word)
         self.positions.append(position)
 
-    def _alloc(self, ir_type: IrType, position: SourcePosition) -> int:
+    def _alloc(self, ir_type: IrTypeLike, position: SourcePosition) -> int:
         if self.next_register >= _MAX_REGISTERS:
             raise UnsupportedSyntax(
                 f"Typed bytecode register limit ({_MAX_REGISTERS}) exceeded.",
@@ -161,7 +191,7 @@ class _ProtoBuilder:
     def _constant(self, value: object, position: SourcePosition) -> int:
         return self.constants.add(value, position)
 
-    def _register_type(self, register: int, position: SourcePosition) -> IrType:
+    def _register_type(self, register: int, position: SourcePosition) -> IrTypeLike:
         ir_type = self.function.register_types[register]
         if ir_type is None:
             raise UnsupportedSyntax(
@@ -170,7 +200,7 @@ class _ProtoBuilder:
             )
         return ir_type
 
-    def _ensure_float(self, register: int, ir_type: IrType, position: SourcePosition) -> int:
+    def _ensure_float(self, register: int, ir_type: IrTypeLike, position: SourcePosition) -> int:
         if ir_type is IrType.FLOAT:
             return register
         converted = self._alloc(IrType.FLOAT, position)
@@ -215,6 +245,20 @@ class _ProtoBuilder:
                 encode_abc(TypedOp.MOVE, instruction.dst, instruction.src, 0),
                 position,
             )
+        elif isinstance(instruction, BuildList):
+            self._emit_sequence(instruction, TypedOp.NEW_LIST)
+        elif isinstance(instruction, BuildTuple):
+            self._emit_sequence(instruction, TypedOp.NEW_TUPLE)
+        elif isinstance(instruction, GetItem):
+            self._emit(
+                encode_abc(
+                    TypedOp.GET_ITEM,
+                    instruction.dst,
+                    instruction.container,
+                    instruction.index,
+                ),
+                position,
+            )
         elif isinstance(instruction, BinOp):
             self._emit_binop(instruction)
         elif isinstance(instruction, UnOp):
@@ -243,6 +287,25 @@ class _ProtoBuilder:
                 position,
             )
 
+    def _emit_sequence(self, instruction: BuildList | BuildTuple, opcode: TypedOp) -> None:
+        position = instruction.position
+        count = len(instruction.elements)
+        if count > 255:
+            raise UnsupportedSyntax("Typed collection literal has too many elements.", position)
+        base = 0
+        for index, element in enumerate(instruction.elements):
+            element_type = self._register_type(element, position)
+            slot = self._alloc(element_type, position)
+            if index == 0:
+                base = slot
+            elif slot != base + index:
+                raise UnsupportedSyntax(
+                    "Typed collection window is not contiguous.",
+                    position,
+                )
+            self._emit(encode_abc(TypedOp.MOVE, slot, element, 0), position)
+        self._emit(encode_abc(opcode, base, count, instruction.dst), position)
+
     def _emit_binop(self, instruction: BinOp) -> None:
         position = instruction.position
         lhs_type = self._register_type(instruction.lhs, position)
@@ -250,6 +313,24 @@ class _ProtoBuilder:
         op = instruction.op
         lhs = instruction.lhs
         rhs = instruction.rhs
+
+        if (
+            isinstance(lhs_type, ContainerType)
+            and isinstance(rhs_type, ContainerType)
+            and lhs_type == rhs_type
+            and lhs_type.kind in ("List", "Tuple")
+        ):
+            if op not in ("==", "!="):
+                raise UnsupportedSyntax(
+                    f"Typed bytecode does not support {lhs_type.kind} operator {op!r}.",
+                    position,
+                )
+            if lhs_type.kind == "List":
+                opcode = TypedOp.EQ_LIST if op == "==" else TypedOp.NE_LIST
+            else:
+                opcode = TypedOp.EQ_TUPLE if op == "==" else TypedOp.NE_TUPLE
+            self._emit(encode_abc(opcode, instruction.dst, lhs, rhs), position)
+            return
 
         if lhs_type is IrType.STRING and rhs_type is IrType.STRING:
             if op == "+":

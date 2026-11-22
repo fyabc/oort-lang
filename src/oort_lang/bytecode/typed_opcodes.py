@@ -74,6 +74,14 @@ class TypedOp(IntEnum):
     GT_S = 57
     GE_S = 58
 
+    NEW_LIST = 59
+    NEW_TUPLE = 60
+    GET_ITEM = 61
+    EQ_LIST = 62
+    NE_LIST = 63
+    EQ_TUPLE = 64
+    NE_TUPLE = 65
+
 
 # ABC: [op:8][A:8][B:8][C:8]
 ABC_OPS = frozenset(
@@ -127,6 +135,13 @@ ABC_OPS = frozenset(
         TypedOp.LE_S,
         TypedOp.GT_S,
         TypedOp.GE_S,
+        TypedOp.NEW_LIST,
+        TypedOp.NEW_TUPLE,
+        TypedOp.GET_ITEM,
+        TypedOp.EQ_LIST,
+        TypedOp.NE_LIST,
+        TypedOp.EQ_TUPLE,
+        TypedOp.NE_TUPLE,
     }
 )
 

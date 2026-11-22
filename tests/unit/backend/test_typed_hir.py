@@ -282,6 +282,61 @@ print(before("b", "a"))
     assert typed_out == vm_out == "Hello, Oort\n3 0\ntrue true true\nfalse\n"
 
 
+def test_typed_collections(capsys: pytest.CaptureFixture):
+    source = """\
+#lang oort-core
+
+def first(xs: List[Int]) -> Int { xs[0] }
+def pair(a: Int, b: String) -> Tuple[Int, String] { (a, b) }
+
+print([1, 2, 3])
+print(len([1, 2, 3]))
+print(first([4, 5]))
+print(pair(7, "x"))
+print([1, 2] == [1, 2], [1, 2] != [1, 3])
+"""
+    typed = lower_typed_module(build_ast(source))
+    program = compile_typed_module(typed)
+    ops = {
+        TypedOp(word >> 24) for proto in (program.main, *program.functions) for word in proto.code
+    }
+    assert TypedOp.NEW_LIST in ops
+    assert TypedOp.NEW_TUPLE in ops
+    assert TypedOp.GET_ITEM in ops
+    assert TypedOp.EQ_LIST in ops
+
+    typed_compiler = get_compiler("NOT_EXIST -t tvm")
+    typed_compiler.run_string(source)
+    typed_out = capsys.readouterr().out
+
+    vm_compiler = get_compiler("NOT_EXIST -t vm")
+    vm_compiler.run_string(source)
+    vm_out = capsys.readouterr().out
+
+    assert typed_out == vm_out == "[1, 2, 3]\n3\n4\n(7, x)\ntrue true\n"
+
+
+def test_typed_collection_obc_round_trip(tmp_path):
+    source = """\
+#lang oort-core
+
+def first(xs: List[Int]) -> Int { xs[0] }
+
+print(first([4, 5]))
+print(len((1, 2, 3)))
+"""
+    program = compile_typed_module(lower_typed_module(build_ast(source)))
+    path = tmp_path / "collections.obc"
+    write_typed_obc(program, path)
+
+    loaded = read_typed_obc(path)
+    assert loaded.main.types == program.main.types
+    assert loaded.main.param_types == program.main.param_types
+
+    result = TypedCodeVM(ASTInterpreter(CompilerErrorHandler())).run(loaded)
+    assert result.host_value is None
+
+
 def test_tvm_rejects_out_of_subset():
     compiler = get_compiler("NOT_EXIST -t tvm")
     with pytest.raises(CompilerError):

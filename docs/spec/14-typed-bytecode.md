@@ -16,7 +16,7 @@
 ## 2. 文件头与布局
 
 ```text
-magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=3)
+magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=4)
 u32 function_count
 proto[function_count]
 proto(main)
@@ -29,11 +29,13 @@ proto(main)
 ```text
 string name
 bool   is_main
+u16    type_count
+type_desc[type_count]              # 子类型必须引用更早的表项
 u16    register_count
-u8     register_type[register_count]
+u16    register_type_id[register_count]   # 0 = 无类型，否则 type_id + 1
 u8     param_count
-u8     param_type[param_count]
-u8     ret_type
+u16    param_type_id[param_count]
+u16    ret_type_id
 u32    word_count
 u32    word[word_count]
 u32    constant_count
@@ -45,19 +47,23 @@ positions?:
   (u32 line, i32 column)[position_count]
 ```
 
-类型标签：
+类型描述 tag：
 
-| tag | 类型 |
-|---:|---|
-| 0 | 无类型（仅寄存器表、未使用的寄存器） |
-| 1 | `Int` |
-| 2 | `Float` |
-| 3 | `Bool` |
-| 4 | `Unit` |
-| 5 | 函数引用（CALL 目标） |
-| 6 | `String` |
+| tag | 类型 | 额外字段 |
+|---:|---|---|
+| 1 | `Int` | — |
+| 2 | `Float` | — |
+| 3 | `Bool` | — |
+| 4 | `Unit` | — |
+| 5 | 函数引用（CALL 目标） | — |
+| 6 | `String` | — |
+| 7 | `List` | `u16 element_type_id` |
+| 8 | `Set`（预留） | `u16 element_type_id` |
+| 9 | `Dict`（预留） | `u16 key_type_id, u16 value_type_id` |
+| 10 | `Tuple` | `u16 count, u16 element_type_id[count]` |
 
-- 参数与返回类型不允许 tag 0；
+- 类型表按**后序**写入：容器类型只能引用已经出现的子类型（不允许前向引用）；
+- 寄存器类型 0 表示“无类型”；参数/返回不允许 0；
 - 常量池复用 spec 13 的 tagged 编码；kind=1 只允许 `null`/`bool`/`int`/`float`/
   `string`，其他 tag 必须显式拒绝；
 - 位置表可省略；读取方缺少时使用 `<typed-bytecode>` 回退位置。
@@ -111,6 +117,11 @@ ABx: [op:8][A:8][Bx:16]
 | 53/54 | `EQ_S` / `NE_S` | ABC | 同上 | String 相等/不等 → Bool |
 | 55/56 | `LT_S` / `LE_S` | ABC | 同上 | String 小于/小于等于 → Bool |
 | 57/58 | `GT_S` / `GE_S` | ABC | 同上 | String 大于/大于等于 → Bool |
+| 59 | `NEW_LIST` | ABC | A=元素窗口基址, B=元素数, C=目标 | 构造 List |
+| 60 | `NEW_TUPLE` | ABC | 同上 | 构造 Tuple |
+| 61 | `GET_ITEM` | ABC | A=目标, B=容器, C=索引 | 下标读取 |
+| 62/63 | `EQ_LIST` / `NE_LIST` | ABC | A=目标, B=左, C=右 | List 深相等/不等 → Bool |
+| 64/65 | `EQ_TUPLE` / `NE_TUPLE` | ABC | 同上 | Tuple 深相等/不等 → Bool |
 
 ### 3.2 调用约定
 
@@ -145,8 +156,9 @@ typed HIR 的命名标签在编译期解析为绝对字索引；`JMP`/`JMP_FALSE
 ## 4. 执行语义
 
 - **值表示由实现决定**：Python 参考实现使用 boxed 运行时值（差分 baseline）；
-  Rust typed VM 标量使用未装箱表示，String 使用共享堆字符串（`Rc<str>`）；
-  只在 native `print`/`len` 与主结果边界转换；
+  Rust typed VM 标量使用未装箱表示，String 使用 `Rc<str>`，List/Tuple 使用
+  `Rc<RefCell<Vec<TypedValue>>>` / `Rc<[TypedValue]>`；只在 native
+  `print`/`len` 与主结果边界转换；
 - `Int` 在 Python 参考实现中使用宿主整数（任意精度）；Rust spike 使用
   `i64`，溢出显式报错。这是 spike 的表示限制，不是语言语义；跨实现差分
   测试避免溢出输入。完整数值语义见
@@ -161,11 +173,13 @@ typed HIR 的命名标签在编译期解析为绝对字索引；`JMP`/`JMP_FALSE
 
 ## 5. 当前边界
 
-- 仅 `oort-core` 标量子集 + `String`：`Int`/`Float`/`Bool`/`Unit`/`String`、
-  顶层函数、直接调用、`if`/`while`/早返回、String 拼接/比较/`len`；
-- 无集合、ADT/`match`、类/接口/泛型/lambda、模块导入、String 索引/切片；
+- 仅 `oort-core` 标量子集 + `String` + `List`/`Tuple`：`Int`/`Float`/`Bool`/
+  `Unit`/`String`、顶层函数、直接调用、`if`/`while`/早返回、String 拼接/比较/
+  `len`、List/Tuple 字面量/下标/`len`/深相等；
+- 无 Set/Dict、`for` 迭代、集合原地修改、ADT/`match`、类/接口/泛型/lambda、
+  模块导入、切片；
 - 无动态↔静态边界、`box`/`unbox`/blame；跨方言调用仍拒绝；
-- 格式版本 `version=3`；不兼容变更必须提升 version，并保持 kind=1 的独立
+- 格式版本 `version=4`；不兼容变更必须提升 version，并保持 kind=1 的独立
   命名空间。
 
 ## 6. 参考实现入口

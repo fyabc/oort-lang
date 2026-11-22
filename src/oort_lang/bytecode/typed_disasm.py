@@ -55,16 +55,16 @@ def _format_instruction(proto: TypedProto, word: int) -> str:
 
 
 def format_typed_proto(proto: TypedProto) -> str:
-    params = ", ".join(str(ir_type) for ir_type in proto.param_types)
+    params = ", ".join(str(proto.types[type_id]) for type_id in proto.param_types)
     lines = [
-        f"{proto.name}({params}) -> {proto.ret_type} "
+        f"{proto.name}({params}) -> {proto.types[proto.ret_type]} "
         f"registers={proto.register_count} words={len(proto.code)}"
     ]
     lines.append(
         "  register types: "
         + " ".join(
-            f"R{index}:{ir_type if ir_type is not None else '?'}"
-            for index, ir_type in enumerate(proto.register_types)
+            f"R{index}:{proto.types[type_id] if type_id is not None else '?'}"
+            for index, type_id in enumerate(proto.register_types)
         )
     )
     for pc, word in enumerate(proto.code):

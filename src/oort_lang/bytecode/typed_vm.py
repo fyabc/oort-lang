@@ -14,10 +14,18 @@ import dataclasses
 from typing import TYPE_CHECKING, Any
 
 from ..diagnostics.runtime_errors import OortNameError, OortRuntimeError, OortTypeError
-from ..hir.typed import IrType
+from ..hir.typed import ContainerType, IrType, IrTypeLike
 from ..runtime.environment import Environment
 from ..runtime.functions import OortNativeFunction
-from ..runtime.objects import OortBool, OortFloat, OortInt, OortObject, OortString
+from ..runtime.objects import (
+    OortBool,
+    OortFloat,
+    OortInt,
+    OortList,
+    OortObject,
+    OortString,
+    OortTuple,
+)
 from .typed_opcodes import TypedOp, decode_a, decode_b, decode_bx, decode_c, decode_op
 
 if TYPE_CHECKING:
@@ -155,6 +163,17 @@ class TypedCodeVM:
                 TypedOp.GE_S,
             ):
                 registers[a] = self._string_compare(op, registers[b], registers[c], position)
+            elif op is TypedOp.NEW_LIST:
+                registers[c] = OortList(registers[a : a + b])
+            elif op is TypedOp.NEW_TUPLE:
+                registers[c] = OortTuple(tuple(registers[a : a + b]))
+            elif op is TypedOp.GET_ITEM:
+                registers[a] = self._get_item(registers[b], registers[c], position)
+            elif op in (TypedOp.EQ_LIST, TypedOp.NE_LIST, TypedOp.EQ_TUPLE, TypedOp.NE_TUPLE):
+                equal = self.interpreter.values_equal(registers[b], registers[c], position)
+                if op in (TypedOp.NE_LIST, TypedOp.NE_TUPLE):
+                    equal = not equal
+                registers[a] = OortBool.get_bool_value(equal)
             elif op is TypedOp.JMP:
                 pc = bx
                 continue
@@ -233,26 +252,32 @@ class TypedCodeVM:
                 position,
             )
         registers: list[Any] = [self.runtime.null] * proto.register_count
-        for index, (expected, value) in enumerate(zip(proto.param_types, arguments)):
+        for index, (type_id, value) in enumerate(zip(proto.param_types, arguments)):
+            expected = proto.types[type_id]
             self._guard(expected, value, proto.name, index, position)
             registers[index] = value
         return self._execute(program, proto, registers)
 
     @staticmethod
     def _guard(
-        expected: IrType,
+        expected: IrTypeLike,
         value: Any,
         name: str,
         index: int,
         position: SourcePosition,
     ) -> None:
-        ok = (
-            (expected is IrType.INT and type(value) is OortInt)
-            or (expected is IrType.FLOAT and type(value) is OortFloat)
-            or (expected is IrType.BOOL and type(value) is OortBool)
-            or (expected is IrType.STRING and type(value) is OortString)
-            or (expected is IrType.UNIT and value is None)
-        )
+        if isinstance(expected, ContainerType):
+            ok = (expected.kind == "List" and type(value) is OortList) or (
+                expected.kind == "Tuple" and type(value) is OortTuple
+            )
+        else:
+            ok = (
+                (expected is IrType.INT and type(value) is OortInt)
+                or (expected is IrType.FLOAT and type(value) is OortFloat)
+                or (expected is IrType.BOOL and type(value) is OortBool)
+                or (expected is IrType.STRING and type(value) is OortString)
+                or (expected is IrType.UNIT and value is None)
+            )
         if not ok:
             raise OortTypeError(
                 f"Typed bytecode guard failed for '{name}' argument {index}: expected {expected}.",
@@ -407,6 +432,16 @@ class TypedCodeVM:
         if type(value) is OortFloat:
             return value.value
         raise OortTypeError("Typed mixed comparison expects Int or Float.", position)
+
+    def _get_item(self, container: Any, index: Any, position: SourcePosition) -> OortObject:
+        if type(container) not in (OortList, OortTuple, OortString):
+            raise OortTypeError("Typed indexing expects a List, Tuple or String.", position)
+        if type(index) is not OortInt:
+            raise OortTypeError("Typed index must be Int.", position)
+        try:
+            return container[index]
+        except (IndexError, TypeError) as exc:
+            raise OortRuntimeError(str(exc), position) from exc
 
     @staticmethod
     def _string(value: Any, position: SourcePosition) -> OortString:

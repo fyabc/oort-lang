@@ -6,7 +6,7 @@
 //! Semantics mirror the Python typed VM; see docs/design/16-numeric-semantics.md
 //! for the Int/Float contract (i64 is a spike representation).
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -16,7 +16,7 @@ use crate::vm::{float_repr, floor_div, floor_mod, Value};
 
 type TResult<T> = Result<T, String>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypedType {
     Int,
     Float,
@@ -24,19 +24,10 @@ pub enum TypedType {
     Unit,
     String,
     Function,
-}
-
-fn typed_type(tag: u8) -> TResult<Option<TypedType>> {
-    Ok(match tag {
-        0 => None,
-        1 => Some(TypedType::Int),
-        2 => Some(TypedType::Float),
-        3 => Some(TypedType::Bool),
-        4 => Some(TypedType::Unit),
-        5 => Some(TypedType::Function),
-        6 => Some(TypedType::String),
-        _ => return Err(format!("invalid typed register type tag {tag}")),
-    })
+    List(Box<TypedType>),
+    Set(Box<TypedType>),
+    Dict(Box<TypedType>, Box<TypedType>),
+    Tuple(Vec<TypedType>),
 }
 
 #[derive(Debug, Clone)]
@@ -44,7 +35,8 @@ pub struct TypedProto {
     pub name: String,
     pub is_main: bool,
     pub register_count: u16,
-    pub register_types: Vec<Option<TypedType>>,
+    pub types: Vec<TypedType>,
+    pub register_types: Vec<Option<u16>>,
     pub param_types: Vec<TypedType>,
     pub ret_type: TypedType,
     pub code: Vec<u32>,
@@ -57,25 +49,95 @@ pub struct TypedModule {
     pub main: Rc<TypedProto>,
 }
 
+fn read_type_table(r: &mut Reader<'_>, name: &str) -> TResult<Vec<TypedType>> {
+    let count = r.u16()?;
+    let mut types: Vec<TypedType> = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        let tag = r.u8()?;
+        let ty = match tag {
+            1 => TypedType::Int,
+            2 => TypedType::Float,
+            3 => TypedType::Bool,
+            4 => TypedType::Unit,
+            5 => TypedType::Function,
+            6 => TypedType::String,
+            7 | 8 => {
+                let child = r.u16()? as usize;
+                if child >= types.len() {
+                    return Err(format!("typed proto '{name}' has a forward type reference"));
+                }
+                let inner = Box::new(types[child].clone());
+                if tag == 7 {
+                    TypedType::List(inner)
+                } else {
+                    TypedType::Set(inner)
+                }
+            }
+            9 => {
+                let key = r.u16()? as usize;
+                let value = r.u16()? as usize;
+                if key >= types.len() || value >= types.len() {
+                    return Err(format!("typed proto '{name}' has a forward type reference"));
+                }
+                TypedType::Dict(Box::new(types[key].clone()), Box::new(types[value].clone()))
+            }
+            10 => {
+                let mut elements = Vec::new();
+                for _ in 0..r.u16()? {
+                    let child = r.u16()? as usize;
+                    if child >= types.len() {
+                        return Err(format!("typed proto '{name}' has a forward type reference"));
+                    }
+                    elements.push(types[child].clone());
+                }
+                TypedType::Tuple(elements)
+            }
+            _ => return Err(format!("invalid typed type tag {tag}")),
+        };
+        types.push(ty);
+    }
+    Ok(types)
+}
+
+fn type_at(types: &[TypedType], raw: u16, name: &str) -> TResult<TypedType> {
+    if raw == 0 {
+        return Err(format!(
+            "typed proto '{name}' references an untyped parameter"
+        ));
+    }
+    let index = (raw - 1) as usize;
+    types
+        .get(index)
+        .cloned()
+        .ok_or_else(|| format!("typed proto '{name}' has an out-of-range type id"))
+}
+
 fn read_proto(r: &mut Reader<'_>) -> TResult<TypedProto> {
     let name = r.string()?;
     let is_main = r.boolean()?;
+    let types = read_type_table(r, &name)?;
     let register_count = r.u16()?;
     let mut register_types = Vec::with_capacity(register_count as usize);
     for _ in 0..register_count {
-        register_types.push(typed_type(r.u8()?)?);
+        let raw = r.u16()?;
+        if raw == 0 {
+            register_types.push(None);
+        } else {
+            let index = (raw - 1) as usize;
+            if index >= types.len() {
+                return Err(format!(
+                    "typed proto '{name}' has an out-of-range register type"
+                ));
+            }
+            register_types.push(Some(index as u16));
+        }
     }
     let nparams = r.u8()?;
     let mut param_types = Vec::with_capacity(nparams as usize);
     for _ in 0..nparams {
-        let tag = r.u8()?;
-        match typed_type(tag)? {
-            Some(ty) => param_types.push(ty),
-            None => return Err(format!("typed proto '{name}' has an untyped parameter")),
-        }
+        param_types.push(type_at(&types, r.u16()?, &name)?);
     }
-    let ret_type =
-        typed_type(r.u8()?)?.ok_or_else(|| format!("typed proto '{name}' has no return type"))?;
+    let ret_type = type_at(&types, r.u16()?, &name)?;
     let ncode = r.u32()?;
     let mut code = Vec::with_capacity(ncode as usize);
     for _ in 0..ncode {
@@ -99,6 +161,7 @@ fn read_proto(r: &mut Reader<'_>) -> TResult<TypedProto> {
         name,
         is_main,
         register_count,
+        types,
         register_types,
         param_types,
         ret_type,
@@ -116,7 +179,7 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
         return Err(format!("expected typed bytecode (kind=1), got kind={kind}"));
     }
     let version = data[4];
-    if version != 3 {
+    if version != 4 {
         return Err(format!("unsupported typed bytecode version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -136,6 +199,8 @@ enum TypedValue {
     Int(i64),
     Float(f64),
     Str(Rc<str>),
+    List(Rc<RefCell<Vec<TypedValue>>>),
+    Tuple(Rc<[TypedValue]>),
     Function(usize),
     Native(TypedNative),
 }
@@ -153,18 +218,76 @@ fn display_typed(value: &TypedValue) -> String {
         TypedValue::Int(i) => i.to_string(),
         TypedValue::Float(f) => float_repr(*f),
         TypedValue::Str(s) => s.to_string(),
+        TypedValue::List(items) => {
+            let parts: Vec<String> = items.borrow().iter().map(display_typed).collect();
+            format!("[{}]", parts.join(", "))
+        }
+        TypedValue::Tuple(items) => {
+            if items.len() == 1 {
+                format!("({},)", display_typed(&items[0]))
+            } else {
+                let parts: Vec<String> = items.iter().map(display_typed).collect();
+                format!("({})", parts.join(", "))
+            }
+        }
         TypedValue::Function(_) | TypedValue::Native(_) => "<function>".into(),
     }
 }
 
 fn to_value(value: TypedValue) -> TResult<Value> {
+    typed_to_value(&value)
+}
+
+fn typed_to_value(value: &TypedValue) -> TResult<Value> {
     Ok(match value {
         TypedValue::Unit => Value::Null,
-        TypedValue::Bool(b) => Value::Bool(b),
-        TypedValue::Int(i) => Value::Int(i),
-        TypedValue::Float(f) => Value::Float(f),
-        TypedValue::Str(s) => Value::Str(s),
+        TypedValue::Bool(b) => Value::Bool(*b),
+        TypedValue::Int(i) => Value::Int(*i),
+        TypedValue::Float(f) => Value::Float(*f),
+        TypedValue::Str(s) => Value::Str(Rc::clone(s)),
+        TypedValue::List(items) => {
+            let mut values = Vec::with_capacity(items.borrow().len());
+            for item in items.borrow().iter() {
+                values.push(typed_to_value(item)?);
+            }
+            Value::List(Rc::new(RefCell::new(values)))
+        }
+        TypedValue::Tuple(items) => {
+            let mut values = Vec::with_capacity(items.len());
+            for item in items.iter() {
+                values.push(typed_to_value(item)?);
+            }
+            Value::Tuple(Rc::from(values))
+        }
         _ => return Err("typed main returned a function value".into()),
+    })
+}
+
+fn typed_equal(lhs: &TypedValue, rhs: &TypedValue) -> TResult<bool> {
+    Ok(match (lhs, rhs) {
+        (TypedValue::Unit, TypedValue::Unit) => true,
+        (TypedValue::Bool(a), TypedValue::Bool(b)) => a == b,
+        (TypedValue::Int(a), TypedValue::Int(b)) => a == b,
+        (TypedValue::Float(a), TypedValue::Float(b)) => a == b,
+        (TypedValue::Int(a), TypedValue::Float(b)) => (*a as f64) == *b,
+        (TypedValue::Float(a), TypedValue::Int(b)) => *a == (*b as f64),
+        (TypedValue::Str(a), TypedValue::Str(b)) => a == b,
+        (TypedValue::List(a), TypedValue::List(b)) => {
+            let left = a.borrow();
+            let right = b.borrow();
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right.iter())
+                    .all(|(l, r)| typed_equal(l, r).unwrap_or(false))
+        }
+        (TypedValue::Tuple(a), TypedValue::Tuple(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .zip(b.iter())
+                    .all(|(l, r)| typed_equal(l, r).unwrap_or(false))
+        }
+        _ => false,
     })
 }
 
@@ -207,7 +330,7 @@ fn as_str(value: &TypedValue) -> TResult<&str> {
     }
 }
 
-fn guard(expected: TypedType, value: &TypedValue) -> TResult<()> {
+fn guard(expected: &TypedType, value: &TypedValue) -> TResult<()> {
     let ok = matches!(
         (expected, value),
         (TypedType::Int, TypedValue::Int(_))
@@ -215,6 +338,8 @@ fn guard(expected: TypedType, value: &TypedValue) -> TResult<()> {
             | (TypedType::Bool, TypedValue::Bool(_))
             | (TypedType::String, TypedValue::Str(_))
             | (TypedType::Unit, TypedValue::Unit)
+            | (TypedType::List(_), TypedValue::List(_))
+            | (TypedType::Tuple(_), TypedValue::Tuple(_))
     );
     if ok {
         Ok(())
@@ -223,6 +348,39 @@ fn guard(expected: TypedType, value: &TypedValue) -> TResult<()> {
             "typed bytecode guard failed: expected {expected:?}"
         ))
     }
+}
+
+fn get_item(container: &TypedValue, index: &TypedValue) -> TResult<TypedValue> {
+    let raw = as_int(index)?;
+    let index = if raw < 0 { raw } else { raw };
+    match container {
+        TypedValue::List(items) => {
+            let items = items.borrow();
+            let position = normalize_index(index, items.len())?;
+            Ok(items[position].clone())
+        }
+        TypedValue::Tuple(items) => {
+            let position = normalize_index(index, items.len())?;
+            Ok(items[position].clone())
+        }
+        TypedValue::Str(value) => {
+            let chars: Vec<char> = value.chars().collect();
+            let position = normalize_index(index, chars.len())?;
+            Ok(TypedValue::Str(Rc::from(
+                chars[position].to_string().as_str(),
+            )))
+        }
+        _ => Err("typed indexing expects a List, Tuple or String".into()),
+    }
+}
+
+fn normalize_index(index: i64, len: usize) -> TResult<usize> {
+    let len_i64 = len as i64;
+    let normalized = if index < 0 { index + len_i64 } else { index };
+    if normalized < 0 || normalized >= len_i64 {
+        return Err("index out of range".into());
+    }
+    Ok(normalized as usize)
 }
 
 fn mixed_cmp(lhs: &TypedValue, rhs: &TypedValue) -> TResult<Option<Ordering>> {
@@ -328,6 +486,13 @@ const LT_S: u32 = 55;
 const LE_S: u32 = 56;
 const GT_S: u32 = 57;
 const GE_S: u32 = 58;
+const NEW_LIST: u32 = 59;
+const NEW_TUPLE: u32 = 60;
+const GET_ITEM: u32 = 61;
+const EQ_LIST: u32 = 62;
+const NE_LIST: u32 = 63;
+const EQ_TUPLE: u32 = 64;
+const NE_TUPLE: u32 = 65;
 
 pub struct TypedVm {
     functions: Vec<ResolvedProto>,
@@ -661,6 +826,24 @@ fn execute(
                 let right = as_str(&registers[c])?;
                 registers[a] = TypedValue::Str(Rc::from(format!("{left}{right}").as_str()));
             }
+            NEW_LIST => {
+                let items = registers[a..a + b].to_vec();
+                registers[c] = TypedValue::List(Rc::new(RefCell::new(items)));
+            }
+            NEW_TUPLE => {
+                let items = registers[a..a + b].to_vec();
+                registers[c] = TypedValue::Tuple(Rc::from(items));
+            }
+            GET_ITEM => {
+                registers[a] = get_item(&registers[b], &registers[c])?;
+            }
+            EQ_LIST | NE_LIST | EQ_TUPLE | NE_TUPLE => {
+                let mut equal = typed_equal(&registers[b], &registers[c])?;
+                if op == NE_LIST || op == NE_TUPLE {
+                    equal = !equal;
+                }
+                registers[a] = TypedValue::Bool(equal);
+            }
             EQ_S | NE_S | LT_S | LE_S | GT_S | GE_S => {
                 let left = as_str(&registers[b])?;
                 let right = as_str(&registers[c])?;
@@ -731,7 +914,7 @@ fn call(
                 ));
             }
             for (index, (expected, value)) in proto.param_types.iter().zip(arguments).enumerate() {
-                guard(*expected, value)
+                guard(expected, value)
                     .map_err(|e| format!("argument {index} of '{}': {e}", proto.name))?;
             }
             let mut frame = pool.acquire(proto.register_count as usize);
@@ -753,7 +936,9 @@ fn call(
             }
             match &arguments[0] {
                 TypedValue::Str(s) => Ok(TypedValue::Int(s.chars().count() as i64)),
-                _ => Err("len expects a String in the typed subset".into()),
+                TypedValue::List(items) => Ok(TypedValue::Int(items.borrow().len() as i64)),
+                TypedValue::Tuple(items) => Ok(TypedValue::Int(items.len() as i64)),
+                _ => Err("len expects a String, List or Tuple in the typed subset".into()),
             }
         }
         _ => Err("typed bytecode call target is not callable".into()),
@@ -770,6 +955,7 @@ mod tests {
             name: "test".into(),
             is_main: false,
             register_count: 0,
+            types: vec![],
             register_types: vec![],
             param_types: vec![],
             ret_type: TypedType::Unit,
@@ -806,6 +992,7 @@ mod tests {
             name: "g".into(),
             is_main: false,
             register_count: 0,
+            types: vec![],
             register_types: vec![],
             param_types: vec![],
             ret_type: TypedType::Unit,
@@ -872,16 +1059,20 @@ mod tests {
         assert_eq!(mixed_cmp(&nan, &TypedValue::Int(1)).unwrap(), None);
         assert_eq!(mixed_cmp(&TypedValue::Int(1), &nan).unwrap(), None);
         assert_eq!(
-            mixed_cmp(&TypedValue::Float(f64::INFINITY), &TypedValue::Int(i64::MAX)).unwrap(),
+            mixed_cmp(
+                &TypedValue::Float(f64::INFINITY),
+                &TypedValue::Int(i64::MAX)
+            )
+            .unwrap(),
             Some(Ordering::Greater)
         );
     }
 
     #[test]
     fn guard_rejects_wrong_types() {
-        assert!(guard(TypedType::Int, &TypedValue::Int(1)).is_ok());
-        assert!(guard(TypedType::Int, &TypedValue::Bool(true)).is_err());
-        assert!(guard(TypedType::Unit, &TypedValue::Unit).is_ok());
+        assert!(guard(&TypedType::Int, &TypedValue::Int(1)).is_ok());
+        assert!(guard(&TypedType::Int, &TypedValue::Bool(true)).is_err());
+        assert!(guard(&TypedType::Unit, &TypedValue::Unit).is_ok());
     }
 
     #[test]
