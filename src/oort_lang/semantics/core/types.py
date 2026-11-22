@@ -1,11 +1,15 @@
 #! /usr/bin/env python
 
-"""Static types used by the `oort-core` thin probe.
+"""Static types used by the `oort-core` checker.
 
-The probe is deliberately small: primitives, function signatures, plus two
-internal types for error recovery (`Unknown`) and non-fallthrough expressions
-(`Never`).  Runtime `OortType` objects are a different concept and are not
-reused here; this module belongs to semantic analysis only.
+The model is deliberately local: primitives, function signatures, built-in
+collections, nominal classes and ADTs, plus two internal types for error
+recovery (`Unknown`) and non-fallthrough expressions (`Never`).  Generic ADTs
+add a small template/applied-type split: an ``AdtTemplate`` is the declaration
+(a type constructor) and an ``AdtType`` is one application such as
+``Option[Int]``.  Generic constructor schemes are represented by
+``ForallType``.  Runtime `OortType` objects are a different concept and are
+not reused here; this module belongs to semantic analysis only.
 """
 
 import dataclasses
@@ -71,6 +75,13 @@ class CoreModuleInfo:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class TypeParameterType(Type):
+    """A rigid type variable referenced inside one generic declaration."""
+
+    name: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class ConstructorInfo:
     """One enum constructor and its payload field types."""
 
@@ -127,34 +138,74 @@ class ClassType(Type):
 
 
 @dataclasses.dataclass(eq=False, slots=True)
-class AdtType(Type):
-    """A nominal tagged-union type.
+class AdtTemplate:
+    """The declaration of an enum: a nominal type constructor.
 
-    Equality and hashing use `(origin, name)` only; `constructors` is filled
-    after the declaration is registered so recursive payloads can refer back
-    to the type being declared.
+    Payload types may reference this template's own ``TypeParameterType``
+    parameters.  ``constructors`` is filled after the declaration is
+    registered so recursive payloads can refer back to the template.
     """
 
     origin: str
     name: str
+    params: tuple[TypeParameterType, ...] = ()
     constructors: tuple[ConstructorInfo, ...] = ()
-
-    def __eq__(self, other: object) -> bool:
-        return (
-            isinstance(other, AdtType) and self.origin == other.origin and self.name == other.name
-        )
-
-    def __hash__(self) -> int:
-        return hash((self.origin, self.name))
-
-    def __repr__(self) -> str:
-        return f"<AdtType {self.name!r} @ {self.origin!r}>"
 
     def constructor(self, name: str) -> ConstructorInfo | None:
         for constructor in self.constructors:
             if constructor.name == name:
                 return constructor
         return None
+
+
+@dataclasses.dataclass(eq=False, slots=True)
+class AdtType(Type):
+    """An applied tagged-union type, for example ``Option[Int]``.
+
+    Equality and hashing are nominal on ``(template.origin, template.name)``
+    and structural on the type arguments.  A monomorphic enum is the special
+    case with an empty argument tuple.
+    """
+
+    template: AdtTemplate
+    args: tuple[Type, ...] = ()
+
+    @property
+    def origin(self) -> str:
+        return self.template.origin
+
+    @property
+    def name(self) -> str:
+        return self.template.name
+
+    @property
+    def constructors(self) -> tuple[ConstructorInfo, ...]:
+        return self.template.constructors
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, AdtType)
+            and self.template.origin == other.template.origin
+            and self.template.name == other.template.name
+            and self.args == other.args
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.template.origin, self.template.name, self.args))
+
+    def __repr__(self) -> str:
+        return f"<AdtType {describe_type(self)}>"
+
+    def constructor(self, name: str) -> ConstructorInfo | None:
+        return self.template.constructor(name)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ForallType(Type):
+    """A polymorphic value scheme, currently only used by constructors."""
+
+    params: tuple[TypeParameterType, ...]
+    body: Type
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -179,6 +230,8 @@ NEVER = NeverType()
 def describe_type(type_: Type) -> str:
     if isinstance(type_, PrimitiveType):
         return type_.name
+    if isinstance(type_, TypeParameterType):
+        return type_.name
     if isinstance(type_, ListType):
         return f"List[{describe_type(type_.element)}]"
     if isinstance(type_, SetType):
@@ -194,7 +247,13 @@ def describe_type(type_: Type) -> str:
     if isinstance(type_, ModuleType):
         return f"<module {type_.name}>"
     if isinstance(type_, AdtType):
-        return type_.name
+        if not type_.args:
+            return type_.name
+        args = ", ".join(describe_type(arg) for arg in type_.args)
+        return f"{type_.name}[{args}]"
+    if isinstance(type_, ForallType):
+        params = ", ".join(param.name for param in type_.params)
+        return f"forall {params}. {describe_type(type_.body)}"
     if isinstance(type_, ClassType):
         return type_.name
     if isinstance(type_, UnknownType):
@@ -212,6 +271,8 @@ def is_assignable(expected: Type, actual: Type) -> bool:
         return True
     if isinstance(expected, NeverType):
         return isinstance(actual, NeverType)
+    if isinstance(expected, TypeParameterType) or isinstance(actual, TypeParameterType):
+        return expected == actual
     if isinstance(expected, PrimitiveType) and isinstance(actual, PrimitiveType):
         return expected == actual
     if isinstance(expected, ListType) and isinstance(actual, ListType):
@@ -239,8 +300,16 @@ def is_assignable(expected: Type, actual: Type) -> bool:
     if isinstance(expected, ModuleType) and isinstance(actual, ModuleType):
         return expected == actual
     if isinstance(expected, AdtType) and isinstance(actual, AdtType):
-        return expected == actual
+        if not _same_template(expected, actual) or len(expected.args) != len(actual.args):
+            return False
+        # Invariant arguments until subtyping (and variance) exist.
+        return all(
+            is_assignable(expected_arg, actual_arg) and is_assignable(actual_arg, expected_arg)
+            for expected_arg, actual_arg in zip(expected.args, actual.args)
+        )
     if isinstance(expected, ClassType) and isinstance(actual, ClassType):
+        return expected == actual
+    if isinstance(expected, ForallType) and isinstance(actual, ForallType):
         return expected == actual
     return False
 
@@ -255,4 +324,123 @@ def join_types(left: Type, right: Type) -> Type | None:
         return left
     if left == right:
         return left
+    if isinstance(left, AdtType) and isinstance(right, AdtType):
+        if not _same_template(left, right) or len(left.args) != len(right.args):
+            return None
+        joined_args: list[Type] = []
+        for left_arg, right_arg in zip(left.args, right.args):
+            joined = join_types(left_arg, right_arg)
+            if joined is None:
+                return None
+            joined_args.append(joined)
+        return AdtType(left.template, tuple(joined_args))
     return None
+
+
+def substitute(type_: Type, mapping: dict[str, Type]) -> Type:
+    """Replace rigid type parameters by the given mapping."""
+    if isinstance(type_, TypeParameterType):
+        return mapping.get(type_.name, type_)
+    if isinstance(type_, ListType):
+        return ListType(substitute(type_.element, mapping))
+    if isinstance(type_, SetType):
+        return SetType(substitute(type_.element, mapping))
+    if isinstance(type_, DictType):
+        return DictType(substitute(type_.key, mapping), substitute(type_.value, mapping))
+    if isinstance(type_, TupleType):
+        return TupleType(tuple(substitute(element, mapping) for element in type_.elements))
+    if isinstance(type_, FunctionType):
+        return FunctionType(
+            tuple(substitute(param, mapping) for param in type_.params),
+            substitute(type_.ret, mapping),
+        )
+    if isinstance(type_, AdtType):
+        return AdtType(type_.template, tuple(substitute(arg, mapping) for arg in type_.args))
+    if isinstance(type_, ForallType):
+        inner = {key: value for key, value in mapping.items() if key not in _param_names(type_)}
+        return ForallType(type_.params, substitute(type_.body, inner))
+    return type_
+
+
+def _param_names(scheme: ForallType) -> frozenset[str]:
+    return frozenset(param.name for param in scheme.params)
+
+
+def _same_template(left: AdtType, right: AdtType) -> bool:
+    return (
+        left.template.origin == right.template.origin and left.template.name == right.template.name
+    )
+
+
+@dataclasses.dataclass(slots=True)
+class UnifyFailure:
+    """Why constructor-call inference failed: a parameter conflict or a mismatch."""
+
+    kind: str
+    parameter: str | None
+    expected: Type
+    actual: Type
+
+
+def unify(pattern: Type, actual: Type, bindings: dict[str, Type]) -> UnifyFailure | None:
+    """Solve the constructor's type parameters against one argument type.
+
+    Returns ``None`` on success (bindings may have grown) or a failure
+    describing the first conflicting position.  This is a small first-order
+    unifier used only for constructor instantiation; it is not HM inference.
+    """
+    if isinstance(pattern, TypeParameterType):
+        existing = bindings.get(pattern.name)
+        if existing is None:
+            bindings[pattern.name] = actual
+            return None
+        if (
+            existing == actual
+            or isinstance(existing, (UnknownType, NeverType))
+            or isinstance(actual, (UnknownType, NeverType))
+        ):
+            return None
+        return UnifyFailure("conflict", pattern.name, existing, actual)
+    if isinstance(pattern, (UnknownType, NeverType)):
+        return None
+    if isinstance(actual, (UnknownType, NeverType)):
+        return None
+    if isinstance(pattern, PrimitiveType) and isinstance(actual, PrimitiveType):
+        if pattern == actual:
+            return None
+        return UnifyFailure("mismatch", None, pattern, actual)
+    if isinstance(pattern, ListType) and isinstance(actual, ListType):
+        return unify(pattern.element, actual.element, bindings)
+    if isinstance(pattern, SetType) and isinstance(actual, SetType):
+        return unify(pattern.element, actual.element, bindings)
+    if isinstance(pattern, DictType) and isinstance(actual, DictType):
+        return unify(pattern.key, actual.key, bindings) or unify(
+            pattern.value, actual.value, bindings
+        )
+    if isinstance(pattern, TupleType) and isinstance(actual, TupleType):
+        if len(pattern.elements) != len(actual.elements):
+            return UnifyFailure("mismatch", None, pattern, actual)
+        for pattern_element, actual_element in zip(pattern.elements, actual.elements):
+            failure = unify(pattern_element, actual_element, bindings)
+            if failure is not None:
+                return failure
+        return None
+    if isinstance(pattern, FunctionType) and isinstance(actual, FunctionType):
+        if len(pattern.params) != len(actual.params):
+            return UnifyFailure("mismatch", None, pattern, actual)
+        for pattern_param, actual_param in zip(pattern.params, actual.params):
+            failure = unify(pattern_param, actual_param, bindings)
+            if failure is not None:
+                return failure
+        return unify(pattern.ret, actual.ret, bindings)
+    if isinstance(pattern, AdtType) and isinstance(actual, AdtType):
+        if not _same_template(pattern, actual) or len(pattern.args) != len(actual.args):
+            return UnifyFailure("mismatch", None, pattern, actual)
+        for pattern_arg, actual_arg in zip(pattern.args, actual.args):
+            failure = unify(pattern_arg, actual_arg, bindings)
+            if failure is not None:
+                return failure
+        return None
+    if pattern == actual:
+        return None
+    return UnifyFailure("mismatch", None, pattern, actual)

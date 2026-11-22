@@ -91,6 +91,54 @@ def test_adt_constructors_and_match_across_modules(tmp_path, run_file):
     assert run_file(main).stdout == "3\n42\n"
 
 
+def test_generic_enum_executes_on_both_backends(run_source):
+    source = core(
+        "enum MyOption[T] { Some(value: T), None }\n"
+        "enum Pair[A, B] { Pair(first: A, second: B) }\n"
+        "def unwrap(o: MyOption[Int]) -> Int { match o { Some(v) => v, None => 0 } }\n"
+        "val a: MyOption[Int] = Some(2)\n"
+        "print(unwrap(a), unwrap(None))\n"
+        'val p: Pair[Int, String] = Pair(1, "x")\n'
+        "print(match p { Pair(n, s) => s })\n"
+    )
+    assert run_source(source, target="eval").stdout == "2 0\nx\n"
+    assert run_source(source, target="vm").stdout == "2 0\nx\n"
+
+
+def test_recursive_generic_enum_executes_on_both_backends(run_source):
+    source = core(
+        "enum MyList[T] { Cons(head: T, tail: MyList[T]), Nil }\n"
+        "def total(xs: MyList[Int]) -> Int {\n"
+        "    match xs { Cons(h, t) => h + total(t), Nil => 0 }\n"
+        "}\n"
+        "val xs: MyList[Int] = Cons(1, Cons(2, Nil))\n"
+        "print(total(xs))\n"
+    )
+    assert run_source(source, target="eval").stdout == "3\n"
+    assert run_source(source, target="vm").stdout == "3\n"
+
+
+def test_generic_enum_across_modules(tmp_path, run_file):
+    (tmp_path / "lib.ort").write_text(
+        "#lang oort-core\n"
+        "enum LibOption[T] { Some(value: T), None }\n"
+        "def wrap(x: Int) -> LibOption[Int] { Some(x) }\n"
+        "def nothing() -> LibOption[Int] { None }\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        "#lang oort-core\n"
+        'from "./lib" import wrap, nothing\n'
+        "val a = wrap(7)\n"
+        "print(match a { Some(v) => v, None => 0 })\n"
+        "val b = nothing()\n"
+        "print(match b { Some(v) => v, None => 0 })\n",
+        encoding="utf-8",
+    )
+    assert run_file(main).stdout == "7\n0\n"
+
+
 def test_module_namespace_adt_function(tmp_path, run_file):
     (tmp_path / "lib.ort").write_text(
         "#lang oort-core\n"

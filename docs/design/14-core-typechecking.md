@@ -1,6 +1,6 @@
 # oort-core 类型检查与推断算法
 
-> **状态**：as-implemented 参考（2026-11-22，含函数返回类型推断第一切片）。
+> **状态**：as-implemented 参考（2026-11-22，含函数返回类型推断与泛型 ADT 增量 A）。
 > 本文描述 `oort-core` 静态检查器**当前实现**的双向检查与局部推断算法，作为
 > [OP 0005](../proposals/0005-type-system.md) 主线后续切片（泛型、ADT、FFI）的
 > 算法基线。
@@ -175,9 +175,49 @@ Oort 的递归规则对齐 Kotlin/Scala。共同根因：推断靠分析函数�
   与 [Scala Type Inference](https://www.geeksforgeeks.org/scala/scala-type-inference/)：
   递归方法无法推断结果类型。
 
-## 7. 边界与后续
+## 7. 泛型 ADT（增量 A，2026-11-22）
 
-- **泛型 / ADT / Result·Option / 完整模式匹配 / FFI 边界**：OP 0005 后续切片，
+泛型 `enum E[T]` 的已实现算法。设计取舍见
+[OP 0022](../proposals/0022-generic-adts.md) §2–§4；此处只记录落地形态。
+
+**表示**。声明与应用分离：`AdtTemplate(origin, name, params, constructors)`
+是类型构造器，`AdtType(template, args)` 是应用（`Option[Int]`）。模板在解析
+载荷前注册，所以 `MyList[T]` 的自递归载荷直接引用同一模板；载荷里只出现本模板的
+`TypeParameterType`，嵌套泛型一律写成已应用类型（`AdtType(option, (B,))`），
+`substitute()` 因此不会被内层参数捕获。单态 enum 是 `params=()` 的特例。
+
+**构造器方案**。每个构造器是 `ForallType(params, body)`：有载荷时 body 为
+`(payload...) -> AdtType(template, params)`，零参时为 `AdtType(...)`。
+
+**实例化**。只有两处信息来源，不做 HM：
+
+- check 模式：`_check_expr` 在期望是**同模板** `AdtType` 时拦截 Call/Name，
+  用期望实参建立参数绑定，再以代换后的载荷检查实参——空字面量因此有期望
+  （`Some([])`、`Cons(1, Nil)` 在 `MyList[Int]` 标注下可用）。
+- infer 模式：`_check_generic_call` 先推断实参类型，再用 `unify()` 做受限
+  一阶合一求解参数；未绑定参数报硬错误（对齐 Rust E0282），冲突报
+  “同一参数被推断为 X 与 Y”。`unify` 只在构造器与实参类型之间工作，不泛化、
+  不做 occurs check（本切片不会产生无限类型）。
+
+裸泛型构造器作值只在期望是函数类型时实例化（`val f: (Int) -> Option[Int] =
+Some`）；否则 `visit_name` 报“无法推断类型实参”。
+
+**match**。`_instantiated_payload` 把 scrutinee 的实参代入构造器载荷后再
+检查子模式；穷尽性仍按模板的构造器名集合。运行时完全擦除：variant 名 +
+payload，解释器与 VM 均不读类型参数。
+
+**与内建容器的关系（非显然）**。`List[T]`/`Set[T]`/`Dict[K, V]`/`Tuple[...]`
+**不是**这套模板机制的实例：它们是 `ListType` 等硬编码的结构化静态类型，
+由 `_resolve_container_type` 按名字白名单特判。泛型 ADT 走
+`AdtTemplate`/`AdtType`，两者不共用实现。运行时的 `List` 等也只是每种容器一个
+无参数的 `OortType`（`type_system.py`），类型参数只存在于检查器抽象域。
+未来若统一，属于类型系统重构，不在增量 A 范围内。
+
+**尚未落地**：声明处变型（增量 B）与内建 `Option`/`Result` 预置（增量 C）。
+
+## 8. 边界与后续
+
+- **变型 / Result·Option 预置 / 完整模式匹配 / FFI 边界**：OP 0005 后续切片，
   建立在本文的双向检查 + 局部推断基线上。
 - **方法依赖扫描的保守性**：按属性名匹配同类方法（不看 receiver 类型），可能给
   「调用其他类同名方法」多加一条依赖约束——只会更保守（偶尔多要求标注），不会

@@ -97,6 +97,7 @@ nav:
       - OP 0019 参数绑定进入 HIR/VM: proposals/0019-hir-vm-parameter-binding.md
       - OP 0020 诊断消息质量: proposals/0020-diagnostic-quality.md
       - OP 0021 浮点字面量要求整数部分: proposals/0021-float-integer-part.md
+      - OP 0022 泛型 ADT 与内建 Option/Result: proposals/0022-generic-adts.md
   - 设计:
       - 设计索引: design/00-INDEX.md
       - 运行时值表示: design/01-runtime-value-representation.md

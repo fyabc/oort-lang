@@ -3,7 +3,8 @@
 """Independent static checker for the `oort-core` thin probe.
 
 The checker is intentionally small: `Int`, `Float`, `Bool`, `String`, `Unit`,
-collections, functions, monomorphic enums and static classes with fixed slots.
+collections, functions, monomorphic and generic enums, and static classes with
+fixed slots.
 It runs after pass 1 (name resolution / unsupported-feature checks) and only
 when pass 1 succeeded, so it can assume bindings exist and focus on types.
 """
@@ -28,11 +29,13 @@ from .types import (
     STRING,
     UNIT,
     UNKNOWN,
+    AdtTemplate,
     AdtType,
     ClassType,
     ConstructorInfo,
     CoreModuleInfo,
     DictType,
+    ForallType,
     FunctionType,
     ListType,
     ModuleType,
@@ -41,10 +44,14 @@ from .types import (
     SlotInfo,
     TupleType,
     Type,
+    TypeParameterType,
+    UnifyFailure,
     UnknownType,
     describe_type,
     is_assignable,
     join_types,
+    substitute,
+    unify,
 )
 
 ModuleResolver = Callable[[str, Path, SourcePosition], CoreModuleInfo | None]
@@ -148,8 +155,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
         self.current_function_name: str | None = None
         self.module_level = True
         self.module_exports: tuple[tuple[str, Type], ...] = ()
-        self.enums: dict[str, AdtType] = {}
-        self.constructor_names: dict[str, AdtType] = {}
+        self.enums: dict[str, AdtTemplate] = {}
+        self.constructor_names: dict[str, AdtTemplate] = {}
+        # Type parameters are only in scope while resolving one enum's payloads.
+        self.type_parameters: dict[str, TypeParameterType] = {}
         self.classes: dict[str, ClassType] = {}
         self.current_class: ClassType | None = None
         self._in_initializer = False
@@ -238,6 +247,20 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 return self._check_block_expected(node, expected)
             if isinstance(node, nodes.MatchExpr):
                 return self._check_match(node, expected)
+            if isinstance(node, nodes.Call):
+                scheme, name = self._generic_callee(node)
+                if (
+                    isinstance(expected, AdtType)
+                    and scheme is not None
+                    and self._scheme_result_matches(scheme, expected)
+                ):
+                    return self._check_generic_call_expected(node, scheme, name, expected, message)
+            if isinstance(node, nodes.Name):
+                info = self.lookup(node.id)
+                if info is not None and isinstance(info.type, ForallType):
+                    handled = self._check_generic_value_expected(node, info.type, expected, message)
+                    if handled is not None:
+                        return handled
 
         if isinstance(
             node, (nodes.ListLiteral, nodes.TupleLiteral, nodes.DictLiteral, nodes.SetLiteral)
@@ -735,8 +758,6 @@ class CoreTypeChecker(ASTVisitor[Type]):
             return self._unsupported(
                 node, "Enum declarations are only allowed at module top level in oort-core."
             )
-        if node.type_params:
-            return self._unsupported(node, "Generic enums are not supported in oort-core yet.")
         if node.name in _RESERVED_TYPE_NAMES:
             self._error(
                 f"Enum name '{node.name}' is reserved in oort-core.",
@@ -753,54 +774,63 @@ class CoreTypeChecker(ASTVisitor[Type]):
             self._error("An enum must declare at least one constructor.", node.position)
             return UNIT
 
-        adt = AdtType(self._module_origin(), node.name)
-        self.enums[node.name] = adt
+        params = self._enum_type_parameters(node)
+        template = AdtTemplate(self._module_origin(), node.name, params)
+        self.enums[node.name] = template
 
+        previous_params = self.type_parameters
+        self.type_parameters = {param.name: param for param in params}
         built: list[tuple[ConstructorInfo, nodes.EnumConstructor]] = []
-        for case in node.constructors:
-            if case.name == "_":
-                self._error(
-                    "Constructor name '_' is reserved for wildcard patterns.",
-                    case.position,
-                )
-                continue
-            if case.name in self.constructor_names:
-                self._error(
-                    f"Constructor '{case.name}' is already declared.",
-                    case.position,
-                )
-                continue
-            field_names: list[str] = []
-            payload: list[Type] = []
-            seen_fields: set[str] = set()
-            for field in case.fields:
-                if field.name in seen_fields:
+        try:
+            for case in node.constructors:
+                if case.name == "_":
                     self._error(
-                        f"Duplicate field '{field.name}' in constructor '{case.name}'.",
-                        field.position,
+                        "Constructor name '_' is reserved for wildcard patterns.",
+                        case.position,
                     )
-                seen_fields.add(field.name)
-                field_names.append(field.name)
-                if field.type_expr is None:
+                    continue
+                if case.name in self.constructor_names:
                     self._error(
-                        f"Field '{field.name}' requires a type annotation in oort-core.",
-                        field.position,
+                        f"Constructor '{case.name}' is already declared.",
+                        case.position,
                     )
-                    payload.append(UNKNOWN)
-                else:
-                    payload.append(self.resolve_annotation(field.type_expr, allow_unit=False))
-            info = ConstructorInfo(case.name, tuple(field_names), tuple(payload))
-            built.append((info, case))
-            self.constructor_names[case.name] = adt
+                    continue
+                field_names: list[str] = []
+                payload: list[Type] = []
+                seen_fields: set[str] = set()
+                for field in case.fields:
+                    if field.name in seen_fields:
+                        self._error(
+                            f"Duplicate field '{field.name}' in constructor '{case.name}'.",
+                            field.position,
+                        )
+                    seen_fields.add(field.name)
+                    field_names.append(field.name)
+                    if field.type_expr is None:
+                        self._error(
+                            f"Field '{field.name}' requires a type annotation in oort-core.",
+                            field.position,
+                        )
+                        payload.append(UNKNOWN)
+                    else:
+                        payload.append(self.resolve_annotation(field.type_expr, allow_unit=False))
+                info = ConstructorInfo(case.name, tuple(field_names), tuple(payload))
+                built.append((info, case))
+                self.constructor_names[case.name] = template
+        finally:
+            self.type_parameters = previous_params
 
-        adt.constructors = tuple(info for info, _ in built)
+        template.constructors = tuple(info for info, _ in built)
+        applied = AdtType(template, params)
         for info, case in built:
+            body: Type
             if info.payload:
-                constructor_type: Type = FunctionType(info.payload, adt)
+                body = FunctionType(info.payload, applied)
                 is_function = True
             else:
-                constructor_type = adt
+                body = applied
                 is_function = False
+            constructor_type = ForallType(params, body) if params else body
             self.declare(
                 info.name,
                 constructor_type,
@@ -808,8 +838,56 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 position=case.position,
                 is_function=is_function,
             )
-        node.metadata["type"] = describe_type(adt)
+        node.metadata["type"] = describe_type(applied)
         return UNIT
+
+    def _enum_type_parameters(self, node: nodes.EnumDef) -> tuple[TypeParameterType, ...]:
+        """Validate and collect an enum's type parameters.
+
+        Bounds and defaults are parsed but rejected: oort-core has no traits or
+        interfaces to use as bounds yet.  Names may not shadow a known type or
+        the future variance keywords.
+        """
+        params: list[TypeParameterType] = []
+        seen: set[str] = set()
+        for declaration in node.type_params:
+            name = declaration.name
+            if declaration.qualifier.name != "DEFAULT":
+                self._unsupported(
+                    declaration,
+                    "Type parameter bounds are not supported in oort-core yet; "
+                    "oort-core has no traits/interfaces to use as bounds.",
+                )
+                continue
+            if declaration.default_value is not None:
+                self._unsupported(
+                    declaration,
+                    "Type parameter defaults are not supported in oort-core yet.",
+                )
+                continue
+            if name in seen:
+                self._error(f"Duplicate type parameter '{name}'.", declaration.position)
+                continue
+            if name == node.name:
+                self._error(
+                    f"Type parameter '{name}' shadows the enum name.",
+                    declaration.position,
+                )
+                continue
+            if (
+                name in _RESERVED_TYPE_NAMES
+                or name in {"in", "out"}
+                or name in self.classes
+                or name in self.enums
+            ):
+                self._error(
+                    f"Type parameter '{name}' is already declared or reserved.",
+                    declaration.position,
+                )
+                continue
+            seen.add(name)
+            params.append(TypeParameterType(name))
+        return tuple(params)
 
     def _module_origin(self) -> str:
         path = self.input_info.module_path
@@ -1093,6 +1171,14 @@ class CoreTypeChecker(ASTVisitor[Type]):
             else:
                 self._error(f"Unknown name '{node.id}'.", node.position)
             return self._record(node, UNKNOWN)
+        if isinstance(info.type, ForallType):
+            names = ", ".join(f"'{param.name}'" for param in info.type.params)
+            label = "type argument" if len(info.type.params) == 1 else "type arguments"
+            self._error(
+                f"Cannot infer {label} {names} of constructor '{node.id}'; add a type annotation.",
+                node.position,
+            )
+            return self._record(node, UNKNOWN)
         return self._record(node, info.type)
 
     def _mark_recursive_call(self, name: str) -> None:
@@ -1121,6 +1207,8 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 self._error(f"Unknown function '{name}'.", node.func.position)
                 self._infer_arguments(node)
                 return self._record(node, UNKNOWN)
+            if isinstance(info.type, ForallType):
+                return self._check_generic_call(node, info.type, name)
             if not isinstance(info.type, FunctionType):
                 self._error(f"'{name}' is not callable.", node.func.position)
                 self._infer_arguments(node)
@@ -1131,6 +1219,14 @@ class CoreTypeChecker(ASTVisitor[Type]):
         else:
             callee_type = node.func.accept(self)
             if isinstance(callee_type, UnknownType):
+                self._infer_arguments(node)
+                return self._record(node, UNKNOWN)
+            if isinstance(callee_type, ForallType):
+                self._error(
+                    "A generic constructor cannot be used as a value without an "
+                    "expected function type.",
+                    node.func.position,
+                )
                 self._infer_arguments(node)
                 return self._record(node, UNKNOWN)
             if not isinstance(callee_type, FunctionType):
@@ -1174,6 +1270,147 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 )
                 continue
             arg.value.accept(self)
+
+    # ------------------------------------------------------------------
+    # Generic constructor instantiation
+    # ------------------------------------------------------------------
+
+    def _generic_callee(self, node: nodes.Call) -> tuple[ForallType | None, str]:
+        if not isinstance(node.func, nodes.Name):
+            return None, ""
+        info = self.lookup(node.func.id)
+        if info is None or not isinstance(info.type, ForallType):
+            return None, ""
+        return info.type, node.func.id
+
+    @staticmethod
+    def _scheme_result_matches(scheme: ForallType, expected: Type) -> bool:
+        body = scheme.body
+        if not isinstance(body, FunctionType) or not isinstance(body.ret, AdtType):
+            return False
+        return (
+            isinstance(expected, AdtType)
+            and body.ret.template.origin == expected.template.origin
+            and body.ret.template.name == expected.template.name
+        )
+
+    def _check_generic_call_expected(
+        self,
+        node: nodes.Call,
+        scheme: ForallType,
+        name: str,
+        expected: AdtType,
+        message: str | None,
+    ) -> Type:
+        body = scheme.body
+        assert isinstance(body, FunctionType)
+        bindings = {param.name: arg for param, arg in zip(scheme.params, expected.args)}
+        if len(node.args) != len(body.params):
+            self._error(
+                f"Function '{name}' expects {len(body.params)} arguments, got {len(node.args)}.",
+                node.position,
+            )
+        for index, arg in enumerate(node.args):
+            if arg.keyword is not None or arg.kind != nodes.ArgumentKind.DEFAULT:
+                self._unsupported(
+                    arg,
+                    "Keyword, variadic and block arguments are not supported in oort-core yet.",
+                )
+                continue
+            if index < len(body.params):
+                self._check_expr(arg.value, substitute(body.params[index], bindings))
+            else:
+                arg.value.accept(self)
+        self.expect(expected, substitute(body.ret, bindings), node, message)
+        return self._record(node, expected)
+
+    def _check_generic_call(self, node: nodes.Call, scheme: ForallType, name: str) -> Type:
+        body = scheme.body
+        if not isinstance(body, FunctionType):
+            self._error(f"'{name}' is not callable.", node.func.position)
+            self._infer_arguments(node)
+            return self._record(node, UNKNOWN)
+
+        arity_ok = len(node.args) == len(body.params)
+        if not arity_ok:
+            self._error(
+                f"Function '{name}' expects {len(body.params)} arguments, got {len(node.args)}.",
+                node.position,
+            )
+        bindings: dict[str, Type] = {}
+        failed = not arity_ok
+        for index, arg in enumerate(node.args):
+            if arg.keyword is not None or arg.kind != nodes.ArgumentKind.DEFAULT:
+                self._unsupported(
+                    arg,
+                    "Keyword, variadic and block arguments are not supported in oort-core yet.",
+                )
+                continue
+            actual = self._check_expr(arg.value, UNKNOWN)
+            if actual is None:
+                actual = UNKNOWN
+            if index >= len(body.params):
+                continue
+            failure = unify(body.params[index], actual, bindings)
+            if failure is not None:
+                failed = True
+                self._error(self._unify_message(failure, name, index), arg.value.position)
+
+        if not failed:
+            missing = [param.name for param in scheme.params if param.name not in bindings]
+            if missing:
+                failed = True
+                names = ", ".join(f"'{param}'" for param in missing)
+                label = "type argument" if len(missing) == 1 else "type arguments"
+                self._error(
+                    f"Cannot infer {label} {names} of constructor '{name}'; add a type annotation.",
+                    node.position,
+                )
+
+        result = substitute(body.ret, bindings)
+        if failed:
+            return self._record(node, UNKNOWN)
+        return self._record(node, result)
+
+    def _check_generic_value_expected(
+        self,
+        node: nodes.Name,
+        scheme: ForallType,
+        expected: Type,
+        message: str | None,
+    ) -> Type | None:
+        body = scheme.body
+        if isinstance(body, AdtType) and isinstance(expected, AdtType):
+            if (
+                body.template.origin == expected.template.origin
+                and body.template.name == expected.template.name
+                and len(scheme.params) == len(expected.args)
+            ):
+                return self._record(node, expected)
+            return None
+        if isinstance(body, FunctionType) and isinstance(expected, FunctionType):
+            bindings: dict[str, Type] = {}
+            failure = unify(body, expected, bindings)
+            if failure is not None:
+                return None
+            if any(param.name not in bindings for param in scheme.params):
+                return None
+            self.expect(expected, substitute(body, bindings), node, message)
+            return self._record(node, expected)
+        return None
+
+    @staticmethod
+    def _unify_message(failure: UnifyFailure, name: str, index: int) -> str:
+        if failure.kind == "conflict" and failure.parameter is not None:
+            return (
+                f"Type parameter '{failure.parameter}' of constructor '{name}' is "
+                f"inferred as both {describe_type(failure.expected)} and "
+                f"{describe_type(failure.actual)}."
+            )
+        return (
+            f"Argument {index + 1} of constructor '{name}' has type "
+            f"{describe_type(failure.actual)}, expected {describe_type(failure.expected)}."
+        )
 
     def _check_print_call(self, node: nodes.Call) -> Type:
         for arg in node.args:
@@ -1531,17 +1768,18 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 bindings.extend(result.bindings)
             return PatternResult(bindings, failed=True)
 
-        if len(pattern.args) != len(constructor.payload):
+        payload = self._instantiated_payload(constructor, expected)
+        if len(pattern.args) != len(payload):
             self._error(
                 f"Constructor '{constructor.name}' expects "
-                f"{len(constructor.payload)} argument(s), got {len(pattern.args)}.",
+                f"{len(payload)} argument(s), got {len(pattern.args)}.",
                 pattern.position,
             )
 
         bindings = []
         irrefutable = True
-        failed = len(pattern.args) != len(constructor.payload)
-        for arg, payload_type in zip(pattern.args, constructor.payload):
+        failed = len(pattern.args) != len(payload)
+        for arg, payload_type in zip(pattern.args, payload):
             result = self._check_pattern(arg, payload_type)
             bindings.extend(result.bindings)
             irrefutable = irrefutable and result.irrefutable
@@ -1553,6 +1791,13 @@ class CoreTypeChecker(ASTVisitor[Type]):
             irrefutable=len(expected.constructors) == 1 and irrefutable,
             failed=failed,
         )
+
+    def _instantiated_payload(
+        self, constructor: ConstructorInfo, expected: AdtType
+    ) -> tuple[Type, ...]:
+        """Substitute the scrutinee's arguments into one constructor's payload."""
+        mapping = {param.name: arg for param, arg in zip(expected.template.params, expected.args)}
+        return tuple(substitute(payload, mapping) for payload in constructor.payload)
 
     # ------------------------------------------------------------------
     # Annotations, diagnostics and unsupported constructs
@@ -1578,6 +1823,9 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 node.position,
             )
             return UNKNOWN
+        type_parameter = self.type_parameters.get(node.id)
+        if type_parameter is not None:
+            return type_parameter
         if node.id == "Int":
             return INT
         if node.id == "Float":
@@ -1603,10 +1851,28 @@ class CoreTypeChecker(ASTVisitor[Type]):
         class_type = self.classes.get(node.id)
         if class_type is not None:
             return class_type
-        enum_type = self.enums.get(node.id)
-        if enum_type is not None:
-            return enum_type
-        known = ", ".join(["Int", "Float", "Bool", "String", "Unit", *self.classes, *self.enums])
+        enum_template = self.enums.get(node.id)
+        if enum_template is not None:
+            if enum_template.params:
+                self._error(
+                    f"Type '{node.id}' requires {len(enum_template.params)} type argument(s); "
+                    f"write {node.id}[...].",
+                    node.position,
+                )
+                return UNKNOWN
+            return AdtType(enum_template, ())
+        known = ", ".join(
+            [
+                "Int",
+                "Float",
+                "Bool",
+                "String",
+                "Unit",
+                *self.type_parameters,
+                *self.classes,
+                *self.enums,
+            ]
+        )
         self._error(
             f"Unknown type '{node.id}' in oort-core. Known types: {known}.",
             node.position,
@@ -2081,9 +2347,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
 
     def _resolve_container_type(self, node: nodes.Subscript) -> Type:
         base = node.value
-        if not isinstance(base, nodes.Name) or base.id not in {"List", "Set", "Dict", "Tuple"}:
+        if not isinstance(base, nodes.Name):
             self._error(
-                "Generic type applications are only supported for List, Set, Dict and Tuple.",
+                "Generic type applications are only supported for List, Set, Dict, "
+                "Tuple and generic enums.",
                 node.position,
             )
             return UNKNOWN
@@ -2094,6 +2361,32 @@ class CoreTypeChecker(ASTVisitor[Type]):
             arguments = [node.index]
 
         name = base.id
+        template = self.enums.get(name)
+        if template is not None:
+            if not template.params:
+                self._error(f"Enum '{name}' does not take type arguments.", node.position)
+                return AdtType(template, ())
+            param_count = len(template.params)
+            if len(arguments) != param_count:
+                self._error(
+                    f"Type '{name}' expects {param_count} type argument(s), got {len(arguments)}.",
+                    node.position,
+                )
+            resolved = [
+                self.resolve_annotation(argument, allow_unit=False) for argument in arguments
+            ]
+            if len(resolved) != param_count:
+                resolved = (resolved + [UNKNOWN] * param_count)[:param_count]
+            return AdtType(template, tuple(resolved))
+
+        if name not in {"List", "Set", "Dict", "Tuple"}:
+            self._error(
+                "Generic type applications are only supported for List, Set, Dict, "
+                "Tuple and generic enums.",
+                node.position,
+            )
+            return UNKNOWN
+
         expected_count = {"List": 1, "Set": 1, "Dict": 2}.get(name)
         if expected_count is not None and len(arguments) != expected_count:
             self._error(

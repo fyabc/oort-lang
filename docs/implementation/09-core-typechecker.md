@@ -37,8 +37,12 @@ source
 - `ClassType(origin, name, slots, methods)`：名义相等，槽/方法在注册后填充；
 - `SlotInfo(name, slot_type, mutable, has_initializer)`；
 - `FunctionType(params, ret)`、`ModuleType(name, exports)`；
-- `AdtType(origin, name, constructors)`：名义相等只看 `(origin, name)`，
+- `AdtTemplate(origin, name, params, constructors)`：enum 声明（类型构造器），
   `constructors` 在声明注册后填充，以支持自递归 payload；
+- `AdtType(template, args)`：应用后的类型（`Option[Int]`）；名义相等看
+  `(template.origin, template.name)`，实参结构比较。单态 enum 是 `args=()`；
+- `TypeParameterType(name)`：声明体内的刚性参数；
+- `ForallType(params, body)`：构造器的多态类型方案；
 - `ConstructorInfo(name, field_names, payload)`；
 - `UnknownType`（错误恢复，兼容一切）；
 - `NeverType`（不能正常落到的表达式，例如 `return`）。
@@ -102,20 +106,38 @@ source
 ## ADT 与 `match`
 
 - `visit_enum_def`：
-  - 仅模块顶层、非泛型、非空；enum 名进入类型命名空间，构造器名进入模块
-    值命名空间；先注册 `AdtType` 再解析字段，支持自递归；
-  - payload 构造器是 `FunctionType(payload, adt)`，零参构造器是 `AdtType` 值。
+  - 仅模块顶层、非空；enum 名进入类型命名空间，构造器名进入模块值命名空间；
+    先注册 `AdtTemplate` 再解析字段，支持自递归；
+  - 类型参数 `[T]`：`_enum_type_parameters` 校验重名/遮蔽；上界与默认值
+    显式拒绝（无 traits/interfaces）。解析载荷时 `self.type_parameters`
+    提供刚性参数；
+  - payload 构造器是 `ForallType(params, FunctionType(payload, adt))`
+    （单态时直接是 `FunctionType`），零参构造器同理是 AdtType 值。
+- 类型应用：`_resolve_container_type` 识别已声明 enum 模板，检查实参数目并
+  返回 `AdtType(template, args)`；裸泛型名与单态 enum 加实参分别报错。
+- 构造器实例化（`_check_expr` / `_check_generic_call` / `_check_generic_value_expected`）：
+  check 模式由同模板期望类型绑定参数（`Some([])` 可用）；infer 模式用
+  `unify()` 从实参求解，未绑定报硬错误、冲突报双绑定诊断；裸构造器作值要有
+  期望函数类型。算法见 [design 14](../design/14-core-typechecking.md) §7。
 - 模式检查（`_check_pattern`）：
   - `_`：覆盖全部；
   - 绑定名：绑定当前期望类型；若命中当前 enum 的零参构造器，则同时限定该
     variant 并绑定该名字；
-  - 构造器模式：必须属于当前 enum，元数匹配，子模式按字段类型递归；
+  - 构造器模式：必须属于当前 enum，元数匹配；载荷先用
+    `_instantiated_payload` 代入 scrutinee 实参，再递归子模式；
   - 同一模式重复绑定由 Pass1/arm 作用域报错。
 - 每个 arm 独立作用域；arm 体类型用 `join_types` 合并。
 - 穷尽性只做**顶层构造器覆盖**：`_`/绑定覆盖全部；构造器模式的子模式都
   不可反驳时覆盖该构造器；嵌套穷尽性未实现。
-- 构造器调用复用 `visit_call`（`FunctionType`），零参构造器复用 `visit_name`。
+- 零参构造器复用 `visit_name`；泛型构造器在无期望时由 `visit_name` 报
+  “无法推断类型实参”。
 - `enum ==` 显式拒绝；`print(enum)` 允许。
+
+**与内置容器泛型的关系**：`List[T]`/`Set[T]`/`Dict[K, V]`/`Tuple[...]` 是
+`ListType` 等硬编码的结构化类型，由 `_resolve_container_type` 按名字白名单
+特判；它们**不经过** `AdtTemplate`。运行时的 `List` 等也只是每种容器一个
+不带参数的 `OortType`（`runtime/type_system.py`）。泛型 ADT 是另一套模板
+机制，两者不共用实现；统一属于后续类型系统重构。
 
 运行时（`interpreter.py`）：
 
@@ -163,7 +185,7 @@ Checker.visit_import -> Compiler._resolve_core_module
 - `tests/unit/frontend/test_analyzer_dispatch.py`：分析器选择。
 - `tests/unit/runtime/test_core_execution.py`：检查后执行与 Unit/null 映射。
 - `tests/unit/runtime/test_core_adt_execution.py`：构造、match、嵌套、递归、
-  跨模块构造器与打印。
+  跨模块构造器与打印；泛型 ADT 的 eval/vm 差分与跨模块用例。
 - `tests/unit/runtime/test_core_function_values.py`：lambda、闭包、高阶函数、
   函数值跨模块与 ADT payload。
 - `tests/unit/runtime/test_core_modules.py`：同方言导入、再导出、类型检查、

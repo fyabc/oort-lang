@@ -8,14 +8,19 @@ from oort_lang.semantics.core.types import (
     NEVER,
     UNIT,
     UNKNOWN,
+    AdtTemplate,
     AdtType,
     ConstructorInfo,
     FunctionType,
+    ListType,
     ModuleType,
+    TypeParameterType,
     UnknownType,
     describe_type,
     is_assignable,
     join_types,
+    substitute,
+    unify,
 )
 
 
@@ -71,11 +76,17 @@ def test_module_type_exports():
     assert is_assignable(module, module)
 
 
+def _template(
+    name: str = "Option", origin: str = "main.ort", params: tuple[str, ...] = ()
+) -> AdtTemplate:
+    return AdtTemplate(origin, name, tuple(TypeParameterType(param) for param in params))
+
+
 def test_adt_type_is_nominal():
-    first = AdtType("main.ort", "Option")
-    same = AdtType("main.ort", "Option")
-    other_module = AdtType("lib.ort", "Option")
-    other_name = AdtType("main.ort", "Result")
+    first = AdtType(_template(), ())
+    same = AdtType(_template(), ())
+    other_module = AdtType(_template(origin="lib.ort"), ())
+    other_name = AdtType(_template("Result"), ())
     assert first == same
     assert first != other_module
     assert first != other_name
@@ -83,14 +94,71 @@ def test_adt_type_is_nominal():
 
 
 def test_adt_type_constructors_and_description():
-    adt = AdtType("main.ort", "Option")
+    template = _template()
+    adt = AdtType(template, ())
     some = ConstructorInfo("Some", ("value",), (INT,))
     none = ConstructorInfo("None", (), ())
-    adt.constructors = (some, none)
+    template.constructors = (some, none)
     assert adt.constructor("Some") is some
     assert adt.constructor("Missing") is None
     assert describe_type(adt) == "Option"
-    assert is_assignable(adt, AdtType("main.ort", "Option"))
-    assert not is_assignable(adt, AdtType("main.ort", "Result"))
-    assert join_types(adt, AdtType("main.ort", "Option")) == adt
-    assert join_types(adt, AdtType("main.ort", "Result")) is None
+    assert is_assignable(adt, AdtType(_template(), ()))
+    assert not is_assignable(adt, AdtType(_template("Result"), ()))
+    assert join_types(adt, AdtType(_template(), ())) == adt
+    assert join_types(adt, AdtType(_template("Result"), ())) is None
+
+
+def test_generic_adt_type_description_and_equality():
+    template = _template(params=("T",))
+    int_option = AdtType(template, (INT,))
+    assert describe_type(int_option) == "Option[Int]"
+    assert int_option == AdtType(_template(params=("T",)), (INT,))
+    assert int_option != AdtType(template, (BOOL,))
+    assert hash(int_option) == hash(AdtType(_template(params=("T",)), (INT,)))
+
+
+def test_generic_adt_assignability_is_invariant():
+    template = _template(params=("T",))
+    int_option = AdtType(template, (INT,))
+    assert is_assignable(int_option, AdtType(template, (INT,)))
+    assert not is_assignable(int_option, AdtType(template, (BOOL,)))
+    # Unknown still participates in error recovery.
+    assert is_assignable(int_option, AdtType(template, (UNKNOWN,)))
+    assert is_assignable(AdtType(template, (UNKNOWN,)), int_option)
+
+
+def test_join_generic_adt_types():
+    template = _template(params=("T",))
+    int_option = AdtType(template, (INT,))
+    unknown_option = AdtType(template, (UNKNOWN,))
+    assert join_types(int_option, int_option) == int_option
+    assert join_types(int_option, unknown_option) == unknown_option
+    assert join_types(int_option, AdtType(template, (BOOL,))) is None
+
+
+def test_substitute_type_parameters():
+    template = _template(params=("T",))
+    param = TypeParameterType("T")
+    applied = AdtType(template, (param,))
+    assert substitute(applied, {"T": INT}) == AdtType(template, (INT,))
+    assert substitute(ListType(param), {"T": INT}) == ListType(INT)
+    assert substitute(FunctionType((param,), param), {"T": INT}) == FunctionType((INT,), INT)
+
+
+def test_unify_binds_and_detects_conflicts():
+    param = TypeParameterType("T")
+    bindings = {}
+    assert unify(param, INT, bindings) is None
+    assert bindings == {"T": INT}
+    conflict = unify(param, BOOL, bindings)
+    assert conflict is not None
+    assert conflict.kind == "conflict"
+    assert conflict.parameter == "T"
+
+    list_param = ListType(param)
+    bindings = {}
+    assert unify(list_param, ListType(INT), bindings) is None
+    assert bindings == {"T": INT}
+    mismatch = unify(list_param, INT, bindings)
+    assert mismatch is not None
+    assert mismatch.kind == "mismatch"

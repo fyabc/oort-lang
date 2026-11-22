@@ -1,10 +1,11 @@
 # `oort-core` 薄探针
 
 本页描述 `#lang oort-core` 当前**已实现**的最小静态子集。它不是完整的
-`oort-core` v1：已实现 Int/Float/Bool/String、集合与循环、函数、单态 ADT
-（`enum`）与 `match`、静态类与固定槽，但泛型 ADT、`Option[T]`/`Result[T,E]`
-与跨方言 FFI 尚未实现。
-设计取舍见 [OP 0017](../proposals/0017-oort-core-thin-probe.md)。
+`oort-core` v1：已实现 Int/Float/Bool/String、集合与循环、函数、泛型 ADT
+（`enum E[T]`）与 `match`、静态类与固定槽，但内建 `Option`/`Result`、
+声明处变型注解与跨方言 FFI 尚未实现。
+设计取舍见 [OP 0017](../proposals/0017-oort-core-thin-probe.md) 与
+[OP 0022](../proposals/0022-generic-adts.md)。
 
 ## 启用
 
@@ -32,7 +33,7 @@ print(add(1, 2))
 | `Bool` | 参数、变量、返回值、条件、逻辑运算 |
 | `String` | 参数、变量、返回值、表达式 |
 | `Unit` | **仅函数返回类型**；声明的内部类型，不是变量类型 |
-| `enum` 类型 | 参数、变量、返回值、字段类型；单态，名称在模块内唯一 |
+| `enum` 类型 | 参数、变量、返回值、字段类型；单态 `Shape` 或泛型 `Option[Int]`，名称在模块内唯一 |
 | 集合类型 | `List[T]`、`Set[T]`、`Dict[K, V]`、`Tuple[T1, ...]`；参数/变量/返回值/字段 |
 | 类类型 | 类名；参数、变量、返回值、槽类型；名义相等 |
 | 函数类型 | `Int -> Bool`、`(Int, Bool) -> Int`、`() -> Unit`；参数/变量/返回值/字段 |
@@ -73,7 +74,8 @@ def show(n: Int) -> Unit {
   运算符定义。
 - 每个参数都必须标注；参数只支持普通位置参数。**返回类型可省略**：顶层
   `def` 与 lambda 的返回类型可从函数体推断（各 `return` 类型与尾表达式类型
-  合并）；显式标注时仍按标注检查。类方法的返回类型仍必须标注。
+  合并）；显式标注时仍按标注检查。类方法同样可推断（按调用依赖拓扑序；
+  递归环上的方法仍需标注），见 [design 14](../design/14-core-typechecking.md)。
 - 返回值遵循 Oort 的运行语义：函数体最后一个表达式的值，或显式 `return`。
 - 非 Unit 函数必须所有路径返回值，或函数体最后一个表达式的类型可赋给返回类型。
 - 裸 `return` 只允许用于 `-> Unit` 函数（推断出 Unit 的函数同样允许）。
@@ -240,6 +242,28 @@ def area(shape: Shape) -> Int {
 }
 ```
 
+泛型 ADT 用 `[T]` 声明类型参数，用 `Name[...]` 应用：
+
+```oort
+enum Option[T] {
+    Some(value: T),
+    None
+}
+
+enum MyList[T] {
+    Cons(head: T, tail: MyList[T]),
+    Nil
+}
+
+val a: Option[Int] = Some(1)
+val b = Some("text")                  # 推断为 Option[String]
+val xs: MyList[Int] = Cons(1, Cons(2, Nil))
+
+def unwrap(o: Option[Int]) -> Int {
+    match o { Some(v) => v, None => 0 }
+}
+```
+
 - `enum` 只能出现在模块顶层；必须至少有一个构造器；字段类型必须标注，
   可为任意已支持的静态类型（标量、集合、函数、此前声明的 enum/类，不能是
   Unit）；支持自递归。enum 类型名
@@ -256,7 +280,22 @@ def area(shape: Shape) -> Int {
 - arm 体类型必须可合并；`Never` 可参与合并。
 - **顶层构造器穷尽性**：`_`/普通绑定覆盖全部；构造器模式在其所有子模式都
   不可反驳时覆盖该构造器。嵌套穷尽性尚未实现，需用 `_`/绑定兜底。
-- 空 enum、泛型 enum、非顶层 enum、匹配非 enum、enum `==` 均显式拒绝。
+- **泛型参数**：`[T]` / `[T, E]`；参数名不得遮蔽内建/已知类型，重复参数报错。
+  上界 `T: Bound` 与类型参数默认值显式拒绝；声明处变型 `[out T]`/`[in T]`
+  尚未实现（当前是语法错误，增量 B 落地，见
+  [OP 0022](../proposals/0022-generic-adts.md)）。
+- **类型应用**：`Option[Int]`、`Pair[Int, String]`，可嵌套（`Option[List[Int]]`）；
+  实参个数必须匹配；裸 `Option` 报“requires N type argument(s)”；单态 enum
+  不接受实参。
+- **构造器多态**：`Some` 的类型是 `(T) -> Option[T]`。类型实参由**期望类型**
+  （`val x: Option[Int] = Some(1)`）或**实参类型**（`Some(1)` 推断
+  `Option[Int]`）确定。求不出的参数是错误：`val x = None`、`val r = Ok(1)`
+  （`E` 未知）需要标注；构造器作值仅在有期望函数类型时可用
+  （`val f: (Int) -> Option[Int] = Some`）。
+- **模式载荷**：match 按 scrutinee 的实参代换构造器载荷类型；
+  `Option[Int]` 上的 `Some(v)` 把 `v` 绑定为 `Int`。递归载荷
+  （`MyList[T]` 里的 `MyList[T]`）与嵌套构造器模式均支持。
+- 空 enum、非顶层 enum、匹配非 enum、enum `==` 均显式拒绝。
 
 ## 显式拒绝
 
@@ -289,7 +328,12 @@ def area(shape: Shape) -> Int {
 | 位运算/`in`/`is` | `1 & 2`、`x in xs` | 运算符不支持 |
 | 跨方言 import | core 导入 object 模块 | `Cannot import a 'oort-object' module...` |
 | native import | `import "math"` | `Native modules are not supported...` |
-| 泛型 enum | `enum E[T] { A }` | `Generic enums are not supported...` |
+| 类型参数上界/默认值 | `enum E[T: Int] { A }`、`enum E[T = Int] { A }` | `Type parameter bounds/defaults are not supported...` |
+| 裸泛型类型 | `val x: MyOption = None` | `Type 'MyOption' requires 1 type argument(s); write MyOption[...].` |
+| 单态 enum 加实参 | `Shape[Int]` | `Enum 'Shape' does not take type arguments.` |
+| 泛型实参数目 | `MyOption[Int, String]` | `Type 'MyOption' expects 1 type argument(s), got 2.` |
+| 无法推断类型实参 | `val x = None`、`val r = Ok(1)` | `Cannot infer type argument ...; add a type annotation.` |
+| 类型实参冲突 | `Same(1, "s")`（`Same[T]` 的两个字段都是 `T`） | `Type parameter 'T' ... is inferred as both Int and String.` |
 | 非顶层 enum | 函数/块内 `enum` | `Enum declarations are only allowed at module top level...` |
 | 空 enum | `enum E { }` | `An enum must declare at least one constructor.` |
 | match 非 enum | `match 1 { _ => 1 }` | `The scrutinee of match must have an enum type...` |
@@ -326,5 +370,6 @@ print(x)          # 1
 
 ## 尚未实现
 
-null、类继承与元类、泛型 ADT、`Option[T]`/`Result[T,E]`、匿名 $n lambda、
-跨方言 FFI、REPL 方言切换、字面量/元组/守卫/或模式、嵌套穷尽性、ADT 相等。
+null、类继承与元类、泛型类/函数/lambda、声明处变型注解、内建
+`Option`/`Result`、匿名 $n lambda、跨方言 FFI、REPL 方言切换、字面量/元组/
+守卫/或模式、嵌套穷尽性、ADT 相等。

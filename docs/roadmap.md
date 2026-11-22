@@ -89,10 +89,11 @@ P1 已完成。后续打磨（P2）：
 集合、下标/`len`、`while`/`for`。已完成静态类与固定槽：槽类型/初始化顺序、
 确定赋值、`val` 只读与构造器检查。**已完成函数返回类型推断**（顶层 def +
 lambda + 类方法，递归仍需标注，类方法按依赖序推断；算法见
-[design 14](design/14-core-typechecking.md)）。后续按
-[OP 0005](proposals/0005-type-system.md) 实现泛型 ADT（内部单态化 + 边界擦除）、
-`Result`/`Option`、字面量/元组/守卫/或模式与嵌套穷尽性、静态对象模型与槽变量，
-以及跨方言 FFI 边界。
+[design 14](design/14-core-typechecking.md)）。**已完成泛型 ADT 增量 A**
+（`enum E[T]`、类型应用、构造器实参推断、match 载荷代换；类型参数擦除，
+后端零改动；设计与切片见 [OP 0022](proposals/0022-generic-adts.md)）。后续：
+声明处变型与内建 `Result`/`Option`（OP 0022 增量 B/C）、字面量/元组/守卫/
+或模式与嵌套穷尽性、静态对象模型与槽变量，以及跨方言 FFI 边界。
 
 ### 阶段 3：共享后端
 

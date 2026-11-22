@@ -295,7 +295,8 @@ class TestCoreRejections:
         check_error(
             caplog,
             "var x: Foo[Int] = 1\n",
-            "Generic type applications are only supported for List, Set, Dict and Tuple.",
+            "Generic type applications are only supported for List, Set, Dict, "
+            "Tuple and generic enums.",
         )
 
     def test_if_condition_must_be_bool(self, caplog):
@@ -601,11 +602,18 @@ class TestCoreAdtRejections:
             "arms of this match have incompatible types",
         )
 
-    def test_generic_enum_is_rejected(self, caplog):
+    def test_generic_enum_bounds_are_rejected(self, caplog):
         check_error(
             caplog,
-            "enum E[T] { A }\n",
-            "Generic enums are not supported in oort-core yet.",
+            "enum E[T: Int] { A }\n",
+            "Type parameter bounds are not supported in oort-core yet",
+        )
+
+    def test_generic_enum_defaults_are_rejected(self, caplog):
+        check_error(
+            caplog,
+            "enum E[T = Int] { A }\n",
+            "Type parameter defaults are not supported in oort-core yet.",
         )
 
     def test_empty_enum_is_rejected(self, caplog):
@@ -662,6 +670,199 @@ class TestCoreAdtRejections:
             caplog,
             "enum E { A(x: Int) }\nprint(match A(1) { A => 1 })\n",
             "Constructor 'A' expects 1 argument(s).",
+        )
+
+
+class TestCoreGenericAdt:
+    def test_generic_enum_construction_and_match(self, run_source):
+        result = run_source(
+            core(
+                "enum MyOption[T] { Some(value: T), None }\n"
+                "def unwrap(o: MyOption[Int]) -> Int {\n"
+                "    match o { Some(v) => v, None => 0 }\n"
+                "}\n"
+                "val a: MyOption[Int] = Some(3)\n"
+                "print(unwrap(a))\n"
+                "print(unwrap(None))\n"
+            )
+        )
+        assert result.stdout == "3\n0\n"
+
+    def test_generic_enum_infers_from_arguments(self, run_source):
+        result = run_source(
+            core(
+                "enum MyOption[T] { Some(value: T), None }\n"
+                "val a = Some(5)\n"
+                "print(match a { Some(v) => v, None => 0 })\n"
+                'val b = Some("text")\n'
+                'print(match b { Some(v) => v, None => "" })\n'
+            )
+        )
+        assert result.stdout == "5\ntext\n"
+
+    def test_generic_enum_expected_type_propagates_to_payload(self, run_source):
+        result = run_source(
+            core(
+                "enum MyOption[T] { Some(value: T), None }\n"
+                "val a: MyOption[List[Int]] = Some([])\n"
+                "print(match a { Some(v) => len(v), None => -1 })\n"
+            )
+        )
+        assert result.stdout == "0\n"
+
+    def test_generic_enum_multiple_parameters(self, run_source):
+        result = run_source(
+            core(
+                "enum Pair[A, B] { Pair(first: A, second: B) }\n"
+                'val p: Pair[Int, String] = Pair(1, "x")\n'
+                "print(match p { Pair(a, b) => b })\n"
+            )
+        )
+        assert result.stdout == "x\n"
+
+    def test_generic_enum_function_payload(self, run_source):
+        result = run_source(
+            core(
+                "enum E[T] { F(f: (T) -> Int) }\n"
+                "val e: E[Int] = F(do(x: Int) { x + 1 })\n"
+                "print(match e { F(f) => f(2) })\n"
+            )
+        )
+        assert result.stdout == "3\n"
+
+    def test_generic_enum_in_class_slot(self, run_source):
+        result = run_source(
+            core(
+                "enum MyOption[T] { Some(value: T), None }\n"
+                "class Holder {\n"
+                "    val o: MyOption[Int]\n"
+                "    def __init__(o: MyOption[Int]) {\n"
+                "        this.o = o\n"
+                "    }\n"
+                "    def get() -> Int {\n"
+                "        match this.o { Some(v) => v, None => 0 }\n"
+                "    }\n"
+                "}\n"
+                "print(Holder(Some(5)).get())\n"
+                "print(Holder(None).get())\n"
+            )
+        )
+        assert result.stdout == "5\n0\n"
+
+    def test_generic_enum_recursive_payload(self, run_source):
+        result = run_source(
+            core(
+                "enum MyList[T] { Cons(head: T, tail: MyList[T]), Nil }\n"
+                "def total(xs: MyList[Int]) -> Int {\n"
+                "    match xs { Cons(h, t) => h + total(t), Nil => 0 }\n"
+                "}\n"
+                "val xs: MyList[Int] = Cons(1, Cons(2, Nil))\n"
+                "print(total(xs))\n"
+            )
+        )
+        assert result.stdout == "3\n"
+
+    def test_generic_constructor_as_value_with_expected_function(self, run_source):
+        result = run_source(
+            core(
+                "enum MyOption[T] { Some(value: T), None }\n"
+                "val f: (Int) -> MyOption[Int] = Some\n"
+                "print(match f(2) { Some(v) => v, None => 0 })\n"
+            )
+        )
+        assert result.stdout == "2\n"
+
+    def test_nested_generic_construction(self, run_source):
+        result = run_source(
+            core(
+                "enum MyOption[T] { Some(value: T), None }\n"
+                "val nested = Some(Some(1))\n"
+                "print(match nested {\n"
+                "    Some(inner) => match inner { Some(v) => v, None => 0 },\n"
+                "    None => -1\n"
+                "})\n"
+            )
+        )
+        assert result.stdout == "1\n"
+
+    def test_nullary_generic_constructor_requires_expectation(self, caplog):
+        check_error(
+            caplog,
+            "enum MyOption[T] { Some(value: T), None }\nval x = None\n",
+            "Cannot infer type argument 'T' of constructor 'None'",
+        )
+
+    def test_partial_generic_constructor_requires_expectation(self, caplog):
+        check_error(
+            caplog,
+            "enum MyResult[T, E] { Ok(value: T), Err(error: E) }\nval r = Ok(1)\n",
+            "Cannot infer type argument 'E' of constructor 'Ok'",
+        )
+
+    def test_conflicting_type_argument_inference(self, caplog):
+        check_error(
+            caplog,
+            'enum Same[T] { Same(a: T, b: T) }\nval x = Same(1, "s")\n',
+            "Type parameter 'T' of constructor 'Same' is inferred as both Int and String.",
+        )
+
+    def test_expected_payload_mismatch(self, caplog):
+        check_error(
+            caplog,
+            "enum MyOption[T] { Some(value: T), None }\nval x: MyOption[String] = Some(1)\n",
+            "Expected String, got Int.",
+        )
+
+    def test_bare_generic_type_requires_arguments(self, caplog):
+        check_error(
+            caplog,
+            "enum MyOption[T] { Some(value: T), None }\nval x: MyOption = None\n",
+            "Type 'MyOption' requires 1 type argument(s); write MyOption[...].",
+        )
+
+    def test_monomorphic_enum_rejects_type_arguments(self, caplog):
+        check_error(
+            caplog,
+            "enum Shape { Circle }\nval x: Shape[Int] = Circle\n",
+            "Enum 'Shape' does not take type arguments.",
+        )
+
+    def test_generic_type_argument_arity(self, caplog):
+        check_error(
+            caplog,
+            "enum MyOption[T] { Some(value: T), None }\nval x: MyOption[Int, String] = None\n",
+            "Type 'MyOption' expects 1 type argument(s), got 2.",
+        )
+
+    def test_type_parameter_cannot_shadow_type(self, caplog):
+        check_error(
+            caplog,
+            "enum E[Int] { A }\n",
+            "Type parameter 'Int' is already declared or reserved.",
+        )
+
+    def test_duplicate_type_parameter(self, caplog):
+        check_error(
+            caplog,
+            "enum E[T, T] { A(x: T) }\n",
+            "Duplicate type parameter 'T'.",
+        )
+
+    def test_type_parameter_cannot_shadow_enum_name(self, caplog):
+        check_error(
+            caplog,
+            "enum E[E] { A }\n",
+            "Type parameter 'E' shadows the enum name.",
+        )
+
+    def test_match_payload_binding_uses_scrutinee_arguments(self, caplog):
+        check_error(
+            caplog,
+            "enum Pair[A, B] { Pair(first: A, second: B) }\n"
+            "def f(p: Pair[Int, String]) -> Int {\n"
+            "    match p { Pair(a, b) => b }\n"
+            "}\n",
+            "Expected Int, got String.",
         )
 
 

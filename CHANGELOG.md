@@ -8,6 +8,13 @@
 
 ### 新增
 
+- **oort-core 泛型 ADT**（OP 0022 增量 A）：`enum Option[T] { Some(value: T), None }`
+  形式的类型参数声明与 `Option[Int]` 类型应用。构造器类型实参由期望类型
+  （`val x: Option[Int] = Some(1)`、`Some([])`）或实参类型（`Some(1)`）确定；
+  无法推断（`val x = None`）或冲突时显式报错。`match` 按 scrutinee 的实参
+  代换构造器载荷类型；支持自递归泛型载荷（`MyList[T]`）。类型参数在 HIR/字节码
+  前擦除，解释器与 VM 无改动。上界、类型参数默认值与声明处变型（增量 B）、
+  内建 `Option`/`Result`（增量 C）仍未实现。
 - **oort-core 函数返回类型推断**（OP 0005）：顶层 `def`、`do` lambda 与**类方法**
   可省略返回标注，从各 `return` 类型与尾表达式类型合并推断；lambda 还可由期望
   函数类型下推返回类型（`val f: (Int) -> Int = do(x: Int) { x }`）。类方法按调用

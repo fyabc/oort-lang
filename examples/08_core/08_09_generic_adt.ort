@@ -1,0 +1,36 @@
+#lang oort-core
+
+# 泛型 ADT：类型参数、构造器实参推断与 match 载荷代换。
+
+enum Option[T] {
+    Some(value: T),
+    None
+}
+
+enum MyList[T] {
+    Cons(head: T, tail: MyList[T]),
+    Nil
+}
+
+def unwrap(o: Option[Int], fallback: Int) -> Int {
+    match o {
+        Some(v) => v,
+        None => fallback
+    }
+}
+
+def total(xs: MyList[Int]) -> Int {
+    match xs {
+        Cons(h, t) => h + total(t),
+        Nil => 0
+    }
+}
+
+val some: Option[Int] = Some(3)
+val none: Option[Int] = None
+val xs: MyList[Int] = Cons(1, Cons(2, Nil))
+
+print(unwrap(some, 0))
+print(unwrap(none, -1))
+print(total(xs))
+print(match Some("text") { Some(v) => v, None => "" })
