@@ -19,6 +19,9 @@ from typing import TYPE_CHECKING, NoReturn
 from ..ast import nodes
 from ..diagnostics.syntax_errors import UnsupportedSyntax
 from ..semantics.core.types import (
+    AdtType as CoreAdtType,
+)
+from ..semantics.core.types import (
     DictType,
     FunctionType,
     ListType,
@@ -33,7 +36,10 @@ from ..semantics.core.types import (
 from .dump import format_instruction
 from .lower import HirLowerer
 from .nodes import (
+    AdtField,
+    AdtTag,
     BinOp,
+    BuildAdt,
     BuildDict,
     BuildList,
     BuildSet,
@@ -104,7 +110,60 @@ class ContainerType:
         return f"{self.kind}[{', '.join(str(arg) for arg in self.args)}]"
 
 
-IrTypeLike = IrType | ContainerType
+@dataclasses.dataclass(frozen=True, slots=True)
+class AdtType:
+    """A nominal monomorphic ADT type (generic args arrive in S4b)."""
+
+    origin: str
+    name: str
+    args: tuple[IrTypeLike, ...] = ()
+
+    def __str__(self) -> str:
+        if not self.args:
+            return self.name
+        return f"{self.name}[{', '.join(str(arg) for arg in self.args)}]"
+
+
+IrTypeLike = IrType | ContainerType | AdtType
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class AdtConstructor:
+    name: str
+    payload: tuple[IrTypeLike, ...] = ()
+    arity: int = 0
+
+    def __post_init__(self) -> None:
+        if not self.arity:
+            object.__setattr__(self, "arity", len(self.payload))
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class AdtDecl:
+    """One module-level enum declaration and its constructors."""
+
+    origin: str
+    name: str
+    constructors: tuple[AdtConstructor, ...]
+
+
+class ConstructorSite:
+    """Where a constructor lives in the module ADT table."""
+
+    __slots__ = ("arity", "constructor_id", "ctor_index", "decl_index", "payload")
+
+    def __init__(
+        self,
+        constructor_id: int,
+        decl_index: int,
+        ctor_index: int,
+        payload: tuple[IrTypeLike, ...],
+    ):
+        self.constructor_id = constructor_id
+        self.decl_index = decl_index
+        self.ctor_index = ctor_index
+        self.payload = payload
+        self.arity = len(payload)
 
 
 def list_type(element: IrTypeLike) -> ContainerType:
@@ -132,6 +191,8 @@ def ir_type_tag(ir_type: IrTypeLike) -> int:
 
     if isinstance(ir_type, ContainerType):
         return _CONTAINER_TAGS[ir_type.kind]
+    if isinstance(ir_type, AdtType):
+        return 12
     return _TYPE_TAGS[ir_type]
 
 
@@ -156,6 +217,7 @@ class TypedFunction:
 class TypedModule:
     main: TypedFunction
     functions: tuple[TypedFunction, ...]
+    adt_decls: tuple[AdtDecl, ...] = ()
 
 
 def _reject(node: nodes.ASTNode, detail: str) -> NoReturn:
@@ -185,6 +247,15 @@ def _ir_type_from(type_: Type, position, *, allow_function: bool = False) -> IrT
         )
     if isinstance(type_, TupleType):
         return tuple_type(*(_ir_type_from(element, position) for element in type_.elements))
+    if isinstance(type_, CoreAdtType):
+        if type_.args:
+            raise UnsupportedSyntax(
+                "Typed HIR backend does not support generic ADTs yet.",
+                position,
+            )
+        # S4a is single-module; use one stable typed origin until module
+        # identity is carried into the typed table (S4b/B2).
+        return AdtType("<typed-module>", type_.name)
     if isinstance(type_, FunctionType) and allow_function:
         return IrType.FUNCTION
     if isinstance(type_, FunctionType):
@@ -227,13 +298,25 @@ def _validate_module(module: nodes.ModuleNode) -> None:
         if isinstance(stmt, nodes.FunctionDef):
             _validate_function(stmt)
             continue
+        if isinstance(stmt, nodes.EnumDef):
+            _validate_enum(stmt)
+            continue
         if isinstance(stmt, (nodes.VarDecl, nodes.Assignment)):
             _reject(stmt, "top-level declarations or assignments (move them into a function)")
         if isinstance(stmt, (nodes.ImportStmt, nodes.ImportFromStmt)):
             _reject(stmt, "module imports")
-        if isinstance(stmt, (nodes.ClassDef, nodes.EnumDef, nodes.InterfaceDef)):
+        if isinstance(stmt, (nodes.ClassDef, nodes.InterfaceDef)):
             _reject(stmt, f"{type(stmt).__name__.removesuffix('Def')} definitions")
         _validate_expr(stmt)
+
+
+def _validate_enum(node: nodes.EnumDef) -> None:
+    if node.type_params:
+        _reject(node, "generic enums")
+    enum_type = node.metadata.get("type_obj")
+    if not isinstance(enum_type, CoreAdtType):
+        _reject(node, "enum without a checked type")
+    _ir_type_from(enum_type, node.position)
 
 
 def _validate_function(node: nodes.FunctionDef) -> None:
@@ -279,7 +362,6 @@ def _validate_statements(statements: Iterable[nodes.ASTNode]) -> None:
                 nodes.ImportFromStmt,
                 nodes.BreakExpr,
                 nodes.ContinueExpr,
-                nodes.MatchExpr,
             ),
         ):
             _reject(stmt, type(stmt).__name__)
@@ -327,6 +409,32 @@ def _validate_block(node: nodes.BlockExpr) -> None:
         # A block that always returns/breaks has no value to type.
         return
     _ir_type_for_node(node)
+
+
+def _validate_pattern(pattern: nodes.Pattern, expected: Type) -> None:
+    if isinstance(pattern, nodes.WildcardPattern):
+        return
+    if isinstance(pattern, nodes.NamePattern):
+        if isinstance(expected, CoreAdtType):
+            constructor = expected.constructor(pattern.name)
+            if constructor is not None:
+                if constructor.payload:
+                    _reject(pattern, f"constructor '{constructor.name}' requires arguments")
+                return
+        _ir_type_from(expected, pattern.position)
+        return
+    if isinstance(pattern, nodes.ConstructorPattern):
+        if not isinstance(expected, CoreAdtType):
+            _reject(pattern, "constructor patterns on non-ADT values")
+        constructor = expected.constructor(pattern.name)
+        if constructor is None:
+            _reject(pattern, f"unknown constructor '{pattern.name}'")
+        if len(pattern.args) != len(constructor.payload):
+            _reject(pattern, f"constructor '{pattern.name}' arity mismatch")
+        for argument, payload_type in zip(pattern.args, constructor.payload, strict=True):
+            _validate_pattern(argument, payload_type)
+        return
+    _reject(pattern, f"pattern {type(pattern).__name__}")
 
 
 def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
@@ -413,6 +521,18 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
         _validate_expr(node.index)
         _ir_type_for_node(node)
         return
+    if isinstance(node, nodes.MatchExpr):
+        scrutinee = node.scrutinee.metadata.get("type_obj")
+        if not isinstance(scrutinee, CoreAdtType):
+            _reject(node, "match on non-ADT values")
+        _validate_expr(node.scrutinee)
+        for arm in node.arms:
+            _validate_pattern(arm.pattern, scrutinee)
+            if arm.guard is not None:
+                _validate_expr(arm.guard)
+            _validate_expr(arm.body)
+        _ir_type_for_node(node)
+        return
     if isinstance(node, nodes.ForExpr):
         if len(node.vars) != 1:
             _reject(node, "for loops with multiple variables")
@@ -430,11 +550,58 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _constructor_payload(
+    enum_type: CoreAdtType, constructor: nodes.EnumConstructor
+) -> tuple[IrTypeLike, ...]:
+    info = enum_type.constructor(constructor.name)
+    if info is None:
+        raise UnsupportedSyntax(
+            f"Enum is missing constructor '{constructor.name}'.", constructor.position
+        )
+    return tuple(_ir_type_from(payload_type, constructor.position) for payload_type in info.payload)
+
+
+def _collect_adt_decls(
+    module: nodes.ModuleNode,
+) -> tuple[tuple[AdtDecl, ...], dict[str, ConstructorSite]]:
+    decls: list[AdtDecl] = []
+    sites: dict[str, ConstructorSite] = {}
+    next_constructor = 0
+    for stmt in module.body.statements:
+        if not isinstance(stmt, nodes.EnumDef) or getattr(stmt, "synthetic", False):
+            continue
+        origin = stmt.declaration_origin or "<typed-module>"
+        enum_type = stmt.metadata.get("type_obj")
+        if not isinstance(enum_type, CoreAdtType):
+            raise UnsupportedSyntax("Enum is missing a checked type.", stmt.position)
+        constructors = tuple(
+            AdtConstructor(
+                ctor.name,
+                _constructor_payload(enum_type, ctor),
+            )
+            for ctor in stmt.constructors
+        )
+        decls.append(AdtDecl(origin, stmt.name, constructors))
+        decl_index = len(decls) - 1
+        for ctor_index, constructor in enumerate(constructors):
+            sites[constructor.name] = ConstructorSite(
+                next_constructor, decl_index, ctor_index, constructor.payload
+            )
+            next_constructor += 1
+    return tuple(decls), sites
+
+
 class _TypedHirLowerer(HirLowerer):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        adt_decls: tuple[AdtDecl, ...] = (),
+        constructors: dict[str, ConstructorSite] | None = None,
+    ) -> None:
         super().__init__()
         self.register_types: dict[str, dict[int, IrTypeLike]] = {}
         self.function_types: dict[str, FunctionType] = {}
+        self.adt_decls = adt_decls
+        self.constructors = constructors or {}
         self._current_ret: IrTypeLike = IrType.UNIT
 
     def _record(self, register: int, ir_type: IrTypeLike, position) -> None:
@@ -450,21 +617,156 @@ class _TypedHirLowerer(HirLowerer):
             )
         table[register] = ir_type
 
+    def _lower_enum_def(self, node: nodes.EnumDef) -> None:
+        # Enum declarations live in the module ADT table, not in main.
+        return
+
     def _lower_expr(self, node: nodes.ASTNode | None) -> int | None:
+        if isinstance(node, nodes.Call) and isinstance(node.func, nodes.Name):
+            site = self.constructors.get(node.func.id)
+            binding = node.func.binding
+            if site is not None and (binding is None or binding.is_global):
+                arguments = tuple(self._require_value(arg.value) for arg in node.args)
+                if len(arguments) != site.arity:
+                    raise UnsupportedSyntax(
+                        f"Constructor '{node.func.id}' expects {site.arity} argument(s), "
+                        f"got {len(arguments)}.",
+                        node.position,
+                    )
+                dst = self._alloc(node.position)
+                self._emit(BuildAdt(node.position, dst, site.constructor_id, arguments))
+                self._record(dst, _ir_type_for_node(node), node.position)
+                return dst
+        if isinstance(node, nodes.Name):
+            site = self.constructors.get(node.id)
+            binding = node.binding
+            if site is not None and (binding is None or binding.is_global):
+                if site.arity != 0:
+                    raise UnsupportedSyntax(
+                        f"Constructor '{node.id}' requires {site.arity} argument(s).",
+                        node.position,
+                    )
+                dst = self._alloc(node.position)
+                self._emit(BuildAdt(node.position, dst, site.constructor_id, ()))
+                self._record(dst, _ir_type_for_node(node), node.position)
+                return dst
         register = super()._lower_expr(node)
         if register is not None and node is not None:
             type_ = node.metadata.get("type_obj")
             if isinstance(type_, NeverType):
-                # Bottom: the register cannot be observed on a normal path,
-                # so give it the enclosing function's return type.
                 ir_type = self._current_ret
             else:
-                # Pre-validation already restricts function-typed values to
-                # callee position, so allowing them here keeps the register
-                # typed.
                 ir_type = _ir_type_for_node(node, allow_function=True)
             self._record(register, ir_type, node.position)
         return register
+
+    def _lower_match(self, node: nodes.MatchExpr) -> int:
+        scrutinee = self._require_value(node.scrutinee)
+        core_type = node.scrutinee.metadata.get("type_obj")
+        if not isinstance(core_type, CoreAdtType):
+            raise UnsupportedSyntax("Typed match requires an ADT scrutinee.", node.position)
+        result_type = _ir_type_for_node(node)
+        dst = self._alloc(node.position)
+        self._record(dst, result_type, node.position)
+        end_label = self._new_label("match_end")
+        arm_labels = [self._new_label("match_arm") for _ in node.arms]
+        arm_labels.append(end_label)
+
+        for index, (arm, arm_label) in enumerate(zip(node.arms, arm_labels)):
+            fail_label = arm_labels[index + 1]
+            self._emit(Label(arm.position, arm_label))
+            self._push_scope()
+            try:
+                self._lower_pattern(arm.pattern, scrutinee, core_type, fail_label)
+                if arm.guard is not None:
+                    guard = self._require_value(arm.guard)
+                    self._emit(JumpIfFalse(arm.guard.position, guard, fail_label))
+                body = self._require_value(arm.body)
+                self._emit(Move(arm.body.position, dst, body))
+                self._emit(Jump(arm.body.position, end_label))
+            finally:
+                self._pop_scope()
+
+        self._emit(Label(node.position, end_label))
+        return dst
+
+    def _emit_tag_test(
+        self,
+        value: int,
+        constructor_index: int,
+        fail_label: str,
+        position,
+    ) -> None:
+        tag = self._alloc(position)
+        self._record(tag, IrType.INT, position)
+        self._emit(AdtTag(position, tag, value))
+        expected = self._const(constructor_index, position)
+        self._record(expected, IrType.INT, position)
+        ok = self._alloc(position)
+        self._record(ok, IrType.BOOL, position)
+        self._emit(BinOp(position, ok, "==", tag, expected))
+        self._emit(JumpIfFalse(position, ok, fail_label))
+
+    def _lower_pattern(
+        self,
+        pattern: nodes.Pattern,
+        value: int,
+        expected: Type,
+        fail_label: str,
+    ) -> None:
+        if isinstance(pattern, nodes.WildcardPattern):
+            return
+        if isinstance(pattern, nodes.NamePattern):
+            if isinstance(expected, CoreAdtType):
+                constructor = expected.constructor(pattern.name)
+                if constructor is not None:
+                    if constructor.payload:
+                        raise UnsupportedSyntax(
+                            f"Constructor '{constructor.name}' requires arguments.",
+                            pattern.position,
+                        )
+                    index = next(
+                        index
+                        for index, item in enumerate(expected.constructors)
+                        if item.name == constructor.name
+                    )
+                    self._emit_tag_test(value, index, fail_label, pattern.position)
+                    return
+            slot = self._declare_local(pattern.name, mutable=False, position=pattern.position)
+            slot_type = _ir_type_from(expected, pattern.position)
+            self._record(slot, slot_type, pattern.position)
+            self._emit(Move(pattern.position, slot, value))
+            return
+        if isinstance(pattern, nodes.ConstructorPattern):
+            if not isinstance(expected, CoreAdtType):
+                raise UnsupportedSyntax(
+                    "Constructor patterns require an ADT scrutinee.", pattern.position
+                )
+            constructor = expected.constructor(pattern.name)
+            if constructor is None or len(constructor.payload) != len(pattern.args):
+                raise UnsupportedSyntax(
+                    f"Constructor pattern '{pattern.name}' does not match the ADT.",
+                    pattern.position,
+                )
+            index = next(
+                index
+                for index, item in enumerate(expected.constructors)
+                if item.name == constructor.name
+            )
+            self._emit_tag_test(value, index, fail_label, pattern.position)
+            for field_index, (argument, payload_type) in enumerate(
+                zip(pattern.args, constructor.payload, strict=True)
+            ):
+                field = self._alloc(pattern.position)
+                field_type = _ir_type_from(payload_type, pattern.position)
+                self._record(field, field_type, pattern.position)
+                self._emit(AdtField(pattern.position, field, value, field_index))
+                self._lower_pattern(argument, field, payload_type, fail_label)
+            return
+        raise UnsupportedSyntax(
+            f"Typed HIR backend does not support pattern {type(pattern).__name__}.",
+            pattern.position,
+        )
 
     def _lower_function(self, node: nodes.FunctionDef, index: int) -> HirFunction:
         signature = node.metadata.get("type_obj")
@@ -587,7 +889,8 @@ def lower_typed_module(module: nodes.ModuleNode) -> TypedModule:
 
     module = _user_module(module)
     _validate_module(module)
-    lowerer = _TypedHirLowerer()
+    adt_decls, constructors = _collect_adt_decls(module)
+    lowerer = _TypedHirLowerer(adt_decls, constructors)
     hir = lowerer.lower(module)
 
     typed_functions: list[TypedFunction] = []
@@ -614,7 +917,7 @@ def lower_typed_module(module: nodes.ModuleNode) -> TypedModule:
         _main_return_type(hir.main, main_register_types),
         main_register_types,
     )
-    typed_module = TypedModule(main, tuple(typed_functions))
+    typed_module = TypedModule(main, tuple(typed_functions), adt_decls)
     validate_typed_module(typed_module)
     return typed_module
 
@@ -665,6 +968,10 @@ def _check_binop(function: TypedFunction, instruction: BinOp) -> None:
             _invalid(function, instruction, f"{op} result {result} != Bool")
         return
     if op in _EQUALITY_OPS:
+        if isinstance(lhs, AdtType) and isinstance(rhs, AdtType) and lhs == rhs:
+            if result is not IrType.BOOL:
+                _invalid(function, instruction, f"{op} result {result} != Bool")
+            return
         if (
             isinstance(lhs, ContainerType)
             and isinstance(rhs, ContainerType)
@@ -810,6 +1117,19 @@ def _validate_get_item(function: TypedFunction, instruction: GetItem) -> None:
         _invalid(function, instruction, f"index result {table[instruction.dst]} != {expected}")
 
 
+def _adt_decl_index(module: TypedModule) -> dict[tuple[str, str], int]:
+    return {(decl.origin, decl.name): index for index, decl in enumerate(module.adt_decls)}
+
+
+def _flat_constructors(
+    module: TypedModule,
+) -> list[tuple[AdtDecl, AdtConstructor]]:
+    result: list[tuple[AdtDecl, AdtConstructor]] = []
+    for decl in module.adt_decls:
+        result.extend((decl, constructor) for constructor in decl.constructors)
+    return result
+
+
 def validate_typed_module(module: TypedModule) -> None:
     """Assert typed-HIR invariants; raise ``UnsupportedSyntax`` on violation."""
 
@@ -868,6 +1188,42 @@ def validate_typed_module(module: TypedModule) -> None:
                 _validate_sequence(function, instruction)
             elif isinstance(instruction, BuildDict):
                 _validate_dict(function, instruction)
+            elif isinstance(instruction, BuildAdt):
+                candidates = _flat_constructors(module)
+                if not 0 <= instruction.constructor_id < len(candidates):
+                    _invalid(function, instruction, "ADT constructor id out of range")
+                _, constructor = candidates[instruction.constructor_id]
+                target = table[instruction.dst]
+                if not isinstance(target, AdtType):
+                    _invalid(function, instruction, "ADT constructor target is not an ADT")
+                if len(instruction.args) != constructor.arity:
+                    _invalid(function, instruction, "ADT constructor arity mismatch")
+                for argument, expected in zip(instruction.args, constructor.payload, strict=True):
+                    if table[argument] != expected:
+                        _invalid(
+                            function,
+                            instruction,
+                            f"ADT payload {table[argument]} != {expected}",
+                        )
+            elif isinstance(instruction, AdtTag):
+                if not isinstance(table[instruction.value], AdtType):
+                    _invalid(function, instruction, "ADT tag source is not an ADT")
+                if table[instruction.dst] is not IrType.INT:
+                    _invalid(function, instruction, "ADT tag target is not Int")
+            elif isinstance(instruction, AdtField):
+                source = table[instruction.value]
+                if not isinstance(source, AdtType):
+                    _invalid(function, instruction, "ADT field source is not an ADT")
+                target = table[instruction.dst]
+                field_types = [
+                    constructor.payload[instruction.index]
+                    for decl in module.adt_decls
+                    if (decl.origin, decl.name) == (source.origin, source.name)
+                    for constructor in decl.constructors
+                    if instruction.index < constructor.arity
+                ]
+                if not field_types or not any(candidate == target for candidate in field_types):
+                    _invalid(function, instruction, "ADT field type mismatch")
             elif isinstance(instruction, GetItem):
                 _validate_get_item(function, instruction)
             elif isinstance(instruction, SetItem):
@@ -890,10 +1246,10 @@ def validate_typed_module(module: TypedModule) -> None:
                     )
                 iterator_elements[instruction.dst] = element
             elif isinstance(instruction, IteratorNext):
-                expected = iterator_elements.get(instruction.iterator)
-                if expected is None:
+                expected_element = iterator_elements.get(instruction.iterator)
+                if expected_element is None:
                     _invalid(function, instruction, "iterator was not opened in this function")
-                if table[instruction.value_dst] != expected:
+                if table[instruction.value_dst] != expected_element:
                     _invalid(function, instruction, "iterator value type mismatch")
             elif isinstance(
                 instruction,

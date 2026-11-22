@@ -3,7 +3,10 @@
 """Human-readable HIR dumps for tests and debugging."""
 
 from .nodes import (
+    AdtField,
+    AdtTag,
     BinOp,
+    BuildAdt,
     BuildClass,
     BuildDict,
     BuildEnum,
@@ -120,6 +123,13 @@ def format_instruction(instruction: Instruction) -> str:
         return f"JMP_TRUE R{instruction.src} {instruction.target}"
     if isinstance(instruction, Label):
         return f"{instruction.name}:"
+    if isinstance(instruction, BuildAdt):
+        values = ", ".join(f"R{value}" for value in instruction.args)
+        return f"BUILD_ADT R{instruction.dst} ctor#{instruction.constructor_id} ({values})"
+    if isinstance(instruction, AdtTag):
+        return f"ADT_TAG R{instruction.dst} R{instruction.value}"
+    if isinstance(instruction, AdtField):
+        return f"ADT_FIELD R{instruction.dst} R{instruction.value}[{instruction.index}]"
     if isinstance(instruction, (BuildList, BuildTuple, BuildSet)):
         values = ", ".join(f"R{value}" for value in instruction.elements)
         return f"{type(instruction).__name__.upper()} R{instruction.dst} ({values})"

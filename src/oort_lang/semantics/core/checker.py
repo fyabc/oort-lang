@@ -1411,6 +1411,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 from_prelude=is_prelude,
             )
         node.metadata["type"] = describe_type(applied)
+        node.metadata["type_obj"] = applied
         return UNIT
 
     def _enum_type_parameters(self, node: nodes.EnumDef) -> tuple[TypeParameterType, ...]:

@@ -2,9 +2,10 @@
 
 """Serialization of typed bytecode (``.obc`` kind=1, design 15).
 
-Version 4 stores a per-proto type table: register/param/return types are
-type-table indices, and composite types reference earlier entries. Container
-values themselves remain runtime values; the table only describes static types.
+Version 5 stores a module-level ADT declaration table plus a per-proto type
+table: register/param/return types are type-table indices, composite types
+reference earlier entries, and ADT types reference module declarations. The
+table only describes static types; values remain runtime values.
 """
 
 from __future__ import annotations
@@ -12,6 +13,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..hir.typed import (
+    AdtConstructor,
+    AdtDecl,
+    AdtType,
     ContainerType,
     IrType,
     IrTypeLike,
@@ -24,7 +28,7 @@ from .serialize import MAGIC, ObcError, _read_constant, _Reader, _write_constant
 from .typed_compile import TypedProgram, TypedProto
 
 KIND_TYPED = 1
-VERSION = 4
+VERSION = 5
 
 _SCALAR_BY_TAG = {
     1: IrType.INT,
@@ -37,7 +41,11 @@ _SCALAR_BY_TAG = {
 }
 
 
-def _write_type_table(w: _Writer, types: tuple[IrTypeLike, ...]) -> None:
+def _write_type_table(
+    w: _Writer,
+    types: tuple[IrTypeLike, ...],
+    adt_index: dict[tuple[str, str], int],
+) -> None:
     w.u16(len(types))
     index = {ir_type: position for position, ir_type in enumerate(types)}
     for ir_type in types:
@@ -54,16 +62,25 @@ def _write_type_table(w: _Writer, types: tuple[IrTypeLike, ...]) -> None:
                     w.u16(index[arg])
             else:
                 raise ObcError(f"unsupported container type {ir_type.kind}")
+        elif isinstance(ir_type, AdtType):
+            try:
+                w.u16(adt_index[(ir_type.origin, ir_type.name)])
+            except KeyError as exc:
+                raise ObcError(f"unknown ADT type {ir_type}") from exc
 
 
 def _write_type_id(w: _Writer, type_id: int | None) -> None:
     w.u16(0 if type_id is None else type_id + 1)
 
 
-def _write_proto(w: _Writer, proto: TypedProto) -> None:
+def _write_proto(
+    w: _Writer,
+    proto: TypedProto,
+    adt_index: dict[tuple[str, str], int],
+) -> None:
     w.string(proto.name)
     w.boolean(proto.is_main)
-    _write_type_table(w, proto.types)
+    _write_type_table(w, proto.types, adt_index)
     w.u16(proto.register_count)
     for type_id in proto.register_types:
         _write_type_id(w, type_id)
@@ -87,7 +104,11 @@ def _write_proto(w: _Writer, proto: TypedProto) -> None:
             w.i32(-1 if column is None else column)
 
 
-def _read_type_table(r: _Reader, proto_name: str) -> tuple[IrTypeLike, ...]:
+def _read_type_table(
+    r: _Reader,
+    proto_name: str,
+    adt_decls: tuple[AdtDecl, ...],
+) -> tuple[IrTypeLike, ...]:
     count = r.u16()
     types: list[IrTypeLike] = []
     for position in range(count):
@@ -108,6 +129,13 @@ def _read_type_table(r: _Reader, proto_name: str) -> tuple[IrTypeLike, ...]:
             if key >= len(types) or value >= len(types):
                 raise ObcError(f"typed proto {proto_name!r} has a forward type reference")
             types.append(ContainerType("Dict", (types[key], types[value])))
+            continue
+        if tag == 12:
+            decl_id = r.u16()
+            if decl_id >= len(adt_decls):
+                raise ObcError(f"typed proto {proto_name!r} has an unknown ADT declaration")
+            decl = adt_decls[decl_id]
+            types.append(AdtType(decl.origin, decl.name))
             continue
         if tag == 10:
             elements = []
@@ -132,10 +160,10 @@ def _read_type_id(r: _Reader, types: tuple[IrTypeLike, ...], proto_name: str) ->
     return type_id
 
 
-def _read_proto(r: _Reader) -> TypedProto:
+def _read_proto(r: _Reader, adt_decls: tuple[AdtDecl, ...]) -> TypedProto:
     name = r.string()
     is_main = r.boolean()
-    types = _read_type_table(r, name)
+    types = _read_type_table(r, name, adt_decls)
     register_count = r.u16()
     register_types = tuple(0 if (raw := r.u16()) == 0 else raw - 1 for _ in range(register_count))
     for type_id in register_types:
@@ -186,10 +214,19 @@ def write_typed_obc(program: TypedProgram, path: str | Path) -> None:
     w._buf += MAGIC
     w.u8(KIND_TYPED)
     w.u8(VERSION)
+    w.u32(len(program.adt_decls))
+    for decl in program.adt_decls:
+        w.string(decl.origin)
+        w.string(decl.name)
+        w.u16(len(decl.constructors))
+        for constructor in decl.constructors:
+            w.string(constructor.name)
+            w.u8(constructor.arity)
     w.u32(len(program.functions))
+    adt_index = {(decl.origin, decl.name): index for index, decl in enumerate(program.adt_decls)}
     for proto in program.functions:
-        _write_proto(w, proto)
-    _write_proto(w, program.main)
+        _write_proto(w, proto, adt_index)
+    _write_proto(w, program.main, adt_index)
     Path(path).write_bytes(w.bytes())
 
 
@@ -208,11 +245,21 @@ def read_typed_obc(path: str | Path) -> TypedProgram:
     if version != VERSION:
         raise ObcError(f"unsupported typed bytecode version {version}")
     r = _Reader(data[5:])
-    functions = tuple(_read_proto(r) for _ in range(r.u32()))
-    main = _read_proto(r)
+    adt_decls: list[AdtDecl] = []
+    for _ in range(r.u32()):
+        origin = r.string()
+        name = r.string()
+        constructors = []
+        for _ in range(r.u16()):
+            constructor_name = r.string()
+            arity = r.u8()
+            constructors.append(AdtConstructor(constructor_name, arity=arity))
+        adt_decls.append(AdtDecl(origin, name, tuple(constructors)))
+    functions = tuple(_read_proto(r, tuple(adt_decls)) for _ in range(r.u32()))
+    main = _read_proto(r, tuple(adt_decls))
     if r._pos != len(r._data):
         raise ObcError("trailing bytes in typed bytecode file")
-    return TypedProgram(main=main, functions=functions)
+    return TypedProgram(main=main, functions=functions, adt_decls=tuple(adt_decls))
 
 
 __all__ = ["KIND_TYPED", "read_typed_obc", "write_typed_obc"]

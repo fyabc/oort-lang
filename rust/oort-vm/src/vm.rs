@@ -23,6 +23,7 @@ pub enum Value {
     Tuple(Rc<[Value]>),
     Set(Rc<RefCell<Vec<Value>>>),
     Dict(Rc<RefCell<Vec<(Value, Value)>>>),
+    Adt(Rc<str>, Vec<Value>),
     Closure(Rc<Closure>),
     BoundMethod(Rc<BoundMethod>),
     Type(Rc<TypeObj>),
@@ -142,6 +143,7 @@ fn truthy(v: &Value) -> bool {
         Value::List(l) => !l.borrow().is_empty(),
         Value::Set(items) => !items.borrow().is_empty(),
         Value::Dict(entries) => !entries.borrow().is_empty(),
+        Value::Adt(_, payload) => !payload.is_empty(),
         _ => true, // instances, types, callables are always truthy
     }
 }
@@ -165,6 +167,7 @@ fn type_name(v: &Value) -> &'static str {
         Value::Tuple(_) => "Tuple",
         Value::Set(_) => "Set",
         Value::Dict(_) => "Dict",
+        Value::Adt(_, _) => "ADT",
         Value::Closure(_) | Value::BoundMethod(_) | Value::Native(_) => "Function",
         Value::Type(_) => "Type",
         Value::Instance(_) => "Instance",
@@ -379,6 +382,14 @@ pub fn display(v: &Value) -> String {
                     .map(|(key, value)| format!("{}: {}", display(key), display(value)))
                     .collect();
                 format!("{{: {} :}}", parts.join(", "))
+            }
+        }
+        Value::Adt(name, payload) => {
+            if payload.is_empty() {
+                name.to_string()
+            } else {
+                let parts: Vec<String> = payload.iter().map(display).collect();
+                format!("{}({})", name, parts.join(", "))
             }
         }
         Value::Type(t) => format!("<Type '{}'>", t.name),

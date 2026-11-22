@@ -15,7 +15,10 @@ from typing import TYPE_CHECKING
 
 from ..diagnostics.syntax_errors import UnsupportedSyntax
 from ..hir.nodes import (
+    AdtField,
+    AdtTag,
     BinOp,
+    BuildAdt,
     BuildDict,
     BuildList,
     BuildSet,
@@ -42,6 +45,8 @@ from ..hir.nodes import (
     UnOp,
 )
 from ..hir.typed import (
+    AdtDecl,
+    AdtType,
     ContainerType,
     IrType,
     IrTypeLike,
@@ -107,6 +112,7 @@ class TypedProto:
 class TypedProgram:
     main: TypedProto
     functions: tuple[TypedProto, ...]
+    adt_decls: tuple[AdtDecl, ...] = ()
 
 
 class _ConstantPool:
@@ -250,6 +256,20 @@ class _ProtoBuilder:
                 encode_abc(TypedOp.MOVE, instruction.dst, instruction.src, 0),
                 position,
             )
+        elif isinstance(instruction, BuildAdt):
+            self._emit_adt(instruction)
+        elif isinstance(instruction, AdtTag):
+            self._emit(
+                encode_abc(TypedOp.ADT_TAG, instruction.dst, instruction.value, 0),
+                position,
+            )
+        elif isinstance(instruction, AdtField):
+            self._emit(
+                encode_abc(
+                    TypedOp.ADT_FIELD, instruction.dst, instruction.value, instruction.index
+                ),
+                position,
+            )
         elif isinstance(instruction, BuildList):
             self._emit_sequence(instruction, TypedOp.NEW_LIST)
         elif isinstance(instruction, BuildSet):
@@ -339,6 +359,25 @@ class _ProtoBuilder:
             self._emit(encode_abc(TypedOp.MOVE, slot, element, 0), position)
         self._emit(encode_abc(opcode, base, count, instruction.dst), position)
 
+    def _emit_adt(self, instruction: BuildAdt) -> None:
+        position = instruction.position
+        count = len(instruction.args)
+        if count > 255 or instruction.constructor_id > 255:
+            raise UnsupportedSyntax("Typed ADT constructor exceeds the bytecode limit.", position)
+        base = 0
+        for index, argument in enumerate(instruction.args):
+            argument_type = self._register_type(argument, position)
+            slot = self._alloc(argument_type, position)
+            if index == 0:
+                base = slot
+            elif slot != base + index:
+                raise UnsupportedSyntax("Typed ADT payload window is not contiguous.", position)
+            self._emit(encode_abc(TypedOp.MOVE, slot, argument, 0), position)
+        self._emit(
+            encode_abc(TypedOp.NEW_ADT, base, instruction.constructor_id, instruction.dst),
+            position,
+        )
+
     def _emit_dict(self, instruction: BuildDict) -> None:
         position = instruction.position
         count = len(instruction.items)
@@ -393,6 +432,16 @@ class _ProtoBuilder:
             }
             eq_op, ne_op = equality_ops[lhs_type.kind]
             opcode = eq_op if op == "==" else ne_op
+            self._emit(encode_abc(opcode, instruction.dst, lhs, rhs), position)
+            return
+
+        if isinstance(lhs_type, AdtType) and isinstance(rhs_type, AdtType) and lhs_type == rhs_type:
+            if op not in ("==", "!="):
+                raise UnsupportedSyntax(
+                    f"Typed bytecode does not support ADT operator {op!r}.",
+                    position,
+                )
+            opcode = TypedOp.EQ_ADT if op == "==" else TypedOp.NE_ADT
             self._emit(encode_abc(opcode, instruction.dst, lhs, rhs), position)
             return
 
@@ -542,4 +591,4 @@ def compile_typed_module(module: TypedModule) -> TypedProgram:
 
     functions = tuple(_ProtoBuilder(function).build() for function in module.functions)
     main = _ProtoBuilder(module.main).build()
-    return TypedProgram(main=main, functions=functions)
+    return TypedProgram(main=main, functions=functions, adt_decls=module.adt_decls)

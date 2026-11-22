@@ -190,6 +190,39 @@ print(first([4, 5]))
 print(pair(7, "x"))
 print([1, 2] == [1, 2], [1, 2] != [1, 3])
 """,
+    "typed_adts": """#lang oort-core
+
+enum Shape {
+    Circle(radius: Int),
+    Rect(width: Int, height: Int),
+    Empty,
+}
+
+enum Tree {
+    Leaf(value: Int),
+    Node(left: Tree, right: Tree),
+}
+
+def area(shape: Shape) -> Int {
+    match shape {
+        Circle(r) => r * r * 3,
+        Rect(w, h) => w * h,
+        Empty => 0,
+    }
+}
+
+def tree_sum(tree: Tree) -> Int {
+    match tree {
+        Leaf(value) => value,
+        Node(left, right) => tree_sum(left) + tree_sum(right),
+    }
+}
+
+print(area(Circle(2)), area(Rect(3, 4)), area(Empty))
+print(tree_sum(Node(Leaf(1), Node(Leaf(2), Leaf(3)))))
+print(Circle(2) == Circle(2), Circle(2) == Circle(3))
+print(Circle(2))
+""",
     "typed_sets_dicts": """#lang oort-core
 
 def dict_total(items: Dict[String, Int]) -> Int {

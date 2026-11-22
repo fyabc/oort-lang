@@ -29,6 +29,7 @@ pub enum TypedType {
     Dict(Box<TypedType>, Box<TypedType>),
     Tuple(Vec<TypedType>),
     Iterator,
+    Adt(u16),
 }
 
 #[derive(Debug, Clone)]
@@ -45,12 +46,32 @@ pub struct TypedProto {
 }
 
 #[derive(Debug, Clone)]
+pub struct TypedAdtDecl {
+    pub origin: String,
+    pub name: String,
+    pub constructors: Vec<(String, u8)>,
+}
+
+impl TypedAdtDecl {
+    fn constructor(&self, index: u16) -> TResult<&(String, u8)> {
+        self.constructors
+            .get(index as usize)
+            .ok_or_else(|| "ADT constructor index out of range".to_string())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct TypedModule {
     pub functions: Vec<Rc<TypedProto>>,
     pub main: Rc<TypedProto>,
+    pub adt_decls: Vec<TypedAdtDecl>,
 }
 
-fn read_type_table(r: &mut Reader<'_>, name: &str) -> TResult<Vec<TypedType>> {
+fn read_type_table(
+    r: &mut Reader<'_>,
+    name: &str,
+    adt_decls: &[TypedAdtDecl],
+) -> TResult<Vec<TypedType>> {
     let count = r.u16()?;
     let mut types: Vec<TypedType> = Vec::with_capacity(count as usize);
     for _ in 0..count {
@@ -94,6 +115,15 @@ fn read_type_table(r: &mut Reader<'_>, name: &str) -> TResult<Vec<TypedType>> {
                 TypedType::Tuple(elements)
             }
             11 => TypedType::Iterator,
+            12 => {
+                let decl_id = r.u16()?;
+                if decl_id as usize >= adt_decls.len() {
+                    return Err(format!(
+                        "typed proto '{name}' has an unknown ADT declaration"
+                    ));
+                }
+                TypedType::Adt(decl_id)
+            }
             _ => return Err(format!("invalid typed type tag {tag}")),
         };
         types.push(ty);
@@ -114,10 +144,10 @@ fn type_at(types: &[TypedType], raw: u16, name: &str) -> TResult<TypedType> {
         .ok_or_else(|| format!("typed proto '{name}' has an out-of-range type id"))
 }
 
-fn read_proto(r: &mut Reader<'_>) -> TResult<TypedProto> {
+fn read_proto(r: &mut Reader<'_>, adt_decls: &[TypedAdtDecl]) -> TResult<TypedProto> {
     let name = r.string()?;
     let is_main = r.boolean()?;
-    let types = read_type_table(r, &name)?;
+    let types = read_type_table(r, &name, adt_decls)?;
     let register_count = r.u16()?;
     let mut register_types = Vec::with_capacity(register_count as usize);
     for _ in 0..register_count {
@@ -181,17 +211,39 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
         return Err(format!("expected typed bytecode (kind=1), got kind={kind}"));
     }
     let version = data[4];
-    if version != 4 {
+    if version != 5 {
         return Err(format!("unsupported typed bytecode version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
+    let nadt = r.u32()?;
+    let mut adt_decls = Vec::with_capacity(nadt as usize);
+    for _ in 0..nadt {
+        let origin = r.string()?;
+        let name = r.string()?;
+        let ctor_count = r.u16()?;
+        let mut constructors = Vec::with_capacity(ctor_count as usize);
+        for _ in 0..ctor_count {
+            let ctor_name = r.string()?;
+            let arity = r.u8()?;
+            constructors.push((ctor_name, arity));
+        }
+        adt_decls.push(TypedAdtDecl {
+            origin,
+            name,
+            constructors,
+        });
+    }
     let nf = r.u32()?;
     let mut functions = Vec::with_capacity(nf as usize);
     for _ in 0..nf {
-        functions.push(Rc::new(read_proto(&mut r)?));
+        functions.push(Rc::new(read_proto(&mut r, &adt_decls)?));
     }
-    let main = Rc::new(read_proto(&mut r)?);
-    Ok(TypedModule { functions, main })
+    let main = Rc::new(read_proto(&mut r, &adt_decls)?);
+    Ok(TypedModule {
+        functions,
+        main,
+        adt_decls,
+    })
 }
 
 #[derive(Clone)]
@@ -205,9 +257,17 @@ enum TypedValue {
     Tuple(Rc<[TypedValue]>),
     Set(Rc<RefCell<Vec<TypedValue>>>),
     Dict(Rc<RefCell<Vec<(TypedValue, TypedValue)>>>),
+    Adt(Rc<TypedAdt>),
     Iterator(Rc<RefCell<TypedIterator>>),
     Function(usize),
     Native(TypedNative),
+}
+
+struct TypedAdt {
+    decl_id: u16,
+    variant: u16,
+    variant_name: Rc<str>,
+    payload: Box<[TypedValue]>,
 }
 
 /// Snapshot iterator over a List, Tuple, Set, Dict keys or String.
@@ -272,6 +332,14 @@ fn display_typed(value: &TypedValue) -> String {
                 format!("{{: {} :}}", parts.join(", "))
             }
         }
+        TypedValue::Adt(value) => {
+            if value.payload.is_empty() {
+                value.variant_name.to_string()
+            } else {
+                let parts: Vec<String> = value.payload.iter().map(display_typed).collect();
+                format!("{}({})", value.variant_name, parts.join(", "))
+            }
+        }
         TypedValue::Iterator(_) => "<iterator>".into(),
         TypedValue::Function(_) | TypedValue::Native(_) => "<function>".into(),
     }
@@ -316,6 +384,13 @@ fn typed_to_value(value: &TypedValue) -> TResult<Value> {
             }
             Value::Dict(Rc::new(RefCell::new(values)))
         }
+        TypedValue::Adt(value) => {
+            let mut payload = Vec::with_capacity(value.payload.len());
+            for item in value.payload.iter() {
+                payload.push(typed_to_value(item)?);
+            }
+            Value::Adt(Rc::clone(&value.variant_name), payload)
+        }
         _ => return Err("typed main returned an iterable or function value".into()),
     })
 }
@@ -353,6 +428,15 @@ fn typed_equal(lhs: &TypedValue, rhs: &TypedValue) -> TResult<bool> {
                         .iter()
                         .any(|other| typed_equal(item, other).unwrap_or(false))
                 })
+        }
+        (TypedValue::Adt(a), TypedValue::Adt(b)) => {
+            a.decl_id == b.decl_id
+                && a.variant == b.variant
+                && a.payload.len() == b.payload.len()
+                && a.payload
+                    .iter()
+                    .zip(b.payload.iter())
+                    .all(|(l, r)| typed_equal(l, r).unwrap_or(false))
         }
         (TypedValue::Dict(a), TypedValue::Dict(b)) => {
             let left = a.borrow();
@@ -425,6 +509,7 @@ fn guard(expected: &TypedType, value: &TypedValue) -> TResult<()> {
             | (TypedType::Tuple(_), TypedValue::Tuple(_))
             | (TypedType::Set(_), TypedValue::Set(_))
             | (TypedType::Dict(_, _), TypedValue::Dict(_))
+            | (TypedType::Adt(_), TypedValue::Adt(_))
             | (TypedType::Iterator, TypedValue::Iterator(_))
     );
     if ok {
@@ -503,6 +588,22 @@ fn dict_get(entries: &[(TypedValue, TypedValue)], key: &TypedValue) -> TResult<O
         }
     }
     Ok(None)
+}
+
+fn adt_constructor(
+    adt_decls: &[TypedAdtDecl],
+    constructor_id: u16,
+) -> TResult<(u16, u16, &(String, u8))> {
+    let mut current = 0u16;
+    for (decl_index, decl) in adt_decls.iter().enumerate() {
+        for (ctor_index, constructor) in decl.constructors.iter().enumerate() {
+            if current == constructor_id {
+                return Ok((decl_index as u16, ctor_index as u16, constructor));
+            }
+            current += 1;
+        }
+    }
+    Err("typed ADT constructor id out of range".into())
 }
 
 fn get_item(container: &TypedValue, index: &TypedValue) -> TResult<TypedValue> {
@@ -662,10 +763,16 @@ const EQ_SET: u32 = 71;
 const NE_SET: u32 = 72;
 const EQ_DICT: u32 = 73;
 const NE_DICT: u32 = 74;
+const NEW_ADT: u32 = 75;
+const ADT_TAG: u32 = 76;
+const ADT_FIELD: u32 = 77;
+const EQ_ADT: u32 = 78;
+const NE_ADT: u32 = 79;
 
 pub struct TypedVm {
     functions: Vec<ResolvedProto>,
     main: ResolvedProto,
+    adt_decls: Vec<TypedAdtDecl>,
     pool: FramePool,
     globals: GlobalTable,
 }
@@ -801,6 +908,7 @@ fn resolve_global(
 impl TypedVm {
     pub fn new(module: TypedModule) -> Self {
         let globals = GlobalTable::from_module(&module);
+        let adt_decls = module.adt_decls.clone();
         let functions = module
             .functions
             .iter()
@@ -816,6 +924,7 @@ impl TypedVm {
         TypedVm {
             functions,
             main,
+            adt_decls,
             pool: FramePool::new(),
             globals,
         }
@@ -830,9 +939,10 @@ impl TypedVm {
         let functions = &self.functions;
         let main = &self.main;
         let globals = &self.globals;
+        let adt_decls = &self.adt_decls;
         let pool = &mut self.pool;
         let mut frame = pool.acquire(main.proto.register_count as usize);
-        let result = execute(main, functions, globals, pool, &mut frame);
+        let result = execute(main, functions, globals, adt_decls, pool, &mut frame);
         pool.release(frame);
         result.and_then(to_value)
     }
@@ -842,6 +952,7 @@ fn execute(
     resolved: &ResolvedProto,
     functions: &[ResolvedProto],
     globals: &GlobalTable,
+    adt_decls: &[TypedAdtDecl],
     pool: &mut FramePool,
     registers: &mut [TypedValue],
 ) -> TResult<TypedValue> {
@@ -1003,6 +1114,36 @@ fn execute(
                 let items = registers[a..a + b].to_vec();
                 registers[c] = TypedValue::Tuple(Rc::from(items));
             }
+            NEW_ADT => {
+                let (decl_index, ctor_index, ctor) = adt_constructor(adt_decls, b as u16)?;
+                let payload: Vec<TypedValue> = if ctor.1 == 0 {
+                    Vec::new()
+                } else {
+                    registers[a..a + ctor.1 as usize].to_vec()
+                };
+                registers[c] = TypedValue::Adt(Rc::new(TypedAdt {
+                    decl_id: decl_index,
+                    variant: ctor_index,
+                    variant_name: Rc::from(ctor.0.as_str()),
+                    payload: payload.into_boxed_slice(),
+                }));
+            }
+            ADT_TAG => {
+                let TypedValue::Adt(value) = &registers[b] else {
+                    return Err("typed ADT_TAG expects an ADT".into());
+                };
+                registers[a] = TypedValue::Int(value.variant as i64);
+            }
+            ADT_FIELD => {
+                let TypedValue::Adt(value) = &registers[b] else {
+                    return Err("typed ADT_FIELD expects an ADT".into());
+                };
+                let field = value
+                    .payload
+                    .get(c)
+                    .ok_or_else(|| "typed ADT field index out of range".to_string())?;
+                registers[a] = field.clone();
+            }
             NEW_SET => {
                 let mut items = Vec::with_capacity(b);
                 for value in &registers[a..a + b] {
@@ -1040,9 +1181,10 @@ fn execute(
                     return Err("typed SET_ITEM expects a List".into());
                 }
             }
-            EQ_LIST | NE_LIST | EQ_TUPLE | NE_TUPLE | EQ_SET | NE_SET | EQ_DICT | NE_DICT => {
+            EQ_LIST | NE_LIST | EQ_TUPLE | NE_TUPLE | EQ_SET | NE_SET | EQ_DICT | NE_DICT
+            | EQ_ADT | NE_ADT => {
                 let mut equal = typed_equal(&registers[b], &registers[c])?;
-                if matches!(op, NE_LIST | NE_TUPLE | NE_SET | NE_DICT) {
+                if matches!(op, NE_LIST | NE_TUPLE | NE_SET | NE_DICT | NE_ADT) {
                     equal = !equal;
                 }
                 registers[a] = TypedValue::Bool(equal);
@@ -1081,6 +1223,7 @@ fn execute(
                 let result = call(
                     functions,
                     globals,
+                    adt_decls,
                     pool,
                     callee,
                     &registers[a + 1..a + 1 + b],
@@ -1100,6 +1243,7 @@ fn execute(
 fn call(
     functions: &[ResolvedProto],
     globals: &GlobalTable,
+    adt_decls: &[TypedAdtDecl],
     pool: &mut FramePool,
     callee: TypedValue,
     arguments: &[TypedValue],
@@ -1124,7 +1268,7 @@ fn call(
             for (slot, value) in frame.iter_mut().zip(arguments) {
                 *slot = value.clone();
             }
-            let result = execute(resolved, functions, globals, pool, &mut frame);
+            let result = execute(resolved, functions, globals, adt_decls, pool, &mut frame);
             pool.release(frame);
             result
         }
@@ -1329,6 +1473,21 @@ mod tests {
         assert!(dict_get(&entries, &TypedValue::Str(Rc::from("a")))
             .unwrap()
             .is_some());
+    }
+
+    #[test]
+    fn adt_display_and_equality() {
+        let make = |value: i64| {
+            TypedValue::Adt(Rc::new(TypedAdt {
+                decl_id: 0,
+                variant: 0,
+                variant_name: Rc::from("Circle"),
+                payload: Box::new([TypedValue::Int(value)]),
+            }))
+        };
+        assert_eq!(display_typed(&make(2)), "Circle(2)");
+        assert!(typed_equal(&make(2), &make(2)).unwrap());
+        assert!(!typed_equal(&make(2), &make(3)).unwrap());
     }
 
     #[test]

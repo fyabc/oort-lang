@@ -1,8 +1,8 @@
 # 类型化 ADT 设计（S4）
 
-> **状态**：设计草案（2026-11-23）。本文设计 `oort-core` ADT 如何进入 typed
-> HIR / kind=1 字节码 / typed VM；**不改变语言表面**，当前实现仍拒绝 ADT 的
-> typed 路径。
+> **状态**：设计草案 + **S4a 原型**（2026-11-23）。单态 ADT 已进入 typed HIR /
+> kind=1 v5 / Python typed VM / Rust typed VM；泛型 ADT、prelude Option/Result、
+> 复杂模式留 S4b。**不改变语言表面**。
 >
 > 关联：[design 15](15-typed-ir.md) 的 S4 扩展；[design 03](03-type-system-design.md)
 > 的泛型表示；[design 14](14-core-typechecking.md) 的 ADT 检查；[spec 14](../spec/14-typed-bytecode.md)
@@ -18,8 +18,8 @@
 #lang oort-core
 
 enum Shape {
-    Circle(Int),
-    Rect(Int, Int),
+    Circle(radius: Int),
+    Rect(width: Int, height: Int),
     Empty,
 }
 
@@ -65,9 +65,9 @@ print(area(Rect(3, 4)) == 12)
 
 ### 2.2 typed 路径现状
 
-- `IrTypeLike = IrType | ContainerType`，没有名义类型；
-- `lower_typed_module` 拒绝 `EnumDef`/`Match`；
-- kind=1 类型表是每 proto 的后序表（v4，tag 1–11）；
+- S4a 之前 `IrTypeLike = IrType | ContainerType`，没有名义类型；
+- S4a 之前 `lower_typed_module` 拒绝 `EnumDef`/`Match`；
+- S4a 之前 kind=1 类型表是每 proto 的后序表（v4，tag 1–11）；
 - kind=1 没有全局存储；函数通过 `DEF_FUN`/`LOAD_G` 绑定；
 - Python typed VM 是 boxed baseline，Rust typed VM 使用未装箱标量 + `Rc` 容器；
 - typed 路径仍单模块，prelude 的 synthetic enum 被跳过。
@@ -121,7 +121,7 @@ ADT 是模块级声明，构造器 ID 必须跨 proto 稳定，因此不能继�
 类型表里。kind=1 v5 增加模块头：
 
 ```text
-u16 adt_decl_count
+u32 adt_decl_count
 adt_decl[adt_decl_count]:
   string origin
   string name
@@ -303,7 +303,33 @@ S4a 的实现顺序：
 8. **ABI/性能**：统一 payload 是语义优先方案；S4c 的专用布局需要重新评估
    `.obc` 是否携带布局元数据。
 
-## 11. 推荐决策
+## 11. S4a 实现状态（2026-11-23）
+
+已实现：
+
+- `AdtType(origin, name)` 进入 `IrTypeLike`；S4a 使用固定 origin
+  `"<typed-module>"`（跨模块身份留 B2）；
+- 模块级 `AdtDecl`/`AdtConstructor` 表；kind=1 **v5** 文件头写入 origin/
+  name/构造器名/arity；
+- typed HIR 新增 `BuildAdt`/`AdtTag`/`AdtField`；`EnumDef` 不再写入 main，
+  构造器直接调用/空载荷引用会转成 `BuildAdt`；
+- typed `match` 专用 lowering：构造器/通配/变量/嵌套构造器模式 + 守卫；
+  字面量/Tuple/或模式仍显式拒绝；
+- opcode 75–79：`NEW_ADT`/`ADT_TAG`/`ADT_FIELD`/`EQ_ADT`/`NE_ADT`；
+- Python typed VM 复用 `OortADT`/`OortType`；Rust 使用 `TypedValue::Adt` +
+  `TypedAdt`；相等、打印、递归 ADT 与主结果转换已对齐；
+- 验收：`examples/08_core/08_18_typed_adts.ort`、typed 单测、OBC round-trip、
+  Rust differential `typed_adts`。
+
+已知限制：
+
+- 只支持单态 enum；`Option`/`Result` 等泛型构造器仍拒绝；
+- `AdtField` 的校验按字段索引放宽（同一索引在不同构造器可有不同类型）；
+- 序列化不保存构造器 payload 类型，只保存 arity；读取后的 `.obc` 用于执行，
+  不用于重新类型检查；
+- 无跨模块 ADT、无类/接口/typed 闭包、无 GC 变更。
+
+## 12. 推荐决策
 
 - **先 S4a 单态 ADT**，把名义身份、构造、匹配、相等、打印和 v5 格式跑通；
 - **类型身份用 `(origin, name, args)`**，不要用构造器名字符串；

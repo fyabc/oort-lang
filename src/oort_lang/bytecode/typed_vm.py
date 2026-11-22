@@ -14,10 +14,11 @@ import dataclasses
 from typing import TYPE_CHECKING, Any
 
 from ..diagnostics.runtime_errors import OortNameError, OortRuntimeError, OortTypeError
-from ..hir.typed import ContainerType, IrType, IrTypeLike
+from ..hir.typed import AdtType, ContainerType, IrType, IrTypeLike
 from ..runtime.environment import Environment
 from ..runtime.functions import OortNativeFunction
 from ..runtime.objects import (
+    OortADT,
     OortBool,
     OortDict,
     OortFloat,
@@ -29,6 +30,7 @@ from ..runtime.objects import (
     OortString,
     OortTuple,
 )
+from ..runtime.type_system import OortType
 from .typed_opcodes import TypedOp, decode_a, decode_b, decode_bx, decode_c, decode_op
 
 if TYPE_CHECKING:
@@ -50,6 +52,9 @@ class TypedCodeVM:
         self.runtime = interpreter.runtime
         self.globals: dict[str, TypedCodeFunction] = {}
         self._program: TypedProgram | None = None
+        self._adt_types: list[OortType] = []
+        self._adt_by_name: dict[str, int] = {}
+        self._constructors: dict[int, tuple[int, int]] = {}
         self.env = Environment(
             outer=interpreter.builtins_env,
             name="<typed-bytecode>",
@@ -63,7 +68,24 @@ class TypedCodeVM:
             self.globals.setdefault(proto.name, TypedCodeFunction(proto))
         registers: list[Any] = [self.runtime.null] * program.main.register_count
         with self.runtime.activate():
+            self._prepare_adts(program)
             return self._execute(program, program.main, registers)
+
+    def _prepare_adts(self, program: TypedProgram) -> None:
+        self._adt_types = []
+        self._adt_by_name = {}
+        self._constructors = {}
+        constructor_id = 0
+        for decl_index, decl in enumerate(program.adt_decls):
+            type_obj = OortType(decl.name)
+            type_obj.adt_variants = {
+                constructor.name: constructor.arity for constructor in decl.constructors
+            }
+            self._adt_types.append(type_obj)
+            self._adt_by_name[decl.name] = decl_index
+            for ctor_index, _constructor in enumerate(decl.constructors):
+                self._constructors[constructor_id] = (decl_index, ctor_index)
+                constructor_id += 1
 
     def invoke(
         self,
@@ -193,6 +215,46 @@ class TypedCodeVM:
                     registers[a + 2 * index]: registers[a + 2 * index + 1] for index in range(b)
                 }
                 registers[c] = OortDict(mapping)
+            elif op is TypedOp.NEW_ADT:
+                try:
+                    decl_index, ctor_index = self._constructors[b]
+                except KeyError as exc:
+                    raise OortTypeError("Invalid typed ADT constructor id.", position) from exc
+                decl = program.adt_decls[decl_index]
+                constructor = decl.constructors[ctor_index]
+                registers[c] = OortADT(
+                    self._adt_types[decl_index],
+                    constructor.name,
+                    registers[a : a + constructor.arity],
+                )
+            elif op is TypedOp.ADT_TAG:
+                value = registers[b]
+                if type(value) is not OortADT:
+                    raise OortTypeError("Typed ADT_TAG expects an ADT.", position)
+                tag_decl_index = self._adt_by_name.get(value.type.name)
+                if tag_decl_index is None:
+                    raise OortTypeError("Unknown typed ADT value.", position)
+                decl = program.adt_decls[tag_decl_index]
+                registers[a] = OortInt(
+                    next(
+                        (
+                            index
+                            for index, constructor in enumerate(decl.constructors)
+                            if constructor.name == value.variant
+                        ),
+                        -1,
+                    )
+                )
+            elif op is TypedOp.ADT_FIELD:
+                value = registers[b]
+                if type(value) is not OortADT or not 0 <= c < len(value.values):
+                    raise OortTypeError("Typed ADT_FIELD is out of range.", position)
+                registers[a] = value.values[c]
+            elif op in (TypedOp.EQ_ADT, TypedOp.NE_ADT):
+                equal = self.interpreter.values_equal(registers[b], registers[c], position)
+                if op is TypedOp.NE_ADT:
+                    equal = not equal
+                registers[a] = OortBool.get_bool_value(equal)
             elif op is TypedOp.GET_ITEM:
                 registers[a] = self._get_item(registers[b], registers[c], position)
             elif op in (
@@ -326,6 +388,8 @@ class TypedCodeVM:
                 or (expected.kind == "Set" and type(value) is OortSet)
                 or (expected.kind == "Dict" and type(value) is OortDict)
             )
+        elif isinstance(expected, AdtType):
+            ok = type(value) is OortADT and value.type.name == expected.name
         else:
             ok = (
                 (expected is IrType.INT and type(value) is OortInt)

@@ -105,6 +105,7 @@ def test_typed_subset_example_is_accepted():
         "08_15_typed_subset.ort",
         "08_16_typed_collections.ort",
         "08_17_typed_sets_dicts.ort",
+        "08_18_typed_adts.ort",
     ],
 )
 def test_tvm_matches_vm_on_example(name: str, run_file):
@@ -453,6 +454,66 @@ print(len({. (1, 2), (2, 3), (1, 2) .}))
     assert typed_out == vm_out == "2 2\n3\n12 3\ntrue true\n{: x: (1, true) :}\nyes\nok\n2\n"
 
 
+def test_typed_monomorphic_adts(capsys: pytest.CaptureFixture, tmp_path):
+    source = """#lang oort-core
+
+enum Shape {
+    Circle(radius: Int),
+    Rect(width: Int, height: Int),
+    Empty,
+}
+
+enum Tree {
+    Leaf(value: Int),
+    Node(left: Tree, right: Tree),
+}
+
+def area(shape: Shape) -> Int {
+    match shape {
+        Circle(r) => r * r * 3,
+        Rect(w, h) => w * h,
+        Empty => 0,
+    }
+}
+
+def tree_sum(tree: Tree) -> Int {
+    match tree {
+        Leaf(value) => value,
+        Node(left, right) => tree_sum(left) + tree_sum(right),
+    }
+}
+
+print(area(Circle(2)), area(Rect(3, 4)), area(Empty))
+print(tree_sum(Node(Leaf(1), Node(Leaf(2), Leaf(3)))))
+print(Circle(2) == Circle(2), Circle(2) == Circle(3))
+print(Circle(2))
+"""
+    program = compile_typed_module(lower_typed_module(build_ast(source)))
+    ops = {
+        TypedOp(word >> 24) for proto in (program.main, *program.functions) for word in proto.code
+    }
+    assert TypedOp.NEW_ADT in ops
+    assert TypedOp.ADT_TAG in ops
+    assert TypedOp.ADT_FIELD in ops
+    assert TypedOp.EQ_ADT in ops
+
+    path = tmp_path / "adts.obc"
+    write_typed_obc(program, path)
+    loaded = read_typed_obc(path)
+    assert [decl.name for decl in loaded.adt_decls] == ["Shape", "Tree"]
+    assert loaded.adt_decls[0].constructors[0].arity == 1
+
+    typed_compiler = get_compiler("NOT_EXIST -t tvm")
+    typed_compiler.run_string(source)
+    typed_out = capsys.readouterr().out
+
+    vm_compiler = get_compiler("NOT_EXIST -t vm")
+    vm_compiler.run_string(source)
+    vm_out = capsys.readouterr().out
+
+    assert typed_out == vm_out == "12 12 0\n6\ntrue false\nCircle(2)\n"
+
+
 def test_typed_collection_obc_round_trip(tmp_path):
     source = """\
 #lang oort-core
@@ -477,12 +538,12 @@ print(len((1, 2, 3)))
 def test_tvm_rejects_out_of_subset():
     compiler = get_compiler("NOT_EXIST -t tvm")
     with pytest.raises(CompilerError):
-        compiler.run_string("#lang oort-core\nenum E { A }\nprint(1)\n")
+        compiler.run_string("#lang oort-core\nenum E[T] { A }\nprint(1)\n")
 
 
 def test_typed_lowering_rejects_out_of_subset():
-    ast = build_ast("#lang oort-core\nenum E { A }\nprint(1)\n")
-    with pytest.raises(UnsupportedSyntax, match="Enum definitions"):
+    ast = build_ast("#lang oort-core\nenum E[T] { A }\nprint(1)\n")
+    with pytest.raises(UnsupportedSyntax, match="generic enums"):
         lower_typed_module(ast)
 
 

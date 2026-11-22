@@ -122,6 +122,26 @@ class Match(Instruction):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class BuildAdt(Instruction):
+    dst: int
+    constructor_id: int
+    args: tuple[int, ...]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class AdtTag(Instruction):
+    dst: int
+    value: int
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class AdtField(Instruction):
+    dst: int
+    value: int
+    index: int
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class BuildEnum(Instruction):
     dst: int
     name: str
@@ -340,6 +360,10 @@ def register_reads(instruction: Instruction) -> tuple[int, ...]:
         return (instruction.operand,)
     if isinstance(instruction, (JumpIfFalse, JumpIfTrue)):
         return (instruction.src,)
+    if isinstance(instruction, BuildAdt):
+        return instruction.args
+    if isinstance(instruction, (AdtTag, AdtField)):
+        return (instruction.value,)
     if isinstance(instruction, (BuildList, BuildTuple, BuildSet)):
         return instruction.elements
     if isinstance(instruction, BuildDict):
@@ -408,6 +432,8 @@ def register_writes(instruction: Instruction) -> tuple[int, ...]:
             Match,
         ),
     ):
+        return (instruction.dst,)
+    if isinstance(instruction, (BuildAdt, AdtTag, AdtField)):
         return (instruction.dst,)
     if isinstance(instruction, IteratorNext):
         return (instruction.value_dst,)

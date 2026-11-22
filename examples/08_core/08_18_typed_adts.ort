@@ -1,0 +1,50 @@
+#lang oort-core
+
+# 类型化 IR 子集（S4a）：单态 ADT、构造器、match、递归 ADT、相等与打印。
+# - 当前只支持单态 enum；泛型 Option/Result 留到 S4b；
+# - 构造器直接调用会生成 typed ADT 值；match 由 typed 专用 lowering 编译；
+# - S4a 的模式支持构造器/通配/变量/嵌套构造器，字面量/Tuple/或模式暂不支持；
+# - 由 `-t tvm` 执行，并参与 Rust typed VM 差分。
+
+# 普通 ADT：空载荷与带载荷构造器混用。
+enum Shape {
+    Circle(radius: Int),
+    Rect(width: Int, height: Int),
+    Empty,
+}
+
+# 递归 ADT：Tree 的载荷再次引用 Tree；值是不可变有限树。
+enum Tree {
+    Leaf(value: Int),
+    Node(left: Tree, right: Tree),
+}
+
+# match 按构造器标签分支；Arm 绑定 payload 字段。
+# 检查器负责穷尽性，漏掉 Empty 会报错。
+def area(shape: Shape) -> Int {
+    match shape {
+        Circle(r) => r * r * 3,
+        Rect(w, h) => w * h,
+        Empty => 0,
+    }
+}
+
+# 递归匹配与递归调用：Node 的左右子树继续求和。
+def tree_sum(tree: Tree) -> Int {
+    match tree {
+        Leaf(value) => value,
+        Node(left, right) => tree_sum(left) + tree_sum(right),
+    }
+}
+
+# 构造器直接调用与空载荷构造器。
+print(area(Circle(2)))
+print(area(Rect(3, 4)))
+print(area(Empty))
+print(tree_sum(Node(Leaf(1), Node(Leaf(2), Leaf(3)))))
+
+# ADT 结构相等：名义类型 + 构造器 + payload；不同 payload 不相等。
+print(Circle(2) == Circle(2), Circle(2) == Circle(3), Rect(1, 2) == Rect(1, 2))
+
+# ADT 打印格式与动态运行时一致：空载荷只打印构造器名。
+print(Circle(2))

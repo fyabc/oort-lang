@@ -16,7 +16,15 @@
 ## 2. 文件头与布局
 
 ```text
-magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=4)
+magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=5)
+u32 adt_decl_count
+adt_decl[adt_decl_count]:
+  string origin
+  string name
+  u16    constructor_count
+  constructor[constructor_count]:
+    string name
+    u8     arity
 u32 function_count
 proto[function_count]
 proto(main)
@@ -62,6 +70,7 @@ positions?:
 | 9 | `Dict` | `u16 key_type_id, u16 value_type_id` |
 | 10 | `Tuple` | `u16 count, u16 element_type_id[count]` |
 | 11 | `Iterator` | — |
+| 12 | `Adt` | `u16 adt_decl_id`（S4a 单态；泛型参数留 S4b） |
 
 - 类型表按**后序**写入：容器类型只能引用已经出现的子类型（不允许前向引用）；
 - 寄存器类型 0 表示“无类型”；参数/返回不允许 0；
@@ -130,6 +139,10 @@ ABx: [op:8][A:8][Bx:16]
 | 70 | `NEW_DICT` | ABC | A=窗口基址, B=条目数, C=目标 | 构造 Dict；窗口为 `key,value` 交替的 `2*B` 个寄存器 |
 | 71/72 | `EQ_SET` / `NE_SET` | ABC | A=目标, B=左, C=右 | Set 深相等/不等（顺序无关）→ Bool |
 | 73/74 | `EQ_DICT` / `NE_DICT` | ABC | 同上 | Dict 深相等/不等（键查找 + 值比较）→ Bool |
+| 75 | `NEW_ADT` | ABC | A=payload 窗口基址, B=构造器 ID, C=目标 | 构造 ADT；payload 数由模块声明表 arity 决定 |
+| 76 | `ADT_TAG` | ABC | A=目标 Int, B=ADT 值, C=0 | 返回构造器在声明内的索引 |
+| 77 | `ADT_FIELD` | ABC | A=目标, B=ADT 值, C=字段索引 | 读取 payload 字段 |
+| 78/79 | `EQ_ADT` / `NE_ADT` | ABC | A=目标, B=左, C=右 | ADT 名义 + 变体 + payload 深相等/不等 → Bool |
 
 ### 3.2 调用约定
 
@@ -205,13 +218,14 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   直接调用、`if`/`while`/`for`/早返回、String 拼接/比较/`len`、List/Tuple/Set/
   Dict 字面量、List/Tuple/String/Dict 下标读取、`len`、深相等、
   List/Tuple（元素齐次）/Set/Dict/String 的 `for` 迭代；
+- 支持单态 ADT：无载荷/带载荷构造器、递归单态 enum、构造器/通配/变量/守卫
+  模式；泛型 ADT、字面量/Tuple/或模式留 S4b；
 - 无集合原地修改（`SET_ITEM` 预留；核心检查器尚未允许 `xs[i] = v`）、`in`/
-  集合运算、ADT/`match`、类/接口/泛型/lambda、模块导入、切片；
-- kind=1 **v4 是当前唯一版本**；新增 opcode/type tag 属于向后兼容的格式扩展，
-  旧读者遇到未知 opcode/tag 必须报错而不是猜测；破坏既有布局的变更必须提升
-  version；
+  集合运算、类/接口/泛型/lambda、模块导入、切片；
+- kind=1 **v5 是当前唯一版本**；ADT 模块声明表位于文件头；旧读者遇到未知
+  version/opcode/tag 必须报错而不是猜测；破坏既有布局的变更必须提升 version；
 - 无动态↔静态边界、`box`/`unbox`/blame；跨方言调用仍拒绝；
-- 格式版本 `version=4`；不兼容变更必须提升 version，并保持 kind=1 的独立
+- 格式版本 `version=5`；不兼容变更必须提升 version，并保持 kind=1 的独立
   命名空间。
 
 ## 6. 参考实现入口

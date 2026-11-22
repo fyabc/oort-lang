@@ -90,6 +90,11 @@ class TypedOp(IntEnum):
     NE_SET = 72
     EQ_DICT = 73
     NE_DICT = 74
+    NEW_ADT = 75
+    ADT_TAG = 76
+    ADT_FIELD = 77
+    EQ_ADT = 78
+    NE_ADT = 79
 
 
 # ABC: [op:8][A:8][B:8][C:8]
@@ -160,6 +165,11 @@ ABC_OPS = frozenset(
         TypedOp.NE_SET,
         TypedOp.EQ_DICT,
         TypedOp.NE_DICT,
+        TypedOp.NEW_ADT,
+        TypedOp.ADT_TAG,
+        TypedOp.ADT_FIELD,
+        TypedOp.EQ_ADT,
+        TypedOp.NE_ADT,
     }
 )
 
