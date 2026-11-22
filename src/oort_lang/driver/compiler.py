@@ -134,6 +134,34 @@ class Compiler:
             print(ast_printer.parse(ast))
             return None
 
+        if self.args.target == "hir":
+            from ..hir import format_module, lower_module
+
+            assert isinstance(ast, nodes.ModuleNode)
+            try:
+                hir_program = lower_module(ast)
+            except OortException as e:
+                matched = self.error_handler.input_info_for(e.position) or input_info
+                self.error_handler.add(e, matched)
+                self.error_handler.report(exit_on_error=False, clear=True)
+                raise CompilerError() from None
+            print(format_module(hir_program))
+            return None
+
+        if self.args.target == "thir":
+            from ..hir import format_typed_module, lower_typed_module
+
+            assert isinstance(ast, nodes.ModuleNode)
+            try:
+                typed_program = lower_typed_module(ast)
+            except OortException as e:
+                matched = self.error_handler.input_info_for(e.position) or input_info
+                self.error_handler.add(e, matched)
+                self.error_handler.report(exit_on_error=False, clear=True)
+                raise CompilerError() from None
+            print(format_typed_module(typed_program))
+            return None
+
         if self.args.target == "bc":
             from ..bytecode import compile_module, disassemble_module
             from ..hir import lower_module

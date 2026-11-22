@@ -2,6 +2,8 @@
 
 """Human-readable HIR dumps used by tests and debugging."""
 
+import pytest
+
 from oort_lang.hir import (
     BinOp,
     BuildClass,
@@ -49,6 +51,7 @@ from oort_lang.hir import (
     format_module,
 )
 from oort_lang.source.source_position import SourcePosition
+from tests.helpers import get_compiler
 
 
 def pos() -> SourcePosition:
@@ -136,3 +139,28 @@ def test_function_and_module_dumps_include_headers_and_instructions():
     assert "f(a) local_count=2" in text
     assert text.index("<main>") < text.index("f(a)")
     assert format_function(function).splitlines()[0] == "f(a) local_count=2"
+
+
+def test_hir_target_prints_hir_without_executing(capsys: pytest.CaptureFixture):
+    compiler = get_compiler("NOT_EXIST -t hir")
+    compiler.run_string("print(1 + 2)")
+
+    captured = capsys.readouterr()
+    assert captured.out.startswith("<main>(")
+    assert "BINOP" in captured.out
+    assert captured.out.strip() != "3"
+
+
+def test_hir_target_handles_core_program(capsys: pytest.CaptureFixture):
+    compiler = get_compiler("NOT_EXIST -t hir")
+    compiler.run_string(
+        """\
+#lang oort-core
+def f(x: Int) -> Int { x + 1 }
+print(f(2))
+"""
+    )
+
+    captured = capsys.readouterr()
+    assert "f(x) local_count=" in captured.out
+    assert "CALL" in captured.out

@@ -1,0 +1,70 @@
+#lang oort-core
+
+# 类型化 IR 子集示例：标量、函数、递归、循环、早返回、混合算术与布尔逻辑。
+# 该程序只使用 Int/Float/Bool/Unit，也是 `-t thir` 的验收样本（design 15）。
+
+def fact(n: Int) -> Int {
+    if n <= 1 { 1 } else { n * fact(n - 1) }
+}
+
+def fib(n: Int) -> Int {
+    if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+}
+
+def clamp(x: Int, low: Int, high: Int) -> Int {
+    if x < low { return low }
+    if x > high { return high }
+    x
+}
+
+def sum_to(n: Int) -> Int {
+    var total: Int = 0
+    var i: Int = 1
+    while i <= n {
+        total = total + i
+        i = i + 1
+    }
+    total
+}
+
+def sign(x: Int) -> Int {
+    if x < 0 { -1 } else { if x > 0 { 1 } else { 0 } }
+}
+
+def average(a: Float, b: Float) -> Float {
+    (a + b) / 2.0
+}
+
+def mixed(a: Int, b: Float) -> Float {
+    a + b
+}
+
+def close(a: Float, b: Float) -> Bool {
+    a - b < 0.001 and b - a < 0.001
+}
+
+def in_range(x: Int, low: Int, high: Int) -> Bool {
+    x >= low and x <= high
+}
+
+def not_zero(x: Int) -> Bool {
+    not (x == 0)
+}
+
+def show(label: Int, value: Int) -> Unit {
+    print(label, value)
+}
+
+print(fact(5))
+print(fib(10))
+print(clamp(12, 0, 10))
+print(clamp(-3, 0, 10))
+print(clamp(4, 0, 10))
+print(sum_to(5))
+print(average(1.0, 2.0))
+print(mixed(1, 2.5))
+print(sign(-7), sign(0), sign(9))
+print(in_range(3, 1, 5), in_range(8, 1, 5))
+print(not_zero(0), not_zero(2))
+print(close(1.0, 1.0005))
+show(7, fact(3))

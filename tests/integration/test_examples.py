@@ -60,6 +60,9 @@ EXPECTED_OUTPUTS = {
     "08_core/08_12_cross_module_types.ort": "box\nwild\nred green blue\n3\n",
     "08_core/08_13_inheritance.ort": "shape+rect 12\nshape+rect+square 25\n1 feature\n",
     "08_core/08_14_interfaces.ort": "point 5\ntag 5\ntrue false\n",
+    "08_core/08_15_typed_subset.ort": (
+        "120\n55\n10\n0\n4\n15\n1.5\n3.5\n-1 0 1\ntrue false\nfalse true\ntrue\n7 6\n"
+    ),
 }
 
 # The JSON showcase is covered by `test_json_example.py`, which compiles it

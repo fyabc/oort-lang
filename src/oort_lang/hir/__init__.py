@@ -50,6 +50,15 @@ from .nodes import (
     Unpack,
     validate_module,
 )
+from .typed import (
+    IrType,
+    TypedFunction,
+    TypedModule,
+    format_typed_function,
+    format_typed_module,
+    lower_typed_module,
+    validate_typed_module,
+)
 
 __all__ = [
     "BinOp",
@@ -71,6 +80,7 @@ __all__ = [
     "ImportFrom",
     "ImportModule",
     "Instruction",
+    "IrType",
     "IteratorNext",
     "Jump",
     "JumpIfFalse",
@@ -94,11 +104,17 @@ __all__ = [
     "StoreLocal",
     "StoreOuter",
     "SuperProxy",
+    "TypedFunction",
+    "TypedModule",
     "UnOp",
     "Unpack",
     "format_function",
     "format_instruction",
     "format_module",
+    "format_typed_function",
+    "format_typed_module",
     "lower_module",
+    "lower_typed_module",
     "validate_module",
+    "validate_typed_module",
 ]

@@ -400,6 +400,18 @@ class CoreTypeChecker(ASTVisitor[Type]):
     def parse(self, node: nodes.ASTNode) -> Type | None:
         return node.accept(self)
 
+    def post_process(self, node: nodes.ASTNode, result: Type | None) -> Type | None:
+        """Record the visitor result as the node's structured type (T1).
+
+        ``_check_expr`` also records the final (possibly expectation-driven)
+        type for nodes it handles; this hook covers nodes reached through
+        ``node.accept(self)`` directly, such as statement blocks and function
+        bodies.
+        """
+        if isinstance(result, Type):
+            node.metadata.setdefault("type_obj", result)
+        return result
+
     def visit_module(self, node: nodes.ModuleNode) -> Type:
         statements = list(node.body.statements)
         self._module_statements = {id(stmt) for stmt in statements}
@@ -419,6 +431,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
         self.module_exports = tuple(
             (name, info.type) for name, info in self.scopes[0].items() if not info.from_prelude
         )
+        node.body.metadata["type_obj"] = UNIT
         # Only types declared by this module are re-exported. Prelude types are
         # implicitly visible everywhere, and imported types are not re-exported.
         origin = self._module_origin()
@@ -484,6 +497,23 @@ class CoreTypeChecker(ASTVisitor[Type]):
         expected: Type,
         message: str | None = None,
     ) -> Type:
+        """Check an expression and record its structured type for typed lowering.
+
+        The checker is the single source of type truth (design 15, T1): every
+        expression node keeps the inferred ``Type`` object in ``metadata`` so
+        typed HIR lowering never needs to re-infer or parse ``describe_type``
+        strings.
+        """
+        type_ = self._check_expr_impl(node, expected, message)
+        node.metadata["type_obj"] = type_
+        return type_
+
+    def _check_expr_impl(
+        self,
+        node: nodes.ASTNode,
+        expected: Type,
+        message: str | None = None,
+    ) -> Type:
         if not isinstance(expected, UnknownType):
             if isinstance(node, nodes.IfExpr):
                 return self._check_if_expected(node, expected)
@@ -533,6 +563,11 @@ class CoreTypeChecker(ASTVisitor[Type]):
         return expected
 
     def _check_block_expected(self, node: nodes.BlockExpr, expected: Type) -> Type:
+        type_ = self._check_block_expected_impl(node, expected)
+        node.metadata["type_obj"] = type_
+        return type_
+
+    def _check_block_expected_impl(self, node: nodes.BlockExpr, expected: Type) -> Type:
         previous_module_level = self.module_level
         self.module_level = False
         self.scopes.append({})
@@ -644,6 +679,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
             position=target.position,
         )
         target.metadata["type"] = describe_type(type_)
+        target.metadata["type_obj"] = type_
         return UNIT
 
     def visit_assignment(self, node: nodes.Assignment) -> Type:
@@ -675,6 +711,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
 
         self._check_expr(node.rhs, info.type)
         node.lhs.metadata["type"] = describe_type(info.type)
+        node.lhs.metadata["type_obj"] = info.type
         return UNIT
 
     def _check_slot_assignment(self, node: nodes.Assignment) -> None:
@@ -1499,6 +1536,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
             if info is not None:
                 info.type = signature
         node.metadata["type"] = describe_type(signature)
+        node.metadata["type_obj"] = signature
         return UNIT
 
     def _check_lambda(self, node: nodes.FunctionDef, expected: Type = UNKNOWN) -> Type:
@@ -1643,6 +1681,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
             self.current_function = previous_function
             self.current_function_name = previous_name
             self.module_level = previous_module_level
+
+        # Function bodies are checked through _check_statements_expected rather
+        # than node.accept, so record the block type for typed lowering here.
+        node.body.metadata["type_obj"] = body_type
 
         if not infer_return:
             if (
@@ -1793,6 +1835,15 @@ class CoreTypeChecker(ASTVisitor[Type]):
         if isinstance(node.func, nodes.Name):
             name = node.func.id
             info = self.lookup(name)
+            if info is not None:
+                node.func.metadata["type_obj"] = info.type
+                node.func.metadata["type"] = describe_type(info.type)
+            elif name == "print":
+                node.func.metadata["type_obj"] = FunctionType((), UNIT)
+                node.func.metadata["type"] = "() -> Unit"
+            elif name == "len":
+                node.func.metadata["type_obj"] = FunctionType((), INT)
+                node.func.metadata["type"] = "() -> Int"
             if info is None:
                 if name == "print":
                     return self._check_print_call(node)
