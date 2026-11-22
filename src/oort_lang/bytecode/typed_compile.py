@@ -59,6 +59,13 @@ _EQUALITY = {
     "==": (TypedOp.EQ_I, TypedOp.EQ_F, TypedOp.EQ_B),
     "!=": (TypedOp.NE_I, TypedOp.NE_F, TypedOp.NE_B),
 }
+_MIXED_COMPARISONS = {
+    "<": TypedOp.LT_MIXED,
+    "<=": TypedOp.LE_MIXED,
+    ">": TypedOp.GT_MIXED,
+    ">=": TypedOp.GE_MIXED,
+}
+_MIXED_EQUALITY = {"==": TypedOp.EQ_MIXED, "!=": TypedOp.NE_MIXED}
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -257,10 +264,13 @@ class _ProtoBuilder:
             int_op, float_op = _COMPARISONS[op]
             if lhs_type is IrType.INT and rhs_type is IrType.INT:
                 self._emit(encode_abc(int_op, instruction.dst, lhs, rhs), position)
-            else:
-                lhs = self._ensure_float(lhs, lhs_type, position)
-                rhs = self._ensure_float(rhs, rhs_type, position)
+            elif lhs_type is IrType.FLOAT and rhs_type is IrType.FLOAT:
                 self._emit(encode_abc(float_op, instruction.dst, lhs, rhs), position)
+            else:
+                self._emit(
+                    encode_abc(_MIXED_COMPARISONS[op], instruction.dst, lhs, rhs),
+                    position,
+                )
             return
 
         if op in _EQUALITY:
@@ -269,10 +279,13 @@ class _ProtoBuilder:
                 self._emit(encode_abc(bool_op, instruction.dst, lhs, rhs), position)
             elif lhs_type is IrType.INT and rhs_type is IrType.INT:
                 self._emit(encode_abc(int_op, instruction.dst, lhs, rhs), position)
-            else:
-                lhs = self._ensure_float(lhs, lhs_type, position)
-                rhs = self._ensure_float(rhs, rhs_type, position)
+            elif lhs_type is IrType.FLOAT and rhs_type is IrType.FLOAT:
                 self._emit(encode_abc(float_op, instruction.dst, lhs, rhs), position)
+            else:
+                self._emit(
+                    encode_abc(_MIXED_EQUALITY[op], instruction.dst, lhs, rhs),
+                    position,
+                )
             return
 
         raise UnsupportedSyntax(

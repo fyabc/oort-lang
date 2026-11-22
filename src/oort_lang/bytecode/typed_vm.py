@@ -123,6 +123,15 @@ class TypedCodeVM:
                 registers[a] = self._float_compare(op, registers[b], registers[c], position)
             elif op in (TypedOp.EQ_B, TypedOp.NE_B):
                 registers[a] = self._bool_compare(op, registers[b], registers[c], position)
+            elif op in (
+                TypedOp.EQ_MIXED,
+                TypedOp.NE_MIXED,
+                TypedOp.LT_MIXED,
+                TypedOp.LE_MIXED,
+                TypedOp.GT_MIXED,
+                TypedOp.GE_MIXED,
+            ):
+                registers[a] = self._mixed_compare(op, registers[b], registers[c], position)
             elif op in (TypedOp.POS_I, TypedOp.NEG_I):
                 registers[a] = self._int_unary(op, registers[b], position)
             elif op in (TypedOp.POS_F, TypedOp.NEG_F):
@@ -352,6 +361,37 @@ class TypedCodeVM:
         right = self._bool(rhs, position).value
         result = left == right if op is TypedOp.EQ_B else left != right
         return OortBool.get_bool_value(result)
+
+    def _mixed_compare(
+        self,
+        op: TypedOp,
+        lhs: Any,
+        rhs: Any,
+        position: SourcePosition,
+    ) -> OortBool:
+        left = self._number(lhs, position)
+        right = self._number(rhs, position)
+        if op is TypedOp.EQ_MIXED:
+            result = left == right
+        elif op is TypedOp.NE_MIXED:
+            result = left != right
+        elif op is TypedOp.LT_MIXED:
+            result = left < right
+        elif op is TypedOp.LE_MIXED:
+            result = left <= right
+        elif op is TypedOp.GT_MIXED:
+            result = left > right
+        else:
+            result = left >= right
+        return OortBool.get_bool_value(result)
+
+    @staticmethod
+    def _number(value: Any, position: SourcePosition) -> int | float:
+        if type(value) is OortInt:
+            return value.value
+        if type(value) is OortFloat:
+            return value.value
+        raise OortTypeError("Typed mixed comparison expects Int or Float.", position)
 
     def _int_unary(self, op: TypedOp, operand: Any, position: SourcePosition) -> OortInt:
         value = self._int(operand, position).value

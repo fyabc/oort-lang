@@ -118,7 +118,14 @@ impl Vm {
 
     pub fn run_main(&mut self) -> VResult<Value> {
         let main = Rc::clone(&self.module.main);
-        execute(&self.module, &mut self.globals, &main, Vec::new(), None, self.start)
+        execute(
+            &self.module,
+            &mut self.globals,
+            &main,
+            Vec::new(),
+            None,
+            self.start,
+        )
     }
 }
 
@@ -278,11 +285,17 @@ fn unary(op: u32, v: &Value) -> VResult<Value> {
         NEG => match v {
             Value::Int(i) => Ok(Value::Int(i.checked_neg().ok_or("integer overflow")?)),
             Value::Float(f) => Ok(Value::Float(-f)),
-            _ => Err(format!("Type '{}' does not support unary '-'", type_name(v))),
+            _ => Err(format!(
+                "Type '{}' does not support unary '-'",
+                type_name(v)
+            )),
         },
         POS => match v {
             Value::Int(_) | Value::Float(_) => Ok(v.clone()),
-            _ => Err(format!("Type '{}' does not support unary '+'", type_name(v))),
+            _ => Err(format!(
+                "Type '{}' does not support unary '+'",
+                type_name(v)
+            )),
         },
         INVERT => match v {
             Value::Int(i) => Ok(Value::Int(!i)),
@@ -299,11 +312,24 @@ pub fn float_repr(f: f64) -> String {
     if f.is_infinite() {
         return if f > 0.0 { "inf".into() } else { "-inf".into() };
     }
-    let s = format!("{f}");
-    if s.contains('.') || s.contains('e') || s.contains("inf") || s.contains("nan") {
-        s
-    } else {
-        format!("{s}.0")
+    // Rust's Debug float formatting is the shortest round-trip form, but its
+    // exponent spelling differs from Python's repr: Python always writes a
+    // sign and at least two exponent digits (`1e+20`, `1e-05`).
+    let s = format!("{f:?}");
+    match s.split_once('e') {
+        None => s,
+        Some((mantissa, exponent)) => {
+            let (sign, digits) = match exponent.strip_prefix('-') {
+                Some(rest) => ('-', rest),
+                None => ('+', exponent.strip_prefix('+').unwrap_or(exponent)),
+            };
+            let digits = if digits.len() < 2 {
+                format!("0{digits}")
+            } else {
+                digits.to_string()
+            };
+            format!("{mantissa}e{sign}{digits}")
+        }
     }
 }
 
@@ -336,11 +362,7 @@ pub(crate) fn constant_to_value(c: &Constant) -> VResult<Value> {
     })
 }
 
-fn call_native(
-    f: NativeFn,
-    args: &[Value],
-    start: Instant,
-) -> VResult<Value> {
+fn call_native(f: NativeFn, args: &[Value], start: Instant) -> VResult<Value> {
     match f {
         NativeFn::Print => {
             let parts: Vec<String> = args.iter().map(display).collect();
@@ -401,7 +423,11 @@ fn invoke(
             if let Some(init) = t.methods.borrow().get("__init__").cloned() {
                 invoke_with_this(module, globals, &init, args, Some(instance.clone()), start)?;
             } else if !args.is_empty() {
-                return Err(format!("{}() takes 0 arguments but {} were given", t.name, args.len()));
+                return Err(format!(
+                    "{}() takes 0 arguments but {} were given",
+                    t.name,
+                    args.len()
+                ));
             }
             Ok(instance)
         }
@@ -441,7 +467,10 @@ fn execute(
     start: Instant,
 ) -> VResult<Value> {
     if proto.uses_cells {
-        return Err(format!("closure cells not supported in spike ({})", proto.name));
+        return Err(format!(
+            "closure cells not supported in spike ({})",
+            proto.name
+        ));
     }
     let mut regs: Vec<Value> = vec![Value::Null; proto.register_count as usize];
     // Bind this (slot 0) and positional parameters by slot.
@@ -453,7 +482,10 @@ fn execute(
     }
     for param in &proto.signature.params {
         if param.has_default || param.kind >= 2 {
-            return Err(format!("unsupported parameter kind in spike ({})", proto.name));
+            return Err(format!(
+                "unsupported parameter kind in spike ({})",
+                proto.name
+            ));
         }
         if let Some(v) = arg_iter.next() {
             regs[param.slot as usize] = v;
@@ -527,7 +559,10 @@ fn execute(
             OPEN_ITER => {
                 let values = match &regs[b] {
                     Value::List(l) => l.borrow().clone(),
-                    Value::Str(s) => s.chars().map(|ch| Value::Str(Rc::from(ch.to_string().as_str()))).collect(),
+                    Value::Str(s) => s
+                        .chars()
+                        .map(|ch| Value::Str(Rc::from(ch.to_string().as_str())))
+                        .collect(),
                     _ => return Err(format!("'{}' is not iterable", type_name(&regs[b]))),
                 };
                 regs[a] = Value::Iterator(Rc::new(RefCell::new(IterState { values, index: 0 })));
@@ -609,7 +644,10 @@ fn get_attr(receiver: &Value, name: &str) -> VResult<Value> {
                     target: m.clone(),
                 })));
             }
-            Err(format!("'{}' object has no attribute '{name}'", inst.ty.name))
+            Err(format!(
+                "'{}' object has no attribute '{name}'",
+                inst.ty.name
+            ))
         }
         Value::Type(t) => t
             .methods
@@ -617,7 +655,10 @@ fn get_attr(receiver: &Value, name: &str) -> VResult<Value> {
             .get(name)
             .cloned()
             .ok_or_else(|| format!("Type '{}' has no attribute '{name}'", t.name)),
-        _ => Err(format!("'{}' object has no attribute '{name}'", type_name(receiver))),
+        _ => Err(format!(
+            "'{}' object has no attribute '{name}'",
+            type_name(receiver)
+        )),
     }
 }
 
@@ -646,6 +687,17 @@ mod tests {
         assert_eq!(float_repr(2.0), "2.0");
         assert_eq!(float_repr(2.5), "2.5");
         assert_eq!(float_repr(0.06), "0.06");
+    }
+
+    #[test]
+    fn float_repr_matches_python_exponents() {
+        assert_eq!(float_repr(1e20), "1e+20");
+        assert_eq!(float_repr(1e16), "1e+16");
+        assert_eq!(float_repr(1e-5), "1e-05");
+        assert_eq!(float_repr(1e-4), "0.0001");
+        assert_eq!(float_repr(-0.0), "-0.0");
+        assert_eq!(float_repr(f64::INFINITY), "inf");
+        assert_eq!(float_repr(f64::NAN), "nan");
     }
 
     #[test]

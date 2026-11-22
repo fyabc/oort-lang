@@ -224,6 +224,33 @@ def test_dynamic_obc_rejects_typed_kind(tmp_path):
         read_obc(path)
 
 
+def test_typed_mixed_comparison_is_exact(capsys: pytest.CaptureFixture):
+    source = """\
+#lang oort-core
+
+def same(big: Int, f: Float) -> Bool { big == f }
+
+print(same(9007199254740993, 9007199254740992.0))
+print(same(9007199254740992, 9007199254740992.0))
+"""
+    typed = lower_typed_module(build_ast(source))
+    program = compile_typed_module(typed)
+    ops = {
+        TypedOp(word >> 24) for proto in (program.main, *program.functions) for word in proto.code
+    }
+    assert TypedOp.EQ_MIXED in ops
+
+    typed_compiler = get_compiler("NOT_EXIST -t tvm")
+    typed_compiler.run_string(source)
+    typed_out = capsys.readouterr().out
+
+    vm_compiler = get_compiler("NOT_EXIST -t vm")
+    vm_compiler.run_string(source)
+    vm_out = capsys.readouterr().out
+
+    assert typed_out == vm_out == "false\ntrue\n"
+
+
 def test_tvm_rejects_out_of_subset():
     compiler = get_compiler("NOT_EXIST -t tvm")
     with pytest.raises(CompilerError):

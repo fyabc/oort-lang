@@ -408,6 +408,84 @@ TypedFunction
   62–186×（boxed 值仍是 spike 表示）；
 - **尚未做**：未装箱寄存器、动态边界；`exec_ms` 已接入 RESULTS §6。
 
+### M4 剩余设计：未装箱值（2026-11-22 草案）
+
+> 数值语义（Int 精度/溢出、Float 与混合比较）见
+> [design 16](16-numeric-semantics.md)。U1 的 `i64` 只是 spike 表示，不是
+> 最终语言语义。
+
+现状：typed 字节码已携带寄存器类型，但 Python/Rust typed VM 仍使用 boxed
+`OortObject`/`Value`。目标是让 Rust typed VM 的标量寄存器不再分配堆对象，
+测量 typed ABI 能达到的上限；**不改变 `.obc` kind=1 格式与语言语义**。
+
+#### 值表示备选
+
+| 方案 | 内容 | 评价 |
+|---|---|---|
+| **A. 单一 `TypedValue` enum（推荐先做）** | `Int(i64)` / `Float(f64)` / `Bool(bool)` / `Unit` / `Function(index)` / `Native` | 无 Rc/RefCell、无堆分配；转换只发生在 native/边界；实现量小 |
+| B. 分类型寄存器 bank | Int/Float/Bool 分开存放 | 编译期/ABI 更复杂，留作 U3 |
+| C. NaN-boxing / Smi | 与 design 01 的长期值表示对齐 | 需要 GC/HeapInt 配套，Rust spike 阶段不引入 |
+
+**推荐 A**：先把 typed VM 的标量路径做到零分配，量化收益；B/C 与 Rust VM v2
+的正式值表示一起评估。
+
+#### 寄存器与 frame
+
+- 每帧 `Vec<TypedValue>`，长度 `register_count`，初始化为 `Unit`；
+- 保留 proto 的 `register_types` 用于验证/调试；运行时分派依赖 opcode，
+  不依赖类型表；
+- 局部槽、临时寄存器与 CALL 窗口保持现有布局，ABI 不变。
+
+#### 运算、守卫与边界
+
+- typed opcode 直接匹配 `TypedValue` 变体；不匹配即显式运行时错误；
+- 函数入口按 `param_types` 做 O(1) 守卫；
+- `Int` 用 `i64`（溢出报错，spike 限制）、`Float` 用 `f64`、`Bool` 用 `bool`、
+  `Unit` 无载荷；
+- `print` 是当前唯一的 native 边界：`TypedValue` → 主机字符串；格式必须与
+  Python `float_repr`/`display` 完全一致；
+- 动态↔静态边界（box/unbox/blame）仍不在 U1：跨方言调用继续显式拒绝，
+  未来单独设计。
+
+#### 不影响
+
+- `.obc` kind=1 格式不变（version=1），不需要重新序列化；
+- Python typed VM 可继续使用 boxed 值（参考实现/差分基线）；
+- spec 14 只补一句“内部值表示由实现决定”，不改文件布局。
+
+#### 里程碑
+
+| 里程碑 | 范围 | 退出条件 |
+|---|---|---|
+| **U1** | **仅 Rust**：`TypedValue` + 标量运算/比较 + print 转换；混合比较精确化（`EQ_MIXED`/`CMP_MIXED`）；Python typed VM 保持 boxed baseline | typed differential 全过；Rust 单测覆盖浮点格式/混合比较/守卫 |
+| **U2** | 基准与 RESULTS §6 更新 | fib20/loop20000 exec_ms 明显优于 boxed 基线（5.8/1.2 ms），数据入 RESULTS |
+| **U3（可选）** | 分 bank 或 NaN-boxing/Smi | 与 Rust VM v2/design 01 合并评估，不单独承诺 |
+
+#### 风险与开放问题
+
+- `Float` 输出格式必须与 Python 完全一致（`2.0`、`-0.0`、指数形式）；
+- `i64` 溢出 vs Python 任意精度：spike 限制，差分测试避免溢出；正式 ABI 需
+  HeapInt/BigInt；
+- 未初始化寄存器用 `Unit` 可能掩盖 bug，可在验证/调试模式加断言；
+- 动态边界与 box/unbox 的 blame 语义留到 FFI 设计，不与 U1 混合；
+- 性能口径保持 exec_ms（wall 扣空程序启动），不把启动混入。
+
+### M4-U1 实现状态（2026-11-22）
+
+- Rust typed VM 的标量寄存器改为未装箱 `TypedValue`（`Int(i64)`/`Float(f64)`/
+  `Bool(bool)`/`Unit`/`Function(index)`/`Native`）；无 `Rc`/`RefCell`、标量无堆分配；
+- 只在 `print` 与主结果边界转换；Python typed VM 保持 boxed 作为差分 baseline；
+- 混合比较新增 `EQ_MIXED`/`NE_MIXED`/`LT_MIXED`/`LE_MIXED`/`GT_MIXED`/
+  `GE_MIXED`，按数学值精确比较；typed 字节码 `version` 提升到 2；Python typed
+  VM 也实现这些 opcode（仍 boxed）；
+- Rust `float_repr` 改为与 Python `repr(float)` 对齐（指数符号/两位指数）；
+- 验证：Rust 单测 11 passed；typed differential 6 个程序全过（含 2^53 混合比较
+  与浮点显示）；Python 全量 1268 passed；
+- 初步测量（exec 口径，同一轮）：未装箱 Rust **fib(20) 6.1 ms / loop 20000
+  0.4 ms**；boxed Rust 基线为 5.8 / 1.2 ms；kind=0 VM 为 415.4 / 185.0 ms。
+  loop 有明显收益，fib 仍受每次调用的帧分配与全局名查找限制，留作 U2 优化
+  输入（不是 U1 的范围）。
+
 ## 9. 风险与开放问题
 
 1. **类型来源漂移**：若 lowering 重新推断或解析字符串，规则必然与检查器分叉。

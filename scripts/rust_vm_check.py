@@ -141,6 +141,30 @@ def close(a: Float, b: Float) -> Bool {
 
 print(average(1.0, 4.0), close(1.0, 1.0005))
 """,
+    "typed_mixed_compare": """#lang oort-core
+
+def same(big: Int, f: Float) -> Bool { big == f }
+def below(big: Int, f: Float) -> Bool { big < f }
+def above(big: Int, f: Float) -> Bool { big > f }
+
+print(same(9007199254740993, 9007199254740992.0))
+print(same(9007199254740992, 9007199254740992.0))
+print(below(9007199254740992, 9007199254740994.0))
+print(above(9007199254740993, 9007199254740992.0))
+""",
+    "typed_float_display": """#lang oort-core
+
+def show() -> Unit {
+    print(2.0)
+    print(-0.0)
+    print(0.06)
+    print(1e20)
+    print(1e-20)
+    print(1e-5)
+}
+
+show()
+""",
 }
 
 

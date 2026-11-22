@@ -1,15 +1,17 @@
-//! Typed bytecode (`obc` kind=1) reader and VM (design 15, M4 entry).
+//! Typed bytecode (`obc` kind=1) reader and unboxed VM (design 15 M4 U1).
 //!
-//! This slice executes the scalar typed subset: typed opcodes, TO_FLOAT,
-//! CALL windows and entry guards. Values are still boxed `vm::Value` objects;
-//! unboxed registers are a later M4 step. Semantics mirror
-//! `oort_lang.bytecode.typed_vm`.
+//! Scalar registers use `TypedValue` instead of boxed `vm::Value`: Int is i64,
+//! Float is f64, Bool is bool, Unit carries no payload. Conversions happen only
+//! at the native `print` boundary and when reporting the main result.
+//! Semantics mirror the Python typed VM; see docs/design/16-numeric-semantics.md
+//! for the Int/Float contract (i64 is a spike representation).
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::obc::{Constant, Reader};
-use crate::vm::{constant_to_value, display, floor_div, floor_mod, NativeFn, Value};
+use crate::vm::{float_repr, floor_div, floor_mod, NativeFn, Value};
 
 type TResult<T> = Result<T, String>;
 
@@ -111,7 +113,7 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
         return Err(format!("expected typed bytecode (kind=1), got kind={kind}"));
     }
     let version = data[4];
-    if version != 1 {
+    if version != 2 {
         return Err(format!("unsupported typed bytecode version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -124,62 +126,128 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
     Ok(TypedModule { functions, main })
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum TypedValue {
-    Plain(Value),
+    Unit,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
     Function(usize),
     Native(NativeFn),
 }
 
-fn display_typed(value: &TypedValue) -> String {
+fn display_typed(value: TypedValue) -> String {
     match value {
-        TypedValue::Plain(v) => display(v),
+        TypedValue::Unit => "null".into(),
+        TypedValue::Bool(b) => if b { "true" } else { "false" }.into(),
+        TypedValue::Int(i) => i.to_string(),
+        TypedValue::Float(f) => float_repr(f),
         TypedValue::Function(_) | TypedValue::Native(_) => "<function>".into(),
     }
 }
 
-fn plain(value: &TypedValue) -> TResult<&Value> {
-    match value {
-        TypedValue::Plain(v) => Ok(v),
-        _ => Err("typed opcode expected a plain value".into()),
-    }
+fn to_value(value: TypedValue) -> TResult<Value> {
+    Ok(match value {
+        TypedValue::Unit => Value::Null,
+        TypedValue::Bool(b) => Value::Bool(b),
+        TypedValue::Int(i) => Value::Int(i),
+        TypedValue::Float(f) => Value::Float(f),
+        _ => return Err("typed main returned a function value".into()),
+    })
 }
 
-fn as_int(value: &TypedValue) -> TResult<i64> {
+fn constant_value(constant: &Constant) -> TResult<TypedValue> {
+    Ok(match constant {
+        Constant::Null => TypedValue::Unit,
+        Constant::Bool(b) => TypedValue::Bool(*b),
+        Constant::Int(i) => TypedValue::Int(*i),
+        Constant::Float(f) => TypedValue::Float(*f),
+        _ => return Err("unsupported constant kind for typed LOAD_K".into()),
+    })
+}
+
+fn as_int(value: TypedValue) -> TResult<i64> {
     match value {
-        TypedValue::Plain(Value::Int(i)) => Ok(*i),
+        TypedValue::Int(i) => Ok(i),
         _ => Err("typed opcode expected Int".into()),
     }
 }
 
-fn as_float(value: &TypedValue) -> TResult<f64> {
+fn as_float(value: TypedValue) -> TResult<f64> {
     match value {
-        TypedValue::Plain(Value::Float(f)) => Ok(*f),
+        TypedValue::Float(f) => Ok(f),
         _ => Err("typed opcode expected Float".into()),
     }
 }
 
-fn as_bool(value: &TypedValue) -> TResult<bool> {
+fn as_bool(value: TypedValue) -> TResult<bool> {
     match value {
-        TypedValue::Plain(Value::Bool(b)) => Ok(*b),
+        TypedValue::Bool(b) => Ok(b),
         _ => Err("typed opcode expected Bool".into()),
     }
 }
 
-fn guard(expected: TypedType, value: &TypedValue) -> TResult<()> {
-    let ok = match (expected, value) {
-        (TypedType::Int, TypedValue::Plain(Value::Int(_))) => true,
-        (TypedType::Float, TypedValue::Plain(Value::Float(_))) => true,
-        (TypedType::Bool, TypedValue::Plain(Value::Bool(_))) => true,
-        (TypedType::Unit, TypedValue::Plain(Value::Null)) => true,
-        _ => false,
-    };
+fn guard(expected: TypedType, value: TypedValue) -> TResult<()> {
+    let ok = matches!(
+        (expected, value),
+        (TypedType::Int, TypedValue::Int(_))
+            | (TypedType::Float, TypedValue::Float(_))
+            | (TypedType::Bool, TypedValue::Bool(_))
+            | (TypedType::Unit, TypedValue::Unit)
+    );
     if ok {
         Ok(())
     } else {
         Err(format!(
             "typed bytecode guard failed: expected {expected:?}"
         ))
+    }
+}
+
+fn mixed_cmp(lhs: TypedValue, rhs: TypedValue) -> TResult<Option<Ordering>> {
+    match (lhs, rhs) {
+        (TypedValue::Int(a), TypedValue::Int(b)) => Ok(Some(a.cmp(&b))),
+        (TypedValue::Float(a), TypedValue::Float(b)) => Ok(a.partial_cmp(&b)),
+        (TypedValue::Int(a), TypedValue::Float(b)) => Ok(cmp_i64_f64(a, b)),
+        (TypedValue::Float(a), TypedValue::Int(b)) => {
+            Ok(cmp_i64_f64(b, a).map(|ordering| ordering.reverse()))
+        }
+        _ => Err("typed mixed comparison expects Int or Float".into()),
+    }
+}
+
+/// Exact comparison between i64 and f64 (no rounding of the integer).
+fn cmp_i64_f64(i: i64, f: f64) -> Option<Ordering> {
+    if f.is_nan() {
+        return None;
+    }
+    if f == f64::INFINITY {
+        return Some(Ordering::Less);
+    }
+    if f == f64::NEG_INFINITY {
+        return Some(Ordering::Greater);
+    }
+    const TWO_POW_63: f64 = 9_223_372_036_854_775_808.0;
+    if f >= TWO_POW_63 {
+        return Some(Ordering::Less);
+    }
+    if f < -TWO_POW_63 {
+        return Some(Ordering::Greater);
+    }
+    let truncated = f.trunc();
+    let truncated_i128 = truncated as i128;
+    match (i as i128).cmp(&truncated_i128) {
+        Ordering::Equal => {
+            let frac = f - truncated;
+            if frac > 0.0 {
+                Some(Ordering::Less)
+            } else if frac < 0.0 {
+                Some(Ordering::Greater)
+            } else {
+                Some(Ordering::Equal)
+            }
+        }
+        ordering => Some(ordering),
     }
 }
 
@@ -226,6 +294,12 @@ const JMP_FALSE: u32 = 42;
 const JMP_TRUE: u32 = 43;
 const CALL: u32 = 44;
 const RET: u32 = 45;
+const EQ_MIXED: u32 = 46;
+const NE_MIXED: u32 = 47;
+const LT_MIXED: u32 = 48;
+const LE_MIXED: u32 = 49;
+const GT_MIXED: u32 = 50;
+const GE_MIXED: u32 = 51;
 
 pub struct TypedVm {
     module: TypedModule,
@@ -245,12 +319,9 @@ impl TypedVm {
 
     pub fn run_main(&mut self) -> TResult<Value> {
         let main = Rc::clone(&self.module.main);
-        let registers = vec![TypedValue::Plain(Value::Null); main.register_count as usize];
+        let registers = vec![TypedValue::Unit; main.register_count as usize];
         let result = execute(&self.module, &self.functions, &main, registers)?;
-        match result {
-            TypedValue::Plain(value) => Ok(value),
-            _ => Err("typed main returned a function value".into()),
-        }
+        to_value(result)
     }
 }
 
@@ -271,11 +342,10 @@ fn execute(
 
         match op {
             LOAD_K => {
-                let constant = &proto.constants[bx];
-                registers[a] = TypedValue::Plain(constant_to_value(constant)?);
+                registers[a] = constant_value(&proto.constants[bx])?;
             }
             LOAD_L | STORE_L => {
-                registers[a] = registers[b].clone();
+                registers[a] = registers[b];
             }
             LOAD_G => {
                 let name = match &proto.constants[bx] {
@@ -288,15 +358,13 @@ fn execute(
                     None => return Err(format!("unknown name '{name}'")),
                 };
             }
-            DEF_FUN => {
-                // Functions are pre-bound by name; DEF_FUN is a no-op.
-            }
+            DEF_FUN => {}
             MOVE => {
-                registers[a] = registers[b].clone();
+                registers[a] = registers[b];
             }
             ADD_I | SUB_I | MUL_I | FLOORDIV_I | MOD_I => {
-                let left = as_int(&registers[b])?;
-                let right = as_int(&registers[c])?;
+                let left = as_int(registers[b])?;
+                let right = as_int(registers[c])?;
                 let result = match op {
                     ADD_I => left.checked_add(right).ok_or("integer overflow")?,
                     SUB_I => left.checked_sub(right).ok_or("integer overflow")?,
@@ -305,20 +373,28 @@ fn execute(
                         if right == 0 {
                             return Err("division or modulo by zero".into());
                         }
-                        floor_div(left, right)
+                        if right == -1 {
+                            left.checked_neg().ok_or("integer overflow")?
+                        } else {
+                            floor_div(left, right)
+                        }
                     }
                     _ => {
                         if right == 0 {
                             return Err("division or modulo by zero".into());
                         }
-                        floor_mod(left, right)
+                        if right == -1 {
+                            0
+                        } else {
+                            floor_mod(left, right)
+                        }
                     }
                 };
-                registers[a] = TypedValue::Plain(Value::Int(result));
+                registers[a] = TypedValue::Int(result);
             }
             ADD_F | SUB_F | MUL_F | DIV_F | FLOORDIV_F | MOD_F => {
-                let left = as_float(&registers[b])?;
-                let right = as_float(&registers[c])?;
+                let left = as_float(registers[b])?;
+                let right = as_float(registers[c])?;
                 if matches!(op, DIV_F | FLOORDIV_F | MOD_F) && right == 0.0 {
                     return Err("division or modulo by zero".into());
                 }
@@ -330,11 +406,11 @@ fn execute(
                     FLOORDIV_F => (left / right).floor(),
                     _ => left - (left / right).floor() * right,
                 };
-                registers[a] = TypedValue::Plain(Value::Float(result));
+                registers[a] = TypedValue::Float(result);
             }
             EQ_I | NE_I | LT_I | LE_I | GT_I | GE_I => {
-                let left = as_int(&registers[b])?;
-                let right = as_int(&registers[c])?;
+                let left = as_int(registers[b])?;
+                let right = as_int(registers[c])?;
                 let result = match op {
                     EQ_I => left == right,
                     NE_I => left != right,
@@ -343,11 +419,11 @@ fn execute(
                     GT_I => left > right,
                     _ => left >= right,
                 };
-                registers[a] = TypedValue::Plain(Value::Bool(result));
+                registers[a] = TypedValue::Bool(result);
             }
             EQ_F | NE_F | LT_F | LE_F | GT_F | GE_F => {
-                let left = as_float(&registers[b])?;
-                let right = as_float(&registers[c])?;
+                let left = as_float(registers[b])?;
+                let right = as_float(registers[c])?;
                 let result = match op {
                     EQ_F => left == right,
                     NE_F => left != right,
@@ -356,64 +432,77 @@ fn execute(
                     GT_F => left > right,
                     _ => left >= right,
                 };
-                registers[a] = TypedValue::Plain(Value::Bool(result));
+                registers[a] = TypedValue::Bool(result);
             }
             EQ_B | NE_B => {
-                let left = as_bool(&registers[b])?;
-                let right = as_bool(&registers[c])?;
+                let left = as_bool(registers[b])?;
+                let right = as_bool(registers[c])?;
                 let result = if op == EQ_B {
                     left == right
                 } else {
                     left != right
                 };
-                registers[a] = TypedValue::Plain(Value::Bool(result));
+                registers[a] = TypedValue::Bool(result);
+            }
+            EQ_MIXED | NE_MIXED | LT_MIXED | LE_MIXED | GT_MIXED | GE_MIXED => {
+                let ordering = mixed_cmp(registers[b], registers[c])?;
+                let result = match op {
+                    EQ_MIXED => ordering == Some(Ordering::Equal),
+                    NE_MIXED => ordering != Some(Ordering::Equal),
+                    LT_MIXED => ordering == Some(Ordering::Less),
+                    LE_MIXED => matches!(ordering, Some(Ordering::Less | Ordering::Equal)),
+                    GT_MIXED => ordering == Some(Ordering::Greater),
+                    _ => matches!(ordering, Some(Ordering::Greater | Ordering::Equal)),
+                };
+                registers[a] = TypedValue::Bool(result);
             }
             POS_I | NEG_I => {
-                let value = as_int(&registers[b])?;
-                registers[a] =
-                    TypedValue::Plain(Value::Int(if op == NEG_I { -value } else { value }));
+                let value = as_int(registers[b])?;
+                registers[a] = TypedValue::Int(if op == NEG_I {
+                    value.checked_neg().ok_or("integer overflow")?
+                } else {
+                    value
+                });
             }
             POS_F | NEG_F => {
-                let value = as_float(&registers[b])?;
-                registers[a] =
-                    TypedValue::Plain(Value::Float(if op == NEG_F { -value } else { value }));
+                let value = as_float(registers[b])?;
+                registers[a] = TypedValue::Float(if op == NEG_F { -value } else { value });
             }
             NOT_B => {
-                let value = as_bool(&registers[b])?;
-                registers[a] = TypedValue::Plain(Value::Bool(!value));
+                let value = as_bool(registers[b])?;
+                registers[a] = TypedValue::Bool(!value);
             }
             TO_FLOAT => {
-                let value = match &registers[b] {
-                    TypedValue::Plain(Value::Float(f)) => *f,
-                    TypedValue::Plain(Value::Int(i)) => *i as f64,
+                let value = match registers[b] {
+                    TypedValue::Float(f) => f,
+                    TypedValue::Int(i) => i as f64,
                     _ => return Err("TO_FLOAT expects a number".into()),
                 };
-                registers[a] = TypedValue::Plain(Value::Float(value));
+                registers[a] = TypedValue::Float(value);
             }
             JMP => {
                 pc = bx;
                 continue;
             }
             JMP_FALSE => {
-                if !as_bool(&registers[a])? {
+                if !as_bool(registers[a])? {
                     pc = bx;
                     continue;
                 }
             }
             JMP_TRUE => {
-                if as_bool(&registers[a])? {
+                if as_bool(registers[a])? {
                     pc = bx;
                     continue;
                 }
             }
             CALL => {
-                let callee = registers[a].clone();
-                let arguments: Vec<TypedValue> = registers[a + 1..a + 1 + b].to_vec();
-                let result = call(module, functions, callee, arguments)?;
-                registers[c] = result;
+                let callee = registers[a];
+                let arguments = registers[a + 1..a + 1 + b].to_vec();
+                registers[c] = call(module, functions, callee, arguments)?;
             }
             RET => {
-                return Ok(registers[a].clone());
+                return Ok(registers[a]);
             }
             _ => return Err(format!("unknown typed opcode {op}")),
         }
@@ -424,7 +513,7 @@ fn execute(
 
 fn call(
     module: &TypedModule,
-    _functions: &HashMap<String, usize>,
+    functions: &HashMap<String, usize>,
     callee: TypedValue,
     arguments: Vec<TypedValue>,
 ) -> TResult<TypedValue> {
@@ -439,18 +528,21 @@ fn call(
                     arguments.len()
                 ));
             }
-            let mut registers = vec![TypedValue::Plain(Value::Null); proto.register_count as usize];
+            let mut registers = vec![TypedValue::Unit; proto.register_count as usize];
             for (index, (expected, value)) in proto.param_types.iter().zip(&arguments).enumerate() {
-                guard(*expected, value)
+                guard(*expected, *value)
                     .map_err(|e| format!("argument {index} of '{}': {e}", proto.name))?;
-                registers[index] = value.clone();
+                registers[index] = *value;
             }
-            execute(module, _functions, proto, registers)
+            execute(module, functions, proto, registers)
         }
         TypedValue::Native(NativeFn::Print) => {
-            let parts: Vec<String> = arguments.iter().map(display_typed).collect();
+            let parts: Vec<String> = arguments
+                .iter()
+                .map(|value| display_typed(*value))
+                .collect();
             println!("{}", parts.join(" "));
-            Ok(TypedValue::Plain(Value::Null))
+            Ok(TypedValue::Unit)
         }
         _ => Err("typed bytecode call target is not callable".into()),
     }
@@ -461,16 +553,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn typed_float_division_matches_python() {
-        let left = TypedValue::Plain(Value::Float(7.0));
-        let right = TypedValue::Plain(Value::Float(2.0));
-        assert_eq!(as_float(&left).unwrap() / as_float(&right).unwrap(), 3.5);
+    fn mixed_comparison_is_exact_at_2_pow_53() {
+        // 2^53 + 1 cannot be represented as f64; the comparison must not round.
+        let big = TypedValue::Int(9_007_199_254_740_993);
+        let as_float = TypedValue::Float(9_007_199_254_740_992.0);
+        assert_eq!(mixed_cmp(big, as_float).unwrap(), Some(Ordering::Greater));
+        assert_eq!(mixed_cmp(as_float, big).unwrap(), Some(Ordering::Less));
+        assert_eq!(
+            mixed_cmp(TypedValue::Int(9_007_199_254_740_992), as_float).unwrap(),
+            Some(Ordering::Equal)
+        );
     }
 
     #[test]
-    fn typed_guard_rejects_wrong_types() {
-        assert!(guard(TypedType::Int, &TypedValue::Plain(Value::Int(1))).is_ok());
-        assert!(guard(TypedType::Int, &TypedValue::Plain(Value::Bool(true))).is_err());
-        assert!(guard(TypedType::Unit, &TypedValue::Plain(Value::Null)).is_ok());
+    fn mixed_comparison_handles_nan_and_infinity() {
+        let nan = TypedValue::Float(f64::NAN);
+        assert_eq!(mixed_cmp(nan, TypedValue::Int(1)).unwrap(), None);
+        assert_eq!(mixed_cmp(TypedValue::Int(1), nan).unwrap(), None);
+        assert_eq!(
+            mixed_cmp(TypedValue::Float(f64::INFINITY), TypedValue::Int(i64::MAX)).unwrap(),
+            Some(Ordering::Greater)
+        );
+    }
+
+    #[test]
+    fn guard_rejects_wrong_types() {
+        assert!(guard(TypedType::Int, TypedValue::Int(1)).is_ok());
+        assert!(guard(TypedType::Int, TypedValue::Bool(true)).is_err());
+        assert!(guard(TypedType::Unit, TypedValue::Unit).is_ok());
+    }
+
+    #[test]
+    fn typed_values_display_like_python() {
+        assert_eq!(display_typed(TypedValue::Float(2.0)), "2.0");
+        assert_eq!(display_typed(TypedValue::Float(-0.0)), "-0.0");
+        assert_eq!(display_typed(TypedValue::Unit), "null");
     }
 }

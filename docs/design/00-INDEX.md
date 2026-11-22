@@ -25,6 +25,7 @@
 | [13-hir-design.md](13-hir-design.md) | 当前 HIR / 32 位字节码 / 寄存器 VM 实现参考；正式规范见 [spec 12](../spec/12-hir-bytecode-vm.md) |
 | [14-core-typechecking.md](14-core-typechecking.md) | oort-core 已实现的双向检查与局部推断算法（含函数返回推断）；03 是远期目标 |
 | [15-typed-ir.md](15-typed-ir.md) | 类型化 IR 研究：类型来源、typed HIR/字节码的备选方案、受限标量子集与里程碑 |
+| [16-numeric-semantics.md](16-numeric-semantics.md) | 数值语义：Int 精度/溢出、Float 与混合比较、方言与后端一致性（草案） |
 
 ## 使用注意
 

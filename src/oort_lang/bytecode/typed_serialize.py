@@ -18,7 +18,7 @@ from .serialize import MAGIC, ObcError, _read_constant, _Reader, _write_constant
 from .typed_compile import TypedProgram, TypedProto
 
 KIND_TYPED = 1
-VERSION = 1
+VERSION = 2
 
 _IR_TO_INDEX = {
     None: 0,

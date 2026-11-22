@@ -16,7 +16,7 @@
 ## 2. 文件头与布局
 
 ```text
-magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=1)
+magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=2)
 u32 function_count
 proto[function_count]
 proto(main)
@@ -103,6 +103,9 @@ ABx: [op:8][A:8][Bx:16]
 | 43 | `JMP_TRUE` | ABx | A=条件, Bx=目标 | 条件为 true 跳转 |
 | 44 | `CALL` | ABC | A=窗口基址, B=实参数, C=结果寄存器 | 见 §3.2 |
 | 45 | `RET` | ABC | A=返回值, B=C=0 | 返回 |
+| 46/47 | `EQ_MIXED` / `NE_MIXED` | ABC | A=目标, B=左, C=右 | Int/Float 相等/不等，按数学值精确比较 |
+| 48/49 | `LT_MIXED` / `LE_MIXED` | ABC | 同上 | Int/Float 小于/小于等于（精确） |
+| 50/51 | `GT_MIXED` / `GE_MIXED` | ABC | 同上 | Int/Float 大于/大于等于（精确） |
 
 ### 3.2 调用约定
 
@@ -120,8 +123,12 @@ CALL A B C
 
 ### 3.3 混合数值运算
 
-编译器不为 `Int`/`Float` 组合生成专用操作码：先把 `Int` 操作数用 `TO_FLOAT`
-转换到临时寄存器，再使用 `_F` 指令；`/` 总是先转换两个操作数再 `DIV_F`。
+- **算术**：`Int`/`Float` 混合时先把 `Int` 操作数用 `TO_FLOAT` 转换到临时
+  寄存器，再使用 `_F` 指令；`/` 总是先转换两个操作数再 `DIV_F`。
+- **比较/相等**：不同数值类型使用 `*_MIXED` 指令，按**数学值精确比较**，
+  不先转换成 Float。例如 `2**53 + 1 == 2.0**53` 为 false。NaN 语义见
+  [design 16](../design/16-numeric-semantics.md)：`==` 为 false，`!=` 为
+  true，排序比较为 false。
 
 ### 3.4 控制流与标签
 
@@ -130,10 +137,13 @@ typed HIR 的命名标签在编译期解析为绝对字索引；`JMP`/`JMP_FALSE
 
 ## 4. 执行语义
 
-- 值与 kind=0 共享运行时值模型（当前实现仍是 boxed 值）；未装箱寄存器是后续
-  M4 工作，不属于本版本；
-- `Int` 在 Python 参考实现中使用宿主整数；Rust spike 使用 `i64`，溢出会报错。
-  这是 spike 的表示限制，不是语言语义；跨实现差分测试避免溢出输入；
+- **值表示由实现决定**：Python 参考实现使用 boxed 运行时值（差分 baseline）；
+  Rust typed VM（M4 U1）对标量使用未装箱表示（i64/f64/bool/Unit），只在
+  `print` 与主结果边界转换；
+- `Int` 在 Python 参考实现中使用宿主整数（任意精度）；Rust spike 使用
+  `i64`，溢出显式报错。这是 spike 的表示限制，不是语言语义；跨实现差分
+  测试避免溢出输入。完整数值语义见
+  [design 16](../design/16-numeric-semantics.md)；
 - 除零、类型守卫失败、未知全局/函数索引、未知操作码都必须显式报错，禁止静默
   执行；
 - `DEF_FUN` 的绑定可在主函数执行时发生；实现可以预绑定全部函数，语义等价；
@@ -145,7 +155,7 @@ typed HIR 的命名标签在编译期解析为绝对字索引；`JMP`/`JMP_FALSE
   `if`/`while`/早返回；
 - 无 String、集合、ADT/`match`、类/接口/泛型/lambda、模块导入；
 - 无动态↔静态边界、`box`/`unbox`/blame；跨方言调用仍拒绝；
-- 格式版本 `version=1`；不兼容变更必须提升 version，并保持 kind=1 的独立
+- 格式版本 `version=2`；不兼容变更必须提升 version，并保持 kind=1 的独立
   命名空间。
 
 ## 6. 参考实现入口
