@@ -99,9 +99,14 @@ def test_typed_subset_example_is_accepted():
     assert {"fact", "fib", "clamp", "sum_to", "sign", "average", "mixed"} <= names
 
 
-def test_tvm_matches_vm_on_example(run_file):
-    typed = run_file(EXAMPLES_DIR / "08_core/08_15_typed_subset.ort", target="tvm")
-    vm = run_file(EXAMPLES_DIR / "08_core/08_15_typed_subset.ort", target="vm")
+@pytest.mark.parametrize(
+    "name",
+    ["08_15_typed_subset.ort", "08_16_typed_collections.ort"],
+)
+def test_tvm_matches_vm_on_example(name: str, run_file):
+    path = EXAMPLES_DIR / "08_core" / name
+    typed = run_file(path, target="tvm")
+    vm = run_file(path, target="vm")
 
     assert typed.stdout == vm.stdout
     assert typed.value == vm.value
@@ -314,6 +319,72 @@ print([1, 2] == [1, 2], [1, 2] != [1, 3])
     vm_out = capsys.readouterr().out
 
     assert typed_out == vm_out == "[1, 2, 3]\n3\n4\n(7, x)\ntrue true\n"
+
+
+def test_typed_for_loops(capsys: pytest.CaptureFixture, tmp_path):
+    source = """\
+#lang oort-core
+
+def total(xs: List[Int]) -> Int {
+    var sum: Int = 0
+    for x in xs { sum = sum + x }
+    sum
+}
+
+def tuple_total(xs: Tuple[Int, Int, Int]) -> Int {
+    var sum: Int = 0
+    for x in xs { sum = sum + x }
+    sum
+}
+
+def last_char(s: String) -> String {
+    var out: String = ""
+    for ch in s { out = ch }
+    out
+}
+
+print(total([1, 2, 3, 4]))
+print(tuple_total((5, 6, 7)))
+print(last_char("Oort"))
+"""
+    program = compile_typed_module(lower_typed_module(build_ast(source)))
+    ops = {
+        TypedOp(word >> 24) for proto in (program.main, *program.functions) for word in proto.code
+    }
+    assert TypedOp.OPEN_ITER in ops
+    assert TypedOp.ITER_NEXT in ops
+    assert any(IrType.ITERATOR in proto.types for proto in (program.main, *program.functions))
+
+    path = tmp_path / "for_loops.obc"
+    write_typed_obc(program, path)
+    loaded = read_typed_obc(path)
+    assert any(IrType.ITERATOR in proto.types for proto in (loaded.main, *loaded.functions))
+
+    typed_compiler = get_compiler("NOT_EXIST -t tvm")
+    typed_compiler.run_string(source)
+    typed_out = capsys.readouterr().out
+
+    vm_compiler = get_compiler("NOT_EXIST -t vm")
+    vm_compiler.run_string(source)
+    vm_out = capsys.readouterr().out
+
+    assert typed_out == vm_out == "10\n18\nt\n"
+
+
+def test_typed_for_rejects_heterogeneous_tuple_iteration():
+    source = """\
+#lang oort-core
+
+def first(xs: Tuple[Int, String]) -> Int {
+    var out: Int = 0
+    for x in xs { out = 1 }
+    out
+}
+
+print(first((1, "a")))
+"""
+    with pytest.raises(SystemExit):
+        get_compiler("NOT_EXIST -t tvm").run_string(source)
 
 
 def test_typed_collection_obc_round_trip(tmp_path):

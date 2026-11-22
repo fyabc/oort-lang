@@ -40,6 +40,7 @@ from .nodes import (
     GetItem,
     HirFunction,
     Instruction,
+    IteratorNext,
     Jump,
     JumpIfFalse,
     JumpIfTrue,
@@ -48,7 +49,9 @@ from .nodes import (
     LoadGlobal,
     LoadLocal,
     Move,
+    OpenIterator,
     Return,
+    SetItem,
     StoreGlobal,
     StoreLocal,
     UnOp,
@@ -68,6 +71,7 @@ class IrType(Enum):
     BOOL = "Bool"
     UNIT = "Unit"
     STRING = "String"
+    ITERATOR = "<iterator>"
     FUNCTION = "<function>"
 
     def __str__(self) -> str:
@@ -114,6 +118,7 @@ _TYPE_TAGS = {
     IrType.UNIT: 4,
     IrType.FUNCTION: 5,
     IrType.STRING: 6,
+    IrType.ITERATOR: 11,
 }
 _CONTAINER_TAGS = {"List": 7, "Set": 8, "Dict": 9, "Tuple": 10}
 
@@ -258,7 +263,6 @@ def _validate_statements(statements: Iterable[nodes.ASTNode]) -> None:
                 nodes.InterfaceDef,
                 nodes.ImportStmt,
                 nodes.ImportFromStmt,
-                nodes.ForExpr,
                 nodes.BreakExpr,
                 nodes.ContinueExpr,
                 nodes.MatchExpr,
@@ -285,8 +289,16 @@ def _validate_var_decl(node: nodes.VarDecl) -> None:
 def _validate_assignment(node: nodes.Assignment) -> None:
     if node.op.text != "=":
         _reject(node, f"augmented assignment {node.op.text!r}")
+    if isinstance(node.lhs, nodes.Subscript):
+        container_type = _ir_type_for_node(node.lhs.value)
+        if not isinstance(container_type, ContainerType) or container_type.kind != "List":
+            _reject(node, "only List element assignment is supported")
+        _validate_expr(node.lhs.value)
+        _validate_expr(node.lhs.index)
+        _validate_expr(node.rhs)
+        return
     if not isinstance(node.lhs, nodes.Name):
-        _reject(node, "assignment targets other than plain names")
+        _reject(node, "assignment targets other than plain names or List elements")
     lhs_type = node.lhs.metadata.get("type_obj")
     if not isinstance(lhs_type, Type):
         _reject(node, "assignments without a type")
@@ -377,6 +389,15 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
     if isinstance(node, nodes.Subscript):
         _validate_expr(node.value)
         _validate_expr(node.index)
+        _ir_type_for_node(node)
+        return
+    if isinstance(node, nodes.ForExpr):
+        if len(node.vars) != 1:
+            _reject(node, "for loops with multiple variables")
+        iterable_type = _ir_type_for_node(node.iterator)
+        _iterated_element_type(iterable_type, node)
+        _validate_expr(node.iterator)
+        _validate_block(node.body)
         _ir_type_for_node(node)
         return
     _reject(node, type(node).__name__)
@@ -506,6 +527,33 @@ def _main_return_type(
     return IrType.UNIT
 
 
+def _iterated_type(ir_type: IrTypeLike | None) -> IrTypeLike | None:
+    if isinstance(ir_type, ContainerType) and ir_type.kind == "List":
+        return ir_type.args[0]
+    if isinstance(ir_type, ContainerType) and ir_type.kind == "Tuple":
+        if len(set(ir_type.args)) == 1:
+            return ir_type.args[0]
+    if ir_type is IrType.STRING:
+        return IrType.STRING
+    return None
+
+
+def _infer_control_register_types(function: HirFunction, recorded: dict[int, IrTypeLike]) -> None:
+    """Record iterator/value registers created by the shared for-loop lowering."""
+
+    iterator_elements: dict[int, IrTypeLike] = {}
+    for instruction in function.code:
+        if isinstance(instruction, OpenIterator):
+            element = _iterated_type(recorded.get(instruction.iterable))
+            if element is not None:
+                recorded[instruction.dst] = IrType.ITERATOR
+                iterator_elements[instruction.dst] = element
+        elif isinstance(instruction, IteratorNext):
+            element = iterator_elements.get(instruction.iterator)
+            if element is not None:
+                recorded[instruction.value_dst] = element
+
+
 def lower_typed_module(module: nodes.ModuleNode) -> TypedModule:
     """Lower a checked ``oort-core`` module to typed HIR.
 
@@ -528,14 +576,14 @@ def lower_typed_module(module: nodes.ModuleNode) -> TypedModule:
             )
         param_types = tuple(_ir_type_from(param, function.position) for param in signature.params)
         ret_type = _ir_type_from(signature.ret, function.position)
-        register_types = _filled_register_types(
-            function, lowerer.register_types.get(function.name, {})
-        )
+        recorded = lowerer.register_types.get(function.name, {})
+        _infer_control_register_types(function, recorded)
+        register_types = _filled_register_types(function, recorded)
         typed_functions.append(TypedFunction(function, param_types, ret_type, register_types))
 
-    main_register_types = _filled_register_types(
-        hir.main, lowerer.register_types.get(hir.main.name, {})
-    )
+    main_recorded = lowerer.register_types.get(hir.main.name, {})
+    _infer_control_register_types(hir.main, main_recorded)
+    main_register_types = _filled_register_types(hir.main, main_recorded)
     main = TypedFunction(
         hir.main,
         (),
@@ -644,6 +692,19 @@ def _check_return(function: TypedFunction, instruction: Return) -> None:
         )
 
 
+def _iterated_element_type(container: IrTypeLike, node: nodes.ASTNode) -> IrTypeLike:
+    if isinstance(container, ContainerType):
+        if container.kind == "List":
+            return container.args[0]
+        if container.kind == "Tuple":
+            if len(set(container.args)) != 1:
+                _reject(node, "iteration over a heterogeneous Tuple")
+            return container.args[0]
+    if container is IrType.STRING:
+        return IrType.STRING
+    _reject(node, f"iteration over {container}")
+
+
 def _validate_sequence(function: TypedFunction, instruction: BuildList | BuildTuple) -> None:
     table = function.register_types
     target = table[instruction.dst]
@@ -711,6 +772,8 @@ def validate_typed_module(module: TypedModule) -> None:
                 f"param types for {len(hir.params)} parameters.",
                 hir.position,
             )
+        table = function.register_types
+        iterator_elements: dict[int, IrTypeLike] = {}
         for instruction in hir.code:
             for register in (*register_reads(instruction), *register_writes(instruction)):
                 if not 0 <= register < len(function.register_types):
@@ -750,9 +813,42 @@ def validate_typed_module(module: TypedModule) -> None:
                 _validate_sequence(function, instruction)
             elif isinstance(instruction, GetItem):
                 _validate_get_item(function, instruction)
+            elif isinstance(instruction, SetItem):
+                container = table[instruction.container]
+                if not isinstance(container, ContainerType) or container.kind != "List":
+                    _invalid(function, instruction, "SetItem target is not a List")
+                if table[instruction.index] is not IrType.INT:
+                    _invalid(function, instruction, "SetItem index is not Int")
+                if table[instruction.src] != container.args[0]:
+                    _invalid(function, instruction, "SetItem value type mismatch")
+            elif isinstance(instruction, OpenIterator):
+                if table[instruction.dst] is not IrType.ITERATOR:
+                    _invalid(function, instruction, "iterator destination is not Iterator")
+                element = _iterated_type(table[instruction.iterable])
+                if element is None:
+                    _invalid(
+                        function,
+                        instruction,
+                        f"iteration over {table[instruction.iterable]}",
+                    )
+                iterator_elements[instruction.dst] = element
+            elif isinstance(instruction, IteratorNext):
+                expected = iterator_elements.get(instruction.iterator)
+                if expected is None:
+                    _invalid(function, instruction, "iterator was not opened in this function")
+                if table[instruction.value_dst] != expected:
+                    _invalid(function, instruction, "iterator value type mismatch")
             elif isinstance(
                 instruction,
-                (LoadConst, LoadLocal, StoreLocal, Label, Jump, DefineFunction, FreshLocals),
+                (
+                    LoadConst,
+                    LoadLocal,
+                    StoreLocal,
+                    Label,
+                    Jump,
+                    DefineFunction,
+                    FreshLocals,
+                ),
             ):
                 continue
             else:

@@ -190,6 +190,30 @@ print(first([4, 5]))
 print(pair(7, "x"))
 print([1, 2] == [1, 2], [1, 2] != [1, 3])
 """,
+    "typed_iteration": """#lang oort-core
+
+def total(xs: List[Int]) -> Int {
+    var sum: Int = 0
+    for x in xs { sum = sum + x }
+    sum
+}
+
+def tuple_total(xs: Tuple[Int, Int, Int]) -> Int {
+    var sum: Int = 0
+    for x in xs { sum = sum + x }
+    sum
+}
+
+def last_char(s: String) -> String {
+    var out: String = ""
+    for ch in s { out = ch }
+    out
+}
+
+print(total([1, 2, 3, 4]))
+print(tuple_total((5, 6, 7)))
+print(last_char("Oort"))
+""",
 }
 
 

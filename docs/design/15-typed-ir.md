@@ -540,7 +540,7 @@ wrapping、不引入 `unsafe` 或外部 crate。
 | 阶段 | 范围 | 状态 |
 |---|---|---|
 | **S1 String** | `IrType.STRING`；`ADD_S`/`EQ_S`/`*_S`；`len` native；`TypedValue::Str(Rc<str>)`；kind=1 **v3** | **已完成** |
-| **S2 List / Tuple** | 递归类型描述 + 类型表；`NEW_LIST`/`NEW_TUPLE`/`GET_ITEM`/`LEN`；List 可变、Tuple 不可变 | **已完成（S2a）**；`SET_ITEM`/`for` 迭代留 S2b |
+| **S2 List / Tuple** | 递归类型描述 + 类型表；`NEW_LIST`/`NEW_TUPLE`/`GET_ITEM`/`LEN`；`for` 迭代；Tuple 不可变；List 可变（语言表面待开放） | **已完成（S2a + S2b）**；`SET_ITEM` 因核心检查器限制只预留 opcode |
 | **S3 Set / Dict** | `NEW_SET`/`NEW_DICT`、成员/下标/写入、键相等（先用线性查找，不实现哈希） | 待做 |
 | **S4 ADT** | 构造器/`match`/布局；依赖集合与类型表的稳定 | 后做 |
 
@@ -548,6 +548,13 @@ wrapping、不引入 `unsafe` 或外部 crate。
 [design 03 §2.5](03-type-system-design.md)。S2/S3 只存具体类型；
 `TypeParam`/`Forall`/`App(Nominal, args)` 等到实现泛型时再进类型表。
 跨方言调用与 FFI 的设计见 [design 17](17-boundary-ffi.md)。
+
+**内存回收（S2/S3）**：List/Tuple/Set/Dict 在当前类型系统下是有限的——没有
+递归名义类型、没有 typed 闭包，结构容器无法引用自身；Rust typed VM 继续用
+`Rc`/`RefCell`，依靠引用计数释放，**不需要 GC**。当 S4（类/递归 ADT）或
+typed 闭包引入后，`Rc` 环会泄漏，必须在 Rust VM v2 / design 01 的值表示
+设计中一并决定 GC（tracing 或 cycle collector），不要在 S2/S3 临时引入。
+动态 kind=0 Rust VM 已存在环泄漏，属于 spike 限制。
 
 S1 的约束与实现：
 
@@ -570,9 +577,19 @@ S1 的约束与实现：
   `TypedValue::Tuple(Rc<[TypedValue]>)`；`Value::Tuple` 用于主结果转换；
   深相等、下标（含负索引）、`len`、`print` 格式对齐 Python；
 - **S2a 范围**：List/Tuple 字面量、下标读取、`len`、深相等、打印；
-  **未做**：集合原地修改（`SET_ITEM`）、`for` 迭代、切片、Set/Dict；
-- 验证：typed differential 新增 `typed_collections`；Python 1271 passed；
-  Rust 单测 14；ruff/mypy/mkdocs 通过。
+- **S2b 范围**：List/Tuple（元素齐次）/String 的 `for` 迭代；新增
+  `IrType.ITERATOR`、类型 tag 11、`OPEN_ITER`/`ITER_NEXT`（opcode 66/67）；
+  迭代器是快照，与动态运行时的 `OortIterator` 语义一致；
+- **`SET_ITEM`（opcode 68）只预留、不发出**：`oort-core` 核心检查器目前
+  禁止下标赋值（“只有普通名字和类槽可赋值”），List 原地修改需要单独的语言
+  表面决策/提案，不能由 typed 路径偷偷放宽。Rust/Python typed VM 已实现该
+  opcode 的解释，便于提案通过后直接接入；
+- **类型/降低细节**：共享 HIR 的 `_lower_for` 分配的迭代器/元素寄存器不经过
+  `_lower_expr`，typed lowerer 在降低后做一次控制寄存器类型推断
+  （`OpenIterator` → `Iterator`，`IteratorNext` → 元素类型）；
+- 验收样本 `examples/08_core/08_16_typed_collections.ort`（`-t tvm` 与 `-t vm`
+  输出一致）；typed differential 新增 `typed_iteration`（List/Tuple/String）；
+  Python typed 单测 28 passed；Rust 单测 14；ruff/mypy/mkdocs 通过。
 
 ## 9. 风险与开放问题
 

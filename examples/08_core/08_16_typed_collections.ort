@@ -1,0 +1,41 @@
+#lang oort-core
+
+# 类型化 IR 子集（S2b）：List / Tuple / String 的 for 迭代与集合操作。
+# 与 08_15 一样可由 `-t tvm` 执行，并参与 Rust typed VM 差分。
+
+def sum(xs: List[Int]) -> Int {
+    var total: Int = 0
+    for x in xs { total = total + x }
+    total
+}
+
+def tuple_sum(xs: Tuple[Int, Int, Int]) -> Int {
+    var total: Int = 0
+    for x in xs { total = total + x }
+    total
+}
+
+def count_vowels(s: String) -> Int {
+    var count: Int = 0
+    for ch in s {
+        if ch == "a" or ch == "o" { count = count + 1 }
+    }
+    count
+}
+
+def reverse(s: String) -> String {
+    var out: String = ""
+    for ch in s { out = ch + out }
+    out
+}
+
+def second(xs: List[Int]) -> Int { xs[1] }
+
+def make(n: Int) -> List[Int] { [n, n + 1, n + 2] }
+
+print(sum([1, 2, 3, 4]))
+print(tuple_sum((5, 6, 7)))
+print(count_vowels("oort language"))
+print(reverse("oort"))
+print(second(make(10)))
+print(len([1, 2, 3]), [1, 2] == [1, 2], "a" < "b")

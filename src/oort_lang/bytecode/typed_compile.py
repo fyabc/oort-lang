@@ -23,6 +23,7 @@ from ..hir.nodes import (
     FreshLocals,
     GetItem,
     Instruction,
+    IteratorNext,
     Jump,
     JumpIfFalse,
     JumpIfTrue,
@@ -31,7 +32,9 @@ from ..hir.nodes import (
     LoadGlobal,
     LoadLocal,
     Move,
+    OpenIterator,
     Return,
+    SetItem,
     StoreGlobal,
     StoreLocal,
     UnOp,
@@ -259,6 +262,28 @@ class _ProtoBuilder:
                 ),
                 position,
             )
+        elif isinstance(instruction, SetItem):
+            self._emit(
+                encode_abc(
+                    TypedOp.SET_ITEM,
+                    instruction.container,
+                    instruction.index,
+                    instruction.src,
+                ),
+                position,
+            )
+        elif isinstance(instruction, OpenIterator):
+            self._emit(
+                encode_abc(TypedOp.OPEN_ITER, instruction.dst, instruction.iterable, 0),
+                position,
+            )
+        elif isinstance(instruction, IteratorNext):
+            ok = self._alloc(IrType.BOOL, position)
+            self._emit(
+                encode_abc(TypedOp.ITER_NEXT, instruction.value_dst, instruction.iterator, ok),
+                position,
+            )
+            self._emit_fixup(TypedOp.JMP_FALSE, ok, instruction.done, position)
         elif isinstance(instruction, BinOp):
             self._emit_binop(instruction)
         elif isinstance(instruction, UnOp):

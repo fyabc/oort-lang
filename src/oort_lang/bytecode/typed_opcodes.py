@@ -81,6 +81,9 @@ class TypedOp(IntEnum):
     NE_LIST = 63
     EQ_TUPLE = 64
     NE_TUPLE = 65
+    OPEN_ITER = 66
+    ITER_NEXT = 67
+    SET_ITEM = 68
 
 
 # ABC: [op:8][A:8][B:8][C:8]
@@ -142,6 +145,9 @@ ABC_OPS = frozenset(
         TypedOp.NE_LIST,
         TypedOp.EQ_TUPLE,
         TypedOp.NE_TUPLE,
+        TypedOp.OPEN_ITER,
+        TypedOp.ITER_NEXT,
+        TypedOp.SET_ITEM,
     }
 )
 

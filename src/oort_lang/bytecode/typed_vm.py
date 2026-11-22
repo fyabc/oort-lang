@@ -174,6 +174,19 @@ class TypedCodeVM:
                 if op in (TypedOp.NE_LIST, TypedOp.NE_TUPLE):
                     equal = not equal
                 registers[a] = OortBool.get_bool_value(equal)
+            elif op is TypedOp.OPEN_ITER:
+                registers[a] = self.interpreter.open_iterator(registers[b], position)
+            elif op is TypedOp.ITER_NEXT:
+                value, valid = self.interpreter.iterator_next(registers[b], position)
+                registers[a] = self.runtime.null if value is None else value
+                registers[c] = OortBool.get_bool_value(valid)
+            elif op is TypedOp.SET_ITEM:
+                container = registers[a]
+                if type(container) is not OortList:
+                    raise OortTypeError("Typed SetItem expects a List.", position)
+                if type(registers[b]) is not OortInt:
+                    raise OortTypeError("Typed SetItem index must be Int.", position)
+                container[registers[b]] = registers[c]
             elif op is TypedOp.JMP:
                 pc = bx
                 continue

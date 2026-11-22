@@ -63,6 +63,7 @@ EXPECTED_OUTPUTS = {
     "08_core/08_15_typed_subset.ort": (
         "120\n55\n10\n0\n4\n15\n1.5\n3.5\n-1 0 1\ntrue false\nfalse true\ntrue\n7 6\n"
     ),
+    "08_core/08_16_typed_collections.ort": "10\n18\n4\ntroo\n11\n3 true true\n",
 }
 
 # The JSON showcase is covered by `test_json_example.py`, which compiles it

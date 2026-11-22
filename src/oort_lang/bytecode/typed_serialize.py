@@ -33,6 +33,7 @@ _SCALAR_BY_TAG = {
     4: IrType.UNIT,
     5: IrType.FUNCTION,
     6: IrType.STRING,
+    11: IrType.ITERATOR,
 }
 
 

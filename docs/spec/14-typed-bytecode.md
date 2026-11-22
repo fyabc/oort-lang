@@ -1,7 +1,7 @@
 # 类型化字节码（`.obc` kind=1）
 
-> **状态**：研究性规范（2026-11-22，M3/M4）。描述当前 `oort-core` 标量子集的
-> typed 字节码；格式**尚未承诺稳定**，可能随 typed IR/Rust VM 研究演进。
+> **状态**：研究性规范（2026-11-23，M3/M4/S2b）。描述当前 `oort-core` typed
+> 子集的 typed 字节码；格式**尚未承诺稳定**，可能随 typed IR/Rust VM 研究演进。
 > 擦除式字节码（kind=0）仍由 [spec 13](13-bytecode-serialization.md) 规范；
 > 指令语义的共享部分见 [spec 12](12-hir-bytecode-vm.md)。
 
@@ -61,6 +61,7 @@ positions?:
 | 8 | `Set`（预留） | `u16 element_type_id` |
 | 9 | `Dict`（预留） | `u16 key_type_id, u16 value_type_id` |
 | 10 | `Tuple` | `u16 count, u16 element_type_id[count]` |
+| 11 | `Iterator` | — |
 
 - 类型表按**后序**写入：容器类型只能引用已经出现的子类型（不允许前向引用）；
 - 寄存器类型 0 表示“无类型”；参数/返回不允许 0；
@@ -122,6 +123,9 @@ ABx: [op:8][A:8][Bx:16]
 | 61 | `GET_ITEM` | ABC | A=目标, B=容器, C=索引 | 下标读取 |
 | 62/63 | `EQ_LIST` / `NE_LIST` | ABC | A=目标, B=左, C=右 | List 深相等/不等 → Bool |
 | 64/65 | `EQ_TUPLE` / `NE_TUPLE` | ABC | 同上 | Tuple 深相等/不等 → Bool |
+| 66 | `OPEN_ITER` | ABC | A=目标, B=可迭代值, C=0 | 创建迭代器（List/Tuple/String 的快照） |
+| 67 | `ITER_NEXT` | ABC | A=值目标, B=迭代器, C=有效标志 | `(R[A], R[C]) = next(R[B])`；结束时值为 `Unit`、标志为 false |
+| 68 | `SET_ITEM` | ABC | A=容器, B=索引, C=源 | **预留**：List 原地写入；当前语言表面禁止下标赋值，编译器尚不发出 |
 
 ### 3.2 调用约定
 
@@ -153,12 +157,29 @@ CALL A B C
 typed HIR 的命名标签在编译期解析为绝对字索引；`JMP`/`JMP_FALSE`/`JMP_TRUE`
 的 `Bx` 直接指向目标字。读取方不重新解析标签。
 
+`for x in xs { ... }` 降低为：
+
+```text
+OPEN_ITER  it, xs, 0
+loop:
+ITER_NEXT  x, it, ok
+JMP_FALSE  ok, end
+... body ...
+JMP        loop
+end:
+```
+
+`OPEN_ITER` 接受元素类型已知的 List、元素类型齐次的 Tuple 或 String
+（元素为单字符 String）；迭代器是**快照**，循环期间修改容器不影响本次
+迭代。`ITER_NEXT` 的 `ok` 是编译器分配的临时 Bool 寄存器；HIR 层不暴露
+该寄存器。
+
 ## 4. 执行语义
 
 - **值表示由实现决定**：Python 参考实现使用 boxed 运行时值（差分 baseline）；
   Rust typed VM 标量使用未装箱表示，String 使用 `Rc<str>`，List/Tuple 使用
-  `Rc<RefCell<Vec<TypedValue>>>` / `Rc<[TypedValue]>`；只在 native
-  `print`/`len` 与主结果边界转换；
+  `Rc<RefCell<Vec<TypedValue>>>` / `Rc<[TypedValue]>`，迭代器使用
+  `Rc<RefCell<{ values, index }>>`；只在 native `print`/`len` 与主结果边界转换；
 - `Int` 在 Python 参考实现中使用宿主整数（任意精度）；Rust spike 使用
   `i64`，溢出显式报错。这是 spike 的表示限制，不是语言语义；跨实现差分
   测试避免溢出输入。完整数值语义见
@@ -173,11 +194,14 @@ typed HIR 的命名标签在编译期解析为绝对字索引；`JMP`/`JMP_FALSE
 
 ## 5. 当前边界
 
-- 仅 `oort-core` 标量子集 + `String` + `List`/`Tuple`：`Int`/`Float`/`Bool`/
-  `Unit`/`String`、顶层函数、直接调用、`if`/`while`/早返回、String 拼接/比较/
-  `len`、List/Tuple 字面量/下标/`len`/深相等；
-- 无 Set/Dict、`for` 迭代、集合原地修改、ADT/`match`、类/接口/泛型/lambda、
-  模块导入、切片；
+- 仅 `oort-core` typed 子集：`Int`/`Float`/`Bool`/`Unit`/`String`、顶层函数、
+  直接调用、`if`/`while`/`for`/早返回、String 拼接/比较/`len`、List/Tuple
+  字面量/下标/`len`/深相等、List/Tuple（元素齐次）/String 的 `for` 迭代；
+- 无 Set/Dict、集合原地修改（`SET_ITEM` 预留；核心检查器尚未允许 `xs[i] = v`）、
+  ADT/`match`、类/接口/泛型/lambda、模块导入、切片；
+- kind=1 **v4 是当前唯一版本**；新增 opcode/type tag 属于向后兼容的格式扩展，
+  旧读者遇到未知 opcode/tag 必须报错而不是猜测；破坏既有布局的变更必须提升
+  version；
 - 无动态↔静态边界、`box`/`unbox`/blame；跨方言调用仍拒绝；
 - 格式版本 `version=4`；不兼容变更必须提升 version，并保持 kind=1 的独立
   命名空间。

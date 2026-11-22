@@ -28,6 +28,7 @@ pub enum TypedType {
     Set(Box<TypedType>),
     Dict(Box<TypedType>, Box<TypedType>),
     Tuple(Vec<TypedType>),
+    Iterator,
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +93,7 @@ fn read_type_table(r: &mut Reader<'_>, name: &str) -> TResult<Vec<TypedType>> {
                 }
                 TypedType::Tuple(elements)
             }
+            11 => TypedType::Iterator,
             _ => return Err(format!("invalid typed type tag {tag}")),
         };
         types.push(ty);
@@ -201,8 +203,25 @@ enum TypedValue {
     Str(Rc<str>),
     List(Rc<RefCell<Vec<TypedValue>>>),
     Tuple(Rc<[TypedValue]>),
+    Iterator(Rc<RefCell<TypedIterator>>),
     Function(usize),
     Native(TypedNative),
+}
+
+/// Snapshot iterator over a List, Tuple or String; mirrors `OortIterator`.
+struct TypedIterator {
+    values: Vec<TypedValue>,
+    index: usize,
+}
+
+impl TypedIterator {
+    fn next_value(&mut self) -> Option<TypedValue> {
+        let value = self.values.get(self.index).cloned();
+        if value.is_some() {
+            self.index += 1;
+        }
+        value
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -230,6 +249,7 @@ fn display_typed(value: &TypedValue) -> String {
                 format!("({})", parts.join(", "))
             }
         }
+        TypedValue::Iterator(_) => "<iterator>".into(),
         TypedValue::Function(_) | TypedValue::Native(_) => "<function>".into(),
     }
 }
@@ -259,7 +279,7 @@ fn typed_to_value(value: &TypedValue) -> TResult<Value> {
             }
             Value::Tuple(Rc::from(values))
         }
-        _ => return Err("typed main returned a function value".into()),
+        _ => return Err("typed main returned an iterable or function value".into()),
     })
 }
 
@@ -340,6 +360,7 @@ fn guard(expected: &TypedType, value: &TypedValue) -> TResult<()> {
             | (TypedType::Unit, TypedValue::Unit)
             | (TypedType::List(_), TypedValue::List(_))
             | (TypedType::Tuple(_), TypedValue::Tuple(_))
+            | (TypedType::Iterator, TypedValue::Iterator(_))
     );
     if ok {
         Ok(())
@@ -347,6 +368,35 @@ fn guard(expected: &TypedType, value: &TypedValue) -> TResult<()> {
         Err(format!(
             "typed bytecode guard failed: expected {expected:?}"
         ))
+    }
+}
+
+fn open_iterator(value: &TypedValue) -> TResult<TypedValue> {
+    let values = match value {
+        TypedValue::List(items) => items.borrow().clone(),
+        TypedValue::Tuple(items) => items.to_vec(),
+        TypedValue::Str(text) => text
+            .chars()
+            .map(|ch| TypedValue::Str(Rc::from(ch.to_string().as_str())))
+            .collect(),
+        _ => return Err("typed value is not iterable".into()),
+    };
+    Ok(TypedValue::Iterator(Rc::new(RefCell::new(TypedIterator {
+        values,
+        index: 0,
+    }))))
+}
+
+fn iterator_next(value: &TypedValue) -> TResult<(TypedValue, bool)> {
+    match value {
+        TypedValue::Iterator(iterator) => {
+            let mut iterator = iterator.borrow_mut();
+            match iterator.next_value() {
+                Some(value) => Ok((value, true)),
+                None => Ok((TypedValue::Unit, false)),
+            }
+        }
+        _ => Err("typed ITER_NEXT expects an iterator".into()),
     }
 }
 
@@ -493,6 +543,9 @@ const EQ_LIST: u32 = 62;
 const NE_LIST: u32 = 63;
 const EQ_TUPLE: u32 = 64;
 const NE_TUPLE: u32 = 65;
+const OPEN_ITER: u32 = 66;
+const ITER_NEXT: u32 = 67;
+const SET_ITEM: u32 = 68;
 
 pub struct TypedVm {
     functions: Vec<ResolvedProto>,
@@ -836,6 +889,24 @@ fn execute(
             }
             GET_ITEM => {
                 registers[a] = get_item(&registers[b], &registers[c])?;
+            }
+            OPEN_ITER => {
+                registers[a] = open_iterator(&registers[b])?;
+            }
+            ITER_NEXT => {
+                let (value, valid) = iterator_next(&registers[b])?;
+                registers[a] = value;
+                registers[c] = TypedValue::Bool(valid);
+            }
+            SET_ITEM => {
+                let index = as_int(&registers[b])?;
+                if let TypedValue::List(items) = &registers[a] {
+                    let mut items = items.borrow_mut();
+                    let position = normalize_index(index, items.len())?;
+                    items[position] = registers[c].clone();
+                } else {
+                    return Err("typed SET_ITEM expects a List".into());
+                }
             }
             EQ_LIST | NE_LIST | EQ_TUPLE | NE_TUPLE => {
                 let mut equal = typed_equal(&registers[b], &registers[c])?;
