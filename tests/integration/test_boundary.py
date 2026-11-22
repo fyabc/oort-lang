@@ -109,6 +109,27 @@ print(a.area(sa), b.area(sb))
     assert run_file(main, target=target).stdout == "Circle(2) Square(4)\n12 16\n"
 
 
+@pytest.mark.parametrize("target", ["eval", "vm"])
+def test_boundary_core_module_can_import_core(tmp_path, run_file, target):
+    _write(
+        tmp_path,
+        "math.ort",
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",
+    )
+    _write(
+        tmp_path,
+        "lib.ort",
+        '#lang oort-core\nfrom "./math" import add\ndef calc(n: Int) -> Int { add(n, 1) }\n',
+    )
+    main = _write(
+        tmp_path,
+        "main.ort",
+        '#lang oort-object\nfrom "./lib" import calc\nprint(calc(41))\n',
+    )
+
+    assert run_file(main, target=target).stdout == "42\n"
+
+
 def test_boundary_guard_rejects_wrong_argument_type(tmp_path, caplog):
     _write(
         tmp_path,

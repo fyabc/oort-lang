@@ -349,6 +349,27 @@ S4b 原型的限制与备注：
 - `AdtField` 对泛型字段仍做宽松校验（字段 payload 模板不写入声明表）；
 - 跨模块 ADT、边界转换仍留后续。
 
+## 11.2 P1 类型化模块链接（2026-11-23）
+
+第一个 P1 切片支持 core→core 的 `from "./lib" import f` 和
+`import "./lib"` 的函数访问：
+
+- 链接器（`hir/typed_link.py`）递归加载依赖、独立 lowering，然后把函数和
+  ADT 声明合并成一个 `TypedModule`；
+- 导入模块的构造器 ID 重映射到合并后的模块声明表；root 函数保持在前，
+  使入口 main 的 `DefineFunction` 索引不变；
+- 生成的 kind=1 `.obc` 是已链接的单模块，Rust typed VM 无需多模块加载器；
+- B1 导入的 core 模块也可以继续 `from` 导入其他 core 模块。
+
+当前限制：
+
+- 支持 `from ... import` 函数和 namespace import 的函数访问；
+  导入构造器仍未开放；导入类型可用于类型注解（如 `lib.Color`）；
+- 导入模块不能有顶层副作用（只允许函数定义和 Unit 初始化）；
+- 跨模块函数名冲突显式拒绝；不做模块前缀/重导出；
+- root 可以使用 imported type 写标注（如 `lib.Color`），但不能构造/匹配
+  导入 ADT 的构造器；导入 ADT 值仍主要通过函数返回值/参数获得。
+
 ## 12. 推荐决策
 
 - **先 S4a 单态 ADT**，把名义身份、构造、匹配、相等、打印和 v6 格式跑通；

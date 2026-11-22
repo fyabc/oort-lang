@@ -615,6 +615,64 @@ print(pair((0, "x")), pair((0, "y")), pair((1, "x")))
     assert typed_out == vm_out == "1 2 0\n1 0\ntrue false false\n"
 
 
+def test_typed_core_from_imports(tmp_path, run_file):
+    lib = tmp_path / "lib.ort"
+    lib.write_text(
+        """#lang oort-core
+enum Color { Red, Green }
+def add(a: Int, b: Int) -> Int { a + b }
+def make_red() -> Color { Red }
+def paint(color: Color) -> Int { match color { Red => 1, Green => 2 } }
+""",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        """#lang oort-core
+from "./lib" import add, make_red, paint
+def use() -> Int { add(1, 2) }
+print(use())
+print(add(4, 5))
+print(make_red())
+print(paint(make_red()))
+""",
+        encoding="utf-8",
+    )
+
+    typed = run_file(main, target="tvm")
+    vm = run_file(main, target="vm")
+    assert typed.stdout == vm.stdout == "3\n9\nRed\n1\n"
+
+
+def test_typed_core_namespace_imports(tmp_path, run_file):
+    lib = tmp_path / "lib.ort"
+    lib.write_text(
+        """#lang oort-core
+enum Color { Red, Green }
+def add(a: Int, b: Int) -> Int { a + b }
+def make_red() -> Color { Red }
+def paint(color: Color) -> Int { match color { Red => 1, Green => 2 } }
+""",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        """#lang oort-core
+import "./lib"
+def use() -> Int { lib.add(1, 2) }
+def make() -> lib.Color { lib.make_red() }
+print(use())
+print(lib.add(4, 5))
+print(lib.paint(make()))
+""",
+        encoding="utf-8",
+    )
+
+    typed = run_file(main, target="tvm")
+    vm = run_file(main, target="vm")
+    assert typed.stdout == vm.stdout == "3\n9\n1\n"
+
+
 def test_typed_collection_obc_round_trip(tmp_path):
     source = """\
 #lang oort-core

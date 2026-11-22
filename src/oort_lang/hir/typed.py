@@ -49,6 +49,8 @@ from .nodes import (
     FreshLocals,
     GetItem,
     HirFunction,
+    ImportFrom,
+    ImportModule,
     Instruction,
     IteratorNext,
     Jump,
@@ -309,7 +311,8 @@ def _validate_module(module: nodes.ModuleNode) -> None:
         if isinstance(stmt, (nodes.VarDecl, nodes.Assignment)):
             _reject(stmt, "top-level declarations or assignments (move them into a function)")
         if isinstance(stmt, (nodes.ImportStmt, nodes.ImportFromStmt)):
-            _reject(stmt, "module imports")
+            # P1 linker resolves both forms before typed bytecode.
+            continue
         if isinstance(stmt, (nodes.ClassDef, nodes.InterfaceDef)):
             _reject(stmt, f"{type(stmt).__name__.removesuffix('Def')} definitions")
         _validate_expr(stmt)
@@ -503,8 +506,8 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
     if isinstance(node, nodes.Call):
         if node.infix:
             _reject(node, "infix calls")
-        if not isinstance(node.func, nodes.Name):
-            _reject(node, "calls to values other than plain function names")
+        if not isinstance(node.func, (nodes.Name, nodes.Attribute)):
+            _reject(node, "calls to values other than function names")
         callee_type = _ir_type_for_node(node.func, allow_function=True)
         if callee_type is not IrType.FUNCTION:
             _reject(node.func, "calls to non-function names")
@@ -549,6 +552,9 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
         _validate_expr(node.value)
         _validate_expr(node.index)
         _ir_type_for_node(node)
+        return
+    if isinstance(node, nodes.Attribute):
+        _ir_type_for_node(node, allow_function=True)
         return
     if isinstance(node, nodes.MatchExpr):
         scrutinee = node.scrutinee.metadata.get("type_obj")
@@ -651,12 +657,14 @@ class _TypedHirLowerer(HirLowerer):
         self,
         adt_decls: tuple[AdtDecl, ...] = (),
         constructors: dict[str, ConstructorSite] | None = None,
+        module_functions: dict[str, set[str]] | None = None,
     ) -> None:
         super().__init__()
         self.register_types: dict[str, dict[int, IrTypeLike]] = {}
         self.function_types: dict[str, FunctionType] = {}
         self.adt_decls = adt_decls
         self.constructors = constructors or {}
+        self.module_functions = module_functions or {}
         self._current_ret: IrTypeLike = IrType.UNIT
 
     def _record(self, register: int, ir_type: IrTypeLike, position) -> None:
@@ -677,6 +685,18 @@ class _TypedHirLowerer(HirLowerer):
         return
 
     def _lower_expr(self, node: nodes.ASTNode | None) -> int | None:
+        if isinstance(node, nodes.Attribute) and isinstance(node.value, nodes.Name):
+            names = self.module_functions.get(node.value.id)
+            if names is not None:
+                if node.attribute not in names:
+                    raise UnsupportedSyntax(
+                        f"Unknown imported function '{node.attribute}'.",
+                        node.position,
+                    )
+                dst = self._alloc(node.position)
+                self._emit(LoadGlobal(node.position, dst, node.attribute))
+                self._record(dst, _ir_type_for_node(node, allow_function=True), node.position)
+                return dst
         if isinstance(node, nodes.Call) and isinstance(node.func, nodes.Name):
             site = self.constructors.get(node.func.id)
             binding = node.func.binding
@@ -1014,7 +1034,10 @@ def _infer_control_register_types(function: HirFunction, recorded: dict[int, IrT
                 recorded[instruction.value_dst] = element
 
 
-def lower_typed_module(module: nodes.ModuleNode) -> TypedModule:
+def lower_typed_module(
+    module: nodes.ModuleNode,
+    module_functions: dict[str, set[str]] | None = None,
+) -> TypedModule:
     """Lower a checked ``oort-core`` module to typed HIR.
 
     Only the scalar subset is accepted; anything else raises
@@ -1024,7 +1047,7 @@ def lower_typed_module(module: nodes.ModuleNode) -> TypedModule:
     module = _user_module(module)
     _validate_module(module)
     adt_decls, constructors = _collect_adt_decls(module)
-    lowerer = _TypedHirLowerer(adt_decls, constructors)
+    lowerer = _TypedHirLowerer(adt_decls, constructors, module_functions)
     hir = lowerer.lower(module)
 
     typed_functions: list[TypedFunction] = []
@@ -1406,6 +1429,8 @@ def validate_typed_module(module: TypedModule) -> None:
                     Jump,
                     DefineFunction,
                     FreshLocals,
+                    ImportFrom,
+                    ImportModule,
                 ),
             ):
                 continue

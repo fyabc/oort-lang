@@ -48,6 +48,7 @@ from .typed_vm import TypedCodeVM
 
 if TYPE_CHECKING:
     from ..ast import nodes
+    from ..hir.typed import TypedModule
     from ..runtime.environment import Environment
     from ..runtime.interpreter import ASTInterpreter
     from ..runtime.native import NativeContext
@@ -190,10 +191,11 @@ def execute_core_module(
     module: nodes.ModuleNode,
     env: Environment,
     interpreter: ASTInterpreter,
+    typed: TypedModule | None = None,
 ) -> None:
     """Execute one imported core module and bind its functions in ``env``."""
 
-    typed = lower_typed_module(module)
+    typed = typed or lower_typed_module(module)
     program = compile_typed_module(typed)
     vm = TypedCodeVM(interpreter)
     vm.run(program)

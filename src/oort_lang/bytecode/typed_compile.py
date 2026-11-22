@@ -27,6 +27,8 @@ from ..hir.nodes import (
     DefineFunction,
     FreshLocals,
     GetItem,
+    ImportFrom,
+    ImportModule,
     Instruction,
     IteratorNext,
     Jump,
@@ -225,6 +227,8 @@ class _ProtoBuilder:
 
     def _emit_instruction(self, instruction: Instruction) -> None:
         position = instruction.position
+        if isinstance(instruction, (ImportFrom, ImportModule)):
+            return
         if isinstance(instruction, LoadConst):
             index = self._constant(instruction.value, position)
             self._emit(encode_abx(TypedOp.LOAD_K, instruction.dst, index), position)

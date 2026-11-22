@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     import argparse
     import os
 
+    from ..hir.typed import TypedModule
     from ..runtime.bytecode_vm import BytecodeVM
     from ..runtime.environment import Environment
     from ..runtime.objects import OortObject
@@ -149,11 +150,11 @@ class Compiler:
             return None
 
         if self.args.target == "thir":
-            from ..hir import format_typed_module, lower_typed_module
+            from ..hir import format_typed_module
 
             assert isinstance(ast, nodes.ModuleNode)
             try:
-                typed_hir = lower_typed_module(ast)
+                typed_hir = self._link_typed_entry(ast, input_info)
             except OortException as e:
                 matched = self.error_handler.input_info_for(e.position) or input_info
                 self.error_handler.add(e, matched)
@@ -179,11 +180,10 @@ class Compiler:
 
         if self.args.target == "tbc":
             from ..bytecode import compile_typed_module, disassemble_typed_program
-            from ..hir import lower_typed_module
 
             assert isinstance(ast, nodes.ModuleNode)
             try:
-                typed_bytecode = compile_typed_module(lower_typed_module(ast))
+                typed_bytecode = compile_typed_module(self._link_typed_entry(ast, input_info))
             except OortException as e:
                 matched = self.error_handler.input_info_for(e.position) or input_info
                 self.error_handler.add(e, matched)
@@ -194,7 +194,6 @@ class Compiler:
 
         if self.args.target == "tvm":
             from ..bytecode import TypedCodeVM, compile_typed_module
-            from ..hir import lower_typed_module
 
             interpreter = ASTInterpreter(self.error_handler)
             interpreter.script_args = tuple(getattr(self.args, "script_args", ()) or ())
@@ -203,7 +202,7 @@ class Compiler:
             )
             assert isinstance(ast, nodes.ModuleNode)
             try:
-                typed_bytecode = compile_typed_module(lower_typed_module(ast))
+                typed_bytecode = compile_typed_module(self._link_typed_entry(ast, input_info))
                 result = TypedCodeVM(interpreter).run(typed_bytecode)
             except OortException as e:
                 matched = self.error_handler.input_info_for(e.position) or input_info
@@ -268,6 +267,48 @@ class Compiler:
         if self.error_handler.pending_count:
             self.error_handler.report(exit_on_error=False, clear=True)
         return result.host_value
+
+    def _link_typed_core(
+        self,
+        ast: nodes.ModuleNode,
+        path: Path | None,
+        entry_dir: Path,
+    ) -> TypedModule:
+        from ..hir.typed_link import link_typed_modules
+
+        def resolve(spec: str, importer_path: Path | None, position: SourcePosition):
+            importer_dir = importer_path.parent if importer_path else entry_dir
+            dep_path = resolve_module_path(
+                spec,
+                importer_dir=importer_dir,
+                entry_dir=entry_dir,
+                search_paths=self.module_paths,
+                position=position,
+            )
+            unit = self.compile_unit_details(FileInputInfo(dep_path))
+            if unit is None:
+                return None
+            if unit.dialect.name != "oort-core":
+                raise OortImportError(
+                    f"Cannot import a {unit.dialect.name!r} module from an "
+                    f"'oort-core' module; cross-dialect imports require an "
+                    f"explicit FFI boundary.",
+                    position,
+                )
+            return dep_path, unit.ast
+
+        return link_typed_modules(ast, path, resolve)
+
+    def _link_typed_entry(
+        self,
+        ast: nodes.ModuleNode,
+        input_info: InputInfo,
+    ) -> TypedModule:
+        return self._link_typed_core(
+            ast,
+            input_info.module_path,
+            self._entry_dir or input_info.module_dir,
+        )
 
     def compile_unit_details(self, input_info: InputInfo) -> CompiledUnit | None:
         """Compile one module and return its AST, dialect and static exports."""
@@ -353,10 +394,11 @@ class Compiler:
             with interpreter.runtime.activate():
                 return vm.run_module(compile_bytecode(lower_module(ast)), env)
 
-        def execute_core_module(ast: nodes.ModuleNode, env: Environment) -> None:
+        def execute_core_module(ast: nodes.ModuleNode, env: Environment, path: Path) -> None:
             from ..bytecode.typed_boundary import execute_core_module as run_core
 
-            run_core(ast, env, interpreter)
+            typed = self._link_typed_core(ast, path, path.parent if path else entry_dir)
+            run_core(ast, env, interpreter, typed)
 
         return ModuleLoader(
             compile_module=compile_module,
@@ -378,10 +420,11 @@ class Compiler:
                 return None
             return CompiledModule(result.ast, result.dialect.name)
 
-        def execute_core_module(ast: nodes.ModuleNode, env: Environment) -> None:
+        def execute_core_module(ast: nodes.ModuleNode, env: Environment, path: Path) -> None:
             from ..bytecode.typed_boundary import execute_core_module as run_core
 
-            run_core(ast, env, interpreter)
+            typed = self._link_typed_core(ast, path, path.parent if path else entry_dir)
+            run_core(ast, env, interpreter, typed)
 
         return ModuleLoader(
             compile_module=compile_module,

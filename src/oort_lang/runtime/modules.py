@@ -139,7 +139,7 @@ class ModuleLoader:
         entry_dir: Path,
         search_paths: Sequence[Path] = (),
         native_modules: Mapping[str, Callable[[], OortModule]] | None = None,
-        execute_core_module: Callable[[nodes.ModuleNode, Environment], None] | None = None,
+        execute_core_module: Callable[[nodes.ModuleNode, Environment, Path], None] | None = None,
     ):
         self._compile_module = compile_module
         self._execute_module = execute_module
@@ -264,7 +264,7 @@ class ModuleLoader:
             ):
                 # B1: object -> core is the supported boundary direction.
                 frame.dialect_name = compiled.dialect_name
-                self._execute_core_module(compiled.ast, record.env)
+                self._execute_core_module(compiled.ast, record.env, record.path)
                 return
             raise OortImportError(
                 f"Cannot import a {compiled.dialect_name!r} module from an "
