@@ -72,8 +72,8 @@ def render(typed: dict[str, Any]) -> str:
         )
     if rust_speedup:
         lines.append(
-            f"Rust typed 字节码比 kind=0 VM 快 **{rust_speedup}**（同 exec 口径；"
-            "boxed 值仍是 spike 表示，M4 后续做未装箱）。"
+            f"Rust typed 字节码比 kind=0 VM 快 **{rust_speedup}**（exec 口径；"
+            "标量已未装箱，函数边界仍用 boxed 值）。"
         )
     lines.extend(
         [

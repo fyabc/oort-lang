@@ -481,10 +481,10 @@ TypedFunction
 - Rust `float_repr` 改为与 Python `repr(float)` 对齐（指数符号/两位指数）；
 - 验证：Rust 单测 11 passed；typed differential 6 个程序全过（含 2^53 混合比较
   与浮点显示）；Python 全量 1268 passed；
-- 初步测量（exec 口径，同一轮）：未装箱 Rust **fib(20) 6.1 ms / loop 20000
-  0.4 ms**；boxed Rust 基线为 5.8 / 1.2 ms；kind=0 VM 为 415.4 / 185.0 ms。
-  loop 有明显收益，fib 仍受每次调用的帧分配与全局名查找限制，留作 U2 优化
-  输入（不是 U1 的范围）。
+- 初步测量（exec 口径，同一轮）：未装箱 Rust **fib(20) 4.7 ms / loop 20000
+  0.9 ms**；同轮 kind=0 VM 为 **467.7 / 196.2 ms**；相对此前 boxed Rust 基线
+  （5.8 / 1.2 ms）有改善，loop 更明显。fib 仍受每次调用的帧分配与全局名查找
+  限制，留作 U2 优化输入（不是 U1 的范围）。
 
 ## 9. 风险与开放问题
 
