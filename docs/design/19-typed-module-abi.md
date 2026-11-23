@@ -159,7 +159,7 @@ Python loader/linker（`load_typed_units` + `build_typed_program`）：
 
 ### 5.1 编译缓存（P1c-3，契约见 [OP 0030](../proposals/0030-compilation-cache.md)）
 
-- `--cache-dir DIR` 开启缓存；布局为
+- `--cache-dir DIR` 或 `OORT_CACHE_DIR` 开启缓存（`--no-cache` 关闭）；布局为
   `DIR/v8/abi<N>/<ab>/<cd>/<sha256>.obc`，版本化且内容寻址；
 - key 包含源码字节、`module_id`、编译器版本、artifact/ABI 版本、代码生成
   选项以及直接依赖的接口哈希；依赖实现变化不会使依赖者 miss，接口变化会

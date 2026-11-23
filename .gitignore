@@ -106,3 +106,4 @@ __pycache__/
 # Rust spike build artifacts
 rust/target/
 benchmarks/reference/.obc-cache/
+.oort-cache/

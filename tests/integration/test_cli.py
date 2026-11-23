@@ -343,7 +343,29 @@ def test_cache_max_size_option_is_wired(monkeypatch, capsys, tmp_path):
     assert "cache: 1 entries" in capsys.readouterr().err
 
 
-def test_cache_maintenance_requires_cache_dir(monkeypatch):
+def test_cache_env_var_supplies_directory(monkeypatch, capsys, tmp_path):
+    (tmp_path / "lib.ort").write_text(
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        '#lang oort-core\nfrom "./lib" import add\nprint(add(2, 3))\n',
+        encoding="utf-8",
+    )
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setenv("OORT_CACHE_DIR", str(cache_dir))
+
+    assert _run_cli(monkeypatch, ["-t", "tvm", str(main)]) == 0
+    assert capsys.readouterr().out == "5\n"
+
+    assert _run_cli(monkeypatch, ["--cache-stats"]) == 0
+    assert "cache: 2 entries" in capsys.readouterr().err
+    assert _run_cli(monkeypatch, ["--cache-stats", "--no-cache"]) != 0
+
+
+def test_cache_maintenance_requires_cache_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("OORT_CACHE_DIR", "")
     assert _run_cli(monkeypatch, ["--cache-stats"]) != 0
 
 

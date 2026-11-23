@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
 import argparse
+import os
 from collections.abc import Sequence
 
 from .. import __version__
@@ -21,6 +22,14 @@ def _parse_size(text: str) -> int:
     if number < 0:
         raise argparse.ArgumentTypeError(f"size must be non-negative: {text!r}")
     return number * scale
+
+
+def resolve_cache_dir(args: argparse.Namespace) -> str | None:
+    """Resolve the cache directory from flags and the environment."""
+
+    if getattr(args, "no_cache", False):
+        return None
+    return getattr(args, "cache_dir", None) or os.environ.get("OORT_CACHE_DIR") or None
 
 
 COMPILER_MODE_HELPS = {
@@ -93,6 +102,11 @@ def get_main_parser() -> argparse.ArgumentParser:
             "Entries are keyed by source, module id, compiler, ABI versions\n"
             "and direct dependency interface hashes."
         ),
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable the typed artifact cache, overriding --cache-dir and OORT_CACHE_DIR.",
     )
     parser.add_argument(
         "--cache-max-size",

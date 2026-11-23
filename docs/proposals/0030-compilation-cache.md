@@ -1,6 +1,6 @@
 # OP 0030: 编译缓存（Compilation Cache）
 
-- **状态**：Proposed（S1/S2/S3 已实现）
+- **状态**：Proposed（S1–S4 已实现）
 - **作者**：Oort 设计讨论
 - **创建日期**：2026-11-24
 - **相关**：[OP 0027](0027-typed-modules.md)、[design 19](../design/19-typed-module-abi.md)、[spec 14](../spec/14-typed-bytecode.md)
@@ -106,6 +106,13 @@ S2：
 | 未设置 | 不缓存 |
 
 优先级：`--no-cache` > `--cache-dir` > `OORT_CACHE_DIR` > 关闭。
+`--no-cache` 同时会拒绝 `--cache-stats`/`--cache-clean`。
+
+**全局共享缓存**：把 `OORT_CACHE_DIR` 或 `--cache-dir` 指向用户级目录即可
+跨项目复用，例如 Linux/macOS `~/.cache/oort`、Windows
+`%LOCALAPPDATA%\oort\cache`。键不含项目路径，artifact 也不含宿主路径；
+同一 `module_id` + 同源码 + 同依赖接口会命中。共享目录应视为可信输入，
+不要指向其他用户可写的位置。
 
 ### 8. 可移植性与安全
 
@@ -156,7 +163,7 @@ S2：
 | S1（已实现） | `--cache-dir`、源码+版本键、载入重钉依赖哈希、原子写入、路径剥离 | 冷/热运行输出一致；缓存文件不含宿主路径 |
 | S2（已实现） | 版本化布局、依赖接口哈希入键、代码生成选项入键、`--cache-clean`/`--cache-stats`、损坏条目降级 | 依赖接口变化只重建依赖者；依赖实现变化不重编依赖者；热运行编译 0 个 artifact；目录可清理 |
 | S3（已实现） | single-flight 锁、容量上限/LRU、sidecar manifest、并发测试 | 8 个并发进程无损坏、每键最多一次编译 |
-| S4 | `OORT_CACHE_DIR`、`--no-cache`、可选全局共享缓存、文档与基准 | 跨项目命中同一模块；优先级符合契约 |
+| S4（已实现） | `OORT_CACHE_DIR`、`--no-cache`、可选全局共享缓存、文档与基准 | 跨项目命中同一模块；优先级符合契约 |
 
 S2 的失效矩阵测试至少覆盖：源码、module_id、编译器版本、artifact/ABI
 版本、代码生成选项、依赖接口、依赖实现（应命中）。

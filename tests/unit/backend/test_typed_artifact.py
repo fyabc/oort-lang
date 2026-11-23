@@ -465,6 +465,41 @@ def test_cache_concurrent_processes_compile_once(tmp_path):
     assert len(list(cache_dir.rglob("*.obc"))) == 2
 
 
+def test_cache_env_precedence_and_no_cache(tmp_path, monkeypatch, capsys):
+    lib = tmp_path / "lib.ort"
+    lib.write_text(
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        '#lang oort-core\nfrom "./lib" import add\nprint(add(2, 3))\n',
+        encoding="utf-8",
+    )
+    env_dir = tmp_path / "env-cache"
+    flag_dir = tmp_path / "flag-cache"
+    disabled_dir = tmp_path / "disabled-cache"
+    monkeypatch.setenv("OORT_CACHE_DIR", str(env_dir))
+
+    def run(*extra: str) -> None:
+        compiler = get_compiler(["NOT_EXIST", "-t", "tvm", *extra, str(main)])
+        compiler.run_file(main)
+        assert capsys.readouterr().out == "5\n"
+
+    run("--no-cache")
+    assert not env_dir.exists()
+
+    run()
+    assert len(list(env_dir.rglob("*.obc"))) == 2
+
+    run("--cache-dir", str(flag_dir))
+    assert len(list(flag_dir.rglob("*.obc"))) == 2
+    assert len(list(env_dir.rglob("*.obc"))) == 2
+
+    run("--no-cache", "--cache-dir", str(disabled_dir))
+    assert not disabled_dir.exists()
+
+
 def test_cli_cache_dir_produces_reusable_artifacts(tmp_path, capsys):
     lib = tmp_path / "lib.ort"
     lib.write_text(

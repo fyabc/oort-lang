@@ -2,7 +2,7 @@
 
 import sys
 
-from .arguments import get_main_parser, parse_main_args
+from .arguments import get_main_parser, parse_main_args, resolve_cache_dir
 from .compiler import Compiler, CompilerError
 from .logging_utils import setup_logging
 from .repl import run_repl
@@ -15,11 +15,14 @@ def main():
     setup_logging(level=args.logging_level, rich_logging=not args.plain)
 
     if args.cache_clean or args.cache_stats:
-        if not args.cache_dir:
-            parser.error("--cache-clean/--cache-stats require --cache-dir")
+        if args.no_cache:
+            parser.error("--cache-clean/--cache-stats cannot be used with --no-cache")
+        cache_dir = resolve_cache_dir(args)
+        if not cache_dir:
+            parser.error("--cache-clean/--cache-stats require --cache-dir or OORT_CACHE_DIR")
         from ..bytecode.typed_cache import TypedArtifactCache
 
-        cache = TypedArtifactCache(args.cache_dir, max_size=args.cache_max_size)
+        cache = TypedArtifactCache(cache_dir, max_size=args.cache_max_size)
         if args.cache_clean:
             removed = cache.clean()
             print(f"cache: removed {removed} file(s) from {cache.directory}", file=sys.stderr)

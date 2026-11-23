@@ -97,6 +97,17 @@ uv run python benchmarks/boundary_run.py --repeat 3
 uv run python benchmarks/boundary_run.py --repeat 3 --json
 ```
 
+### 编译缓存冷/热（诊断）
+
+`benchmarks/cache_run.py` 对若干 typed 示例测量 `-t tvm` 在空缓存与热缓存下
+的端到端耗时。解析与类型检查仍每次执行，所以加速只反映 lowering、typed
+字节码与链接的缓存命中。不进入 CI。
+
+```bash
+uv run --frozen python benchmarks/cache_run.py --repeat 5
+uv run --frozen python benchmarks/cache_run.py --repeat 5 --json
+```
+
 ## 性能分析
 
 基准告诉我们*是否*回退；profiler 告诉我们*在哪里*回退。

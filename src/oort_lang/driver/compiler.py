@@ -36,6 +36,7 @@ from ..semantics.core.prelude import inject_core_prelude
 from ..semantics.core.types import AdtTemplate, CoreModuleInfo, Type
 from ..source.input_info import FileInputInfo, InputInfo, StringInputInfo
 from ..source.source_position import SourcePosition
+from .arguments import resolve_cache_dir
 
 if TYPE_CHECKING:
     import argparse
@@ -321,7 +322,7 @@ class Compiler:
         return build_typed_program(units, self._typed_cache())
 
     def _typed_cache(self) -> TypedArtifactCache | None:
-        directory = getattr(self.args, "cache_dir", None)
+        directory = resolve_cache_dir(self.args)
         if not directory:
             return None
         from ..bytecode.typed_cache import TypedArtifactCache
