@@ -50,14 +50,14 @@ export:
   string name                 # function/ADT 名，或构造器名
   string adt_name             # 构造器所属 ADT；其他为空串
   u32    symbol               # 函数/ADT 表下标；构造器为构造器表下标
-  i64    abi_hash             # P1c-2 类型 ABI（暂未启用）
+  i64    abi_hash             # 导出签名哈希（FNV-1a 63 bit）
 
 u32 import_count
 import:
   string module_id
   u8     kind                 # 1 module / 2 function / 3 adt / 4 constructor
   string name                 # namespace 别名或导入名
-  i64    expected_abi_hash    # P1c-2 类型 ABI（暂未启用）
+  i64    expected_abi_hash    # 导入时锁定的导出签名哈希
 
 u32 constructor_count
 constructor:
@@ -87,7 +87,12 @@ proto(main)
 - 投影/寄存器/返回类型中的 `AdtType.origin` 在 artifact 构建时统一改写为
   定义模块的 `module_id`（prelude 除外），因此生成的文件不含宿主路径；
 - proto 位置表的 filename 写 `module_id`；
-- loader 接受 `abi_version=1`；`abi_hash` 字段留给 P1c-2 的类型 ABI。
+- loader 接受 `abi_version=1`；
+- `abi_hash` 覆盖导出签名：函数为参数/返回的 canonical 类型键，ADT 为
+  构造器与 payload，构造器为 `adt.ctor(payload)#arity`；ADT 类型键包含
+  `module_id`，因此同名 ADT 不会误配；
+- `build_typed_program` 在链接前把 import 的 `expected_abi_hash` 钉到依赖
+  当前导出哈希；loader 在非零时校验，不一致显式拒绝。
 
 ## 4. 符号模型
 
@@ -149,7 +154,7 @@ Rust：
 
 - artifact `abi_version` 与 kind/version 分离；
 - loader 遇到不兼容版本显式拒绝；
-- v6 与 v7 不静默互读；
+- v6 与 v8 不静默互读；
 - 暂不承诺跨版本模块混用。
 
 ## 8. 分阶段
@@ -157,7 +162,7 @@ Rust：
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | P1c-1 | module id/export/import 校验、artifact、Python loader、linked program | 已实现（v7） |
-| P1c-2 | 导入构造器/类型、ABI hash、B1 多模块、Rust linked bundle | 进行中（构造器表/导入构造器已实现，v8） |
+| P1c-2 | 导入构造器/类型、ABI hash、B1 多模块、Rust linked bundle | 进行中（构造器表/导入构造器/ABI hash 已实现，v8） |
 | P1c-3 | 独立缓存、Rust 原生 loader、兼容策略 | 待做 |
 
 ## 9. 开放问题

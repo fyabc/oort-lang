@@ -217,6 +217,43 @@ def _is_absolute_module_id(module_id: str) -> bool:
     return Path(module_id).is_absolute()
 
 
+def _type_key(ir_type: IrTypeLike) -> str:
+    if isinstance(ir_type, AdtType):
+        args = ",".join(_type_key(argument) for argument in ir_type.args)
+        return f"{ir_type.origin}::{ir_type.name}[{args}]"
+    if isinstance(ir_type, ContainerType):
+        args = ",".join(_type_key(argument) for argument in ir_type.args)
+        return f"{ir_type.kind}[{args}]"
+    return str(ir_type)
+
+
+def _fnv1a(text: str) -> int:
+    value = 0xCBF29CE484222325
+    for byte in text.encode("utf-8"):
+        value ^= byte
+        value = (value * 0x100000001B3) & 0x7FFFFFFFFFFFFFFF
+    return value
+
+
+def _function_abi(proto: TypedProto) -> int:
+    params = ",".join(_type_key(proto.types[index]) for index in proto.param_types)
+    returns = _type_key(proto.types[proto.ret_type])
+    return _fnv1a(f"fn({params})->{returns}")
+
+
+def _adt_abi(decl: AdtDecl) -> int:
+    constructors = "|".join(
+        f"{constructor.name}({','.join(_type_key(t) for t in constructor.payload)})"
+        for constructor in decl.constructors
+    )
+    return _fnv1a(f"adt:{decl.name}({constructors})")
+
+
+def _constructor_ref_abi(ref: ConstructorRef) -> int:
+    payload = ",".join(_type_key(t) for t in ref.payload)
+    return _fnv1a(f"ctor:{ref.adt_name}.{ref.name}({payload})#{ref.arity}")
+
+
 def build_typed_artifact(
     unit: TypedUnit,
     origins: Mapping[str, str] | None = None,
@@ -235,10 +272,10 @@ def build_typed_artifact(
 
     exports: list[TypedExport] = []
     for index, proto in enumerate(program.functions):
-        exports.append(TypedExport("function", proto.name, index))
+        exports.append(TypedExport("function", proto.name, index, abi_hash=_function_abi(proto)))
     for decl_index, decl in enumerate(program.adt_decls):
         if decl.origin == unit.module_id:
-            exports.append(TypedExport("adt", decl.name, decl_index))
+            exports.append(TypedExport("adt", decl.name, decl_index, abi_hash=_adt_abi(decl)))
     for symbol, ref in enumerate(module.constructors):
         if ref.origin == unit.module_id:
             exports.append(
@@ -247,6 +284,7 @@ def build_typed_artifact(
                     ref.name,
                     symbol,
                     adt_name=ref.adt_name,
+                    abi_hash=_constructor_ref_abi(ref),
                 )
             )
 
@@ -271,6 +309,13 @@ def _artifact_position(artifact: TypedArtifact) -> SourcePosition:
 
 def _export_keys(artifact: TypedArtifact) -> set[tuple[str, str]]:
     return {(export.kind, export.name) for export in artifact.exports}
+
+
+def _find_export(artifact: TypedArtifact, kind: str, name: str) -> TypedExport | None:
+    for export in artifact.exports:
+        if (export.kind, export.name) == (kind, name):
+            return export
+    return None
 
 
 def _validate_artifact(artifact: TypedArtifact) -> None:
@@ -450,6 +495,15 @@ def _dependency_order(
                     f"{import_.kind} '{import_.name}'.",
                     _artifact_position(artifact),
                 )
+            if import_.kind != "module" and import_.expected_abi_hash:
+                export = _find_export(dependency, import_.kind, import_.name)
+                assert export is not None
+                if import_.expected_abi_hash != export.abi_hash:
+                    raise UnsupportedSyntax(
+                        f"Typed ABI hash mismatch for {import_.kind} "
+                        f"'{dependency.module_id}::{import_.name}'.",
+                        _artifact_position(artifact),
+                    )
             visit(dependency)
         state[artifact.module_id] = 2
         order.append(artifact)
@@ -511,7 +565,24 @@ def build_typed_program(units: Sequence[TypedUnit]) -> TypedProgram:
                 _artifact_position(artifact),
             )
         modules[artifact.module_id] = artifact
-    return link_typed_artifacts(artifacts[-1], modules)
+
+    # Pin each import to the dependency's current export hash.
+    for module_id, artifact in list(modules.items()):
+        imports: list[TypedImport] = []
+        for import_ in artifact.imports:
+            dependency = modules.get(import_.module_id)
+            export = (
+                _find_export(dependency, import_.kind, import_.name)
+                if dependency is not None and import_.kind != "module"
+                else None
+            )
+            if export is None:
+                imports.append(import_)
+            else:
+                imports.append(dataclasses.replace(import_, expected_abi_hash=export.abi_hash))
+        modules[module_id] = dataclasses.replace(artifact, imports=tuple(imports))
+
+    return link_typed_artifacts(modules[artifacts[-1].module_id], modules)
 
 
 # ----------------------------------------------------------------------

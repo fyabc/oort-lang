@@ -1,6 +1,8 @@
 #! /usr/bin/env python
 
-"""Typed module artifacts (v7) and the link-time loader (design 19)."""
+"""Typed module artifacts (v8) and the link-time loader (design 19)."""
+
+import dataclasses
 
 import pytest
 
@@ -174,6 +176,43 @@ def test_link_artifacts_rejects_missing_export(tmp_path):
 
     with pytest.raises(UnsupportedSyntax, match="does not export function 'missing'"):
         link_typed_artifacts(main_artifact, {"lib": lib_artifact, "main": main_artifact})
+
+
+def test_exports_carry_abi_hashes(tmp_path):
+    unit = _unit(
+        """#lang oort-core
+enum Color { Red, Green }
+def add(a: Int, b: Int) -> Int { a + b }
+""",
+        "solo",
+    )
+    artifact = build_typed_artifact(unit)
+
+    hashes = {(export.kind, export.name): export.abi_hash for export in artifact.exports}
+    assert hashes[("function", "add")] != 0
+    assert hashes[("adt", "Color")] != 0
+    assert hashes[("constructor", "Red")] != 0
+    assert hashes[("constructor", "Red")] != hashes[("constructor", "Green")]
+
+
+def test_link_artifacts_rejects_abi_hash_mismatch():
+    lib = build_typed_artifact(
+        _unit("#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n", "lib")
+    )
+    main = build_typed_artifact(
+        _unit(
+            "#lang oort-core\nprint(1)\n",
+            "main",
+            imports=(TypedImportRef("lib", "function", "add"),),
+        )
+    )
+    tampered = dataclasses.replace(
+        main,
+        imports=(dataclasses.replace(main.imports[0], expected_abi_hash=1),),
+    )
+
+    with pytest.raises(UnsupportedSyntax, match="Typed ABI hash mismatch"):
+        link_typed_artifacts(tampered, {"lib": lib, "main": tampered})
 
 
 def test_link_artifacts_rejects_missing_module():
