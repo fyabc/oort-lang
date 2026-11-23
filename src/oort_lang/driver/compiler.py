@@ -326,7 +326,7 @@ class Compiler:
             return None
         from ..bytecode.typed_cache import TypedArtifactCache
 
-        return TypedArtifactCache(directory)
+        return TypedArtifactCache(directory, max_size=getattr(self.args, "cache_max_size", None))
 
     def _link_typed_entry(
         self,

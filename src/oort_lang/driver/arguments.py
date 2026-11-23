@@ -5,6 +5,24 @@ from collections.abc import Sequence
 
 from .. import __version__
 
+
+def _parse_size(text: str) -> int:
+    """Parse a byte size with an optional K/M/G suffix."""
+
+    value = text.strip().upper()
+    scale = 1
+    if value.endswith(("K", "M", "G")):
+        scale = {"K": 1024, "M": 1024**2, "G": 1024**3}[value[-1]]
+        value = value[:-1]
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid size: {text!r}") from exc
+    if number < 0:
+        raise argparse.ArgumentTypeError(f"size must be non-negative: {text!r}")
+    return number * scale
+
+
 COMPILER_MODE_HELPS = {
     "ast": "Print AST.",
     "astm": "Print AST with metadata.",
@@ -74,6 +92,16 @@ def get_main_parser() -> argparse.ArgumentParser:
             "Enable the typed artifact cache in DIR.\n"
             "Entries are keyed by source, module id, compiler, ABI versions\n"
             "and direct dependency interface hashes."
+        ),
+    )
+    parser.add_argument(
+        "--cache-max-size",
+        type=_parse_size,
+        default=None,
+        metavar="SIZE",
+        help=(
+            "Evict least-recently-used cache entries above SIZE bytes.\n"
+            "Accepts K/M/G suffixes (e.g. 128M)."
         ),
     )
     parser.add_argument(

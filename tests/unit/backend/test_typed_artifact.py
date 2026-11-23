@@ -3,6 +3,9 @@
 """Typed module artifacts (v8) and the link-time loader (design 19)."""
 
 import dataclasses
+import json
+import subprocess
+import sys
 
 import pytest
 
@@ -29,7 +32,7 @@ from oort_lang.hir.typed_link import TypedImportRef, TypedUnit
 from oort_lang.runtime.interpreter import ASTInterpreter
 from oort_lang.semantics.core.prelude import inject_core_prelude
 from oort_lang.source.input_info import StringInputInfo
-from tests.helpers import get_compiler
+from tests.helpers import REPO_ROOT, get_compiler
 
 
 def _check(source: str, name: str):
@@ -361,8 +364,105 @@ def test_artifact_cache_layout_stats_clean_and_corruption(tmp_path):
     build_typed_program((lib, main), cache)
     assert cache.stats().entries == 2
 
-    assert cache.clean() == 2
+    assert cache.clean() == 4  # two artifacts plus their manifests
     assert cache.stats().entries == 0
+
+
+def test_cache_manifest_and_size_limit(tmp_path):
+    lib = _path_unit(
+        tmp_path,
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",
+        "lib",
+    )
+    main = _path_unit(
+        tmp_path,
+        "#lang oort-core\nprint(1)\n",
+        "main",
+        imports=(TypedImportRef("lib", "module", "lib"),),
+    )
+    cache = TypedArtifactCache(tmp_path / "cache", max_size=1)
+    build_typed_program((lib, main), cache)
+
+    assert cache.stats().entries == 1
+    manifests = list((tmp_path / "cache" / "v8" / "abi1").rglob("*.json"))
+    assert len(manifests) == 1
+    data = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert data["schema"] == "oort-cache-v1"
+    assert data["module_id"] in {"lib", "main"}
+    assert isinstance(data["dependencies"], dict)
+
+
+def test_cache_entry_lock_is_single_flight(tmp_path):
+    unit = _path_unit(
+        tmp_path,
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",
+        "lib",
+    )
+    cache = TypedArtifactCache(tmp_path / "cache")
+    with cache.entry_lock(unit, {}) as status:
+        assert status == "owned"
+        lock_files = list((tmp_path / "cache" / "locks").glob("*.lock"))
+        assert len(lock_files) == 1
+    assert not list((tmp_path / "cache" / "locks").glob("*.lock"))
+
+
+_CACHE_WORKER = """
+import os
+import sys
+import time
+
+from tests.helpers import get_compiler
+import oort_lang.bytecode.typed_artifact as artifacts
+
+log = sys.argv[3]
+real = artifacts.build_typed_artifact
+
+def counting(unit, origins=None):
+    descriptor = os.open(log, os.O_APPEND | os.O_CREAT | os.O_WRONLY)
+    os.write(descriptor, (unit.module_id + "\\n").encode("utf-8"))
+    os.close(descriptor)
+    time.sleep(0.1)
+    return real(unit, origins)
+
+artifacts.build_typed_artifact = counting
+compiler = get_compiler(["NOT_EXIST", "-t", "tvm", "--cache-dir", sys.argv[2]])
+compiler.run_file(sys.argv[1])
+"""
+
+
+def test_cache_concurrent_processes_compile_once(tmp_path):
+    lib = tmp_path / "lib.ort"
+    lib.write_text(
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        '#lang oort-core\nfrom "./lib" import add\nprint(add(2, 3))\n',
+        encoding="utf-8",
+    )
+    cache_dir = tmp_path / "cache"
+    log = tmp_path / "builds.txt"
+
+    processes = [
+        subprocess.Popen(
+            [sys.executable, "-c", _CACHE_WORKER, str(main), str(cache_dir), str(log)],
+            cwd=REPO_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+        for _ in range(8)
+    ]
+    results = [process.communicate(timeout=120) for process in processes]
+
+    assert all(process.returncode == 0 for process in processes), [stderr for _, stderr in results]
+    assert all(stdout == "5\n" for stdout, _ in results)
+    builds = log.read_text(encoding="utf-8").split()
+    assert sorted(builds) == ["lib", "main"]
+    assert not list((tmp_path / "cache" / "locks").glob("*.lock"))
+    assert len(list(cache_dir.rglob("*.obc"))) == 2
 
 
 def test_cli_cache_dir_produces_reusable_artifacts(tmp_path, capsys):

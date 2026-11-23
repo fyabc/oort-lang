@@ -236,7 +236,7 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   ADT 模块声明表位于文件头；旧读者遇到未知 version/opcode/tag 必须报错
   而不是猜测；破坏既有布局的变更必须提升 version；
 - `-t tvm` 与 `-t tbc` 共享 v8 artifact + loader 的同一链接结果（tbc 只是
-  反汇编该程序）；`--cache-dir DIR` 复用磁盘上的 v8 artifact（缓存契约见
+  反汇编该程序）；`--cache-dir DIR` 复用磁盘上的 v8 artifact，`--cache-max-size` 限制容量（缓存契约见
   [OP 0030](../proposals/0030-compilation-cache.md)）；`-t thir` 仍用
   P1a/P1b 的 HIR 拍平器，作为链接前的调试视图；
 - kind=1 本身不编码跨方言边界；`oort-object → oort-core` 由 B1

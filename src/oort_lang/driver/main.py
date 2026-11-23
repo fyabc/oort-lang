@@ -19,7 +19,7 @@ def main():
             parser.error("--cache-clean/--cache-stats require --cache-dir")
         from ..bytecode.typed_cache import TypedArtifactCache
 
-        cache = TypedArtifactCache(args.cache_dir)
+        cache = TypedArtifactCache(args.cache_dir, max_size=args.cache_max_size)
         if args.cache_clean:
             removed = cache.clean()
             print(f"cache: removed {removed} file(s) from {cache.directory}", file=sys.stderr)

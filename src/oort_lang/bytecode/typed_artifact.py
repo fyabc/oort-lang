@@ -606,14 +606,28 @@ def build_typed_artifacts(
             for ref in unit.imports
             if ref.module_id in modules
         }
-        artifact = cache.load(unit, dependencies) if cache is not None else None
-        dirty = artifact is None
-        if artifact is not None:
-            artifact, stale = _pin_imports(artifact, modules)
-            dirty = stale
-        if artifact is None or dirty:
-            artifact = build_typed_artifact(unit, origins)
-            artifact, _ = _pin_imports(artifact, modules)
+        artifact: TypedArtifact | None = None
+        if cache is not None:
+            artifact = cache.load(unit, dependencies)
+            if artifact is not None:
+                artifact, stale = _pin_imports(artifact, modules)
+                if stale:
+                    artifact = None
+        if artifact is None:
+            if cache is None:
+                artifact = build_typed_artifact(unit, origins)
+                artifact, _ = _pin_imports(artifact, modules)
+            else:
+                with cache.entry_lock(unit, dependencies):
+                    artifact = cache.load(unit, dependencies)
+                    if artifact is not None:
+                        artifact, stale = _pin_imports(artifact, modules)
+                        if stale:
+                            artifact = None
+                    if artifact is None:
+                        artifact = build_typed_artifact(unit, origins)
+                        artifact, _ = _pin_imports(artifact, modules)
+                        cache.store(unit, artifact, dependencies)
 
         if artifact.module_id in modules:
             raise UnsupportedSyntax(
@@ -621,8 +635,6 @@ def build_typed_artifacts(
                 _artifact_position(artifact),
             )
         modules[artifact.module_id] = artifact
-        if cache is not None and dirty:
-            cache.store(unit, artifact, dependencies)
     return modules[units[-1].module_id], modules
 
 

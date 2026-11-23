@@ -1,6 +1,6 @@
 # OP 0030: 编译缓存（Compilation Cache）
 
-- **状态**：Proposed（S1/S2 已实现）
+- **状态**：Proposed（S1/S2/S3 已实现）
 - **作者**：Oort 设计讨论
 - **创建日期**：2026-11-24
 - **相关**：[OP 0027](0027-typed-modules.md)、[design 19](../design/19-typed-module-abi.md)、[spec 14](../spec/14-typed-bytecode.md)
@@ -67,8 +67,8 @@ S2：
 - `v8`/`abi1` 为版本目录；格式或 ABI 升级后整体切换，旧目录可被清理；
 - 文件名是键的 SHA-256，天然去重、不依赖源码路径；
 - 写入 `tmp/` 后原子 rename 到目标；
-- 可选 `<sha>.json` manifest 记录 `module_id`、依赖接口哈希、时间戳，供
-  `--cache-stats` 与清理使用。
+- 每条目有 `<sha>.json` sidecar：`module_id`、依赖接口哈希、编译器/格式/ABI
+  版本、存储时间；供统计、清理与调试使用。
 
 ### 4. 载入与失效
 
@@ -81,16 +81,17 @@ S2：
 
 ### 5. 并发
 
-- 短期：原子 rename 已保证读者不会看到半个文件；并发写者可能重复编译，
-  但结果相同；
-- S3：每个键使用 lockfile/single-flight，避免重复编译；Windows 上使用
-  独占打开或 rename 失败重试；
+- 每个键使用 lockfile single-flight：miss 后获取锁、重查缓存，仍 miss 才编译；
+  等待者看到条目出现即读取；
+- 锁文件带超时与 stale 清理；万一锁超时则无锁编译，原子 rename 仍保证读者
+  安全；
 - 不要求跨机器共享时的强一致；缓存是性能设施，不是正确性来源。
 
 ### 6. 清理与容量
 
-- S2：`--cache-clean` 删除当前版本目录；`--cache-stats` 输出条目数/大小；
-- S3：按 mtime 的 LRU 或最大容量（`--cache-max-size`）；
+- `--cache-clean` 删除当前版本目录（artifact + sidecar + 锁/临时目录）；
+- `--cache-stats` 输出条目数/大小；
+- `--cache-max-size SIZE` 按 mtime 做 LRU 淘汰（支持 K/M/G），至少保留一条；
 - 版本升级不自动删除旧目录，由清理命令处理；
 - 缓存目录不进入 git；项目内默认建议 `.oort-cache/`。
 
@@ -99,6 +100,7 @@ S2：
 | 来源 | 行为 |
 |---|---|
 | `--cache-dir DIR` | 开启缓存并指定目录 |
+| `--cache-max-size SIZE` | 容量上限与 LRU 淘汰 |
 | `--no-cache` | 强制关闭（覆盖环境变量） |
 | `OORT_CACHE_DIR` | 未给 flag 时的默认目录（S4） |
 | 未设置 | 不缓存 |
@@ -117,7 +119,7 @@ S2：
 - 不做网络/远程缓存、包管理、依赖下载；
 - 不做跨版本二进制兼容；
 - 不缓存解释器 AST/检查结果（近期）；
-- 不保证并发下的“只编译一次”，S3 才引入锁；
+- 锁超时降级时不保证“只编译一次”（仍保证结果正确）；
 - 不改变任何语言语义或诊断。
 
 ## 正交性检查
@@ -153,7 +155,7 @@ S2：
 |---|---|---|
 | S1（已实现） | `--cache-dir`、源码+版本键、载入重钉依赖哈希、原子写入、路径剥离 | 冷/热运行输出一致；缓存文件不含宿主路径 |
 | S2（已实现） | 版本化布局、依赖接口哈希入键、代码生成选项入键、`--cache-clean`/`--cache-stats`、损坏条目降级 | 依赖接口变化只重建依赖者；依赖实现变化不重编依赖者；热运行编译 0 个 artifact；目录可清理 |
-| S3 | single-flight 锁、容量上限/LRU、manifest、并发测试 | 8 个并发进程无损坏、每键最多一次编译 |
+| S3（已实现） | single-flight 锁、容量上限/LRU、sidecar manifest、并发测试 | 8 个并发进程无损坏、每键最多一次编译 |
 | S4 | `OORT_CACHE_DIR`、`--no-cache`、可选全局共享缓存、文档与基准 | 跨项目命中同一模块；优先级符合契约 |
 
 S2 的失效矩阵测试至少覆盖：源码、module_id、编译器版本、artifact/ABI

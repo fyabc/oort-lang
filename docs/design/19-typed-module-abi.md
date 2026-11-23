@@ -165,7 +165,8 @@ Python loader/linker（`load_typed_units` + `build_typed_program`）：
   选项以及直接依赖的接口哈希；依赖实现变化不会使依赖者 miss，接口变化会
   直接 miss；
 - 命中后仍防御性校验 import 哈希；损坏/截断条目按 miss 处理并覆盖；
-- `--cache-stats` 输出条目数与大小，`--cache-clean` 清理当前版本目录；
+- 每键 single-flight 锁；条目带 JSON sidecar；`--cache-max-size` 按 mtime
+  LRU 淘汰；`--cache-stats`/`--cache-clean` 维护；
 - 解析/类型检查仍每次执行；缓存只跳过 lowering 与字节码编译。
 
 B1 边界使用同一 loader：`build_typed_program_exports` 返回链接后的程序与

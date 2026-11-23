@@ -314,8 +314,33 @@ def test_typed_cache_stats_and_clean(monkeypatch, capsys, tmp_path):
     assert "cache: 2 entries" in capsys.readouterr().err
 
     assert _run_cli(monkeypatch, ["--cache-dir", str(cache_dir), "--cache-clean"]) == 0
-    assert "cache: removed 2 file(s)" in capsys.readouterr().err
+    assert "cache: removed 4 file(s)" in capsys.readouterr().err
     assert not list(cache_dir.rglob("*.obc"))
+
+
+def test_cache_max_size_option_is_wired(monkeypatch, capsys, tmp_path):
+    lib = tmp_path / "lib.ort"
+    lib.write_text(
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        '#lang oort-core\nfrom "./lib" import add\nprint(add(2, 3))\n',
+        encoding="utf-8",
+    )
+    cache_dir = tmp_path / "cache"
+
+    assert (
+        _run_cli(
+            monkeypatch,
+            ["-t", "tvm", "--cache-dir", str(cache_dir), "--cache-max-size", "1", str(main)],
+        )
+        == 0
+    )
+    assert capsys.readouterr().out == "5\n"
+    assert _run_cli(monkeypatch, ["--cache-dir", str(cache_dir), "--cache-stats"]) == 0
+    assert "cache: 1 entries" in capsys.readouterr().err
 
 
 def test_cache_maintenance_requires_cache_dir(monkeypatch):
