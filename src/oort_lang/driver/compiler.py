@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     import os
 
     from ..bytecode import TypedProgram
+    from ..bytecode.typed_cache import TypedArtifactCache
     from ..hir.typed import TypedModule
     from ..runtime.bytecode_vm import BytecodeVM
     from ..runtime.environment import Environment
@@ -317,7 +318,15 @@ class Compiler:
         entry_dir = self._entry_dir or input_info.module_dir
         resolve = self._make_typed_resolver(entry_dir)
         units = load_typed_units(ast, input_info.module_path, resolve)
-        return build_typed_program(units)
+        return build_typed_program(units, self._typed_cache())
+
+    def _typed_cache(self) -> TypedArtifactCache | None:
+        directory = getattr(self.args, "cache_dir", None)
+        if not directory:
+            return None
+        from ..bytecode.typed_cache import TypedArtifactCache
+
+        return TypedArtifactCache(directory)
 
     def _link_typed_entry(
         self,
@@ -421,7 +430,7 @@ class Compiler:
 
             resolve = self._make_typed_resolver(path.parent if path else entry_dir)
             units = load_typed_units(ast, path, resolve)
-            program, exports = build_typed_program_exports(units)
+            program, exports = build_typed_program_exports(units, self._typed_cache())
             run_core(env, interpreter, program, exports)
 
         return ModuleLoader(
@@ -451,7 +460,7 @@ class Compiler:
 
             resolve = self._make_typed_resolver(path.parent if path else entry_dir)
             units = load_typed_units(ast, path, resolve)
-            program, exports = build_typed_program_exports(units)
+            program, exports = build_typed_program_exports(units, self._typed_cache())
             run_core(env, interpreter, program, exports)
 
         return ModuleLoader(

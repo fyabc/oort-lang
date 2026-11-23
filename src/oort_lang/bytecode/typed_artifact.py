@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from ..hir.typed_link import TypedUnit
+    from .typed_cache import TypedArtifactCache
 
 ARTIFACT_VERSION = 8
 ABI_VERSION = 1
@@ -321,6 +322,13 @@ def _find_export(artifact: TypedArtifact, kind: str, name: str) -> TypedExport |
     return None
 
 
+def module_abi_hash(artifact: TypedArtifact) -> int:
+    """Hash all exports so namespace imports notice any interface change."""
+
+    entries = sorted((export.kind, export.name, export.abi_hash) for export in artifact.exports)
+    return _fnv1a("\n".join(f"{kind}:{name}:{abi}" for kind, name, abi in entries))
+
+
 def _validate_artifact(artifact: TypedArtifact) -> None:
     if not artifact.module_id:
         raise ObcError("typed artifact has an empty module id")
@@ -498,10 +506,14 @@ def _dependency_order(
                     f"{import_.kind} '{import_.name}'.",
                     _artifact_position(artifact),
                 )
-            if import_.kind != "module" and import_.expected_abi_hash:
-                export = _find_export(dependency, import_.kind, import_.name)
-                assert export is not None
-                if import_.expected_abi_hash != export.abi_hash:
+            if import_.expected_abi_hash:
+                if import_.kind == "module":
+                    actual = module_abi_hash(dependency)
+                else:
+                    export = _find_export(dependency, import_.kind, import_.name)
+                    assert export is not None
+                    actual = export.abi_hash
+                if import_.expected_abi_hash != actual:
                     raise UnsupportedSyntax(
                         f"Typed ABI hash mismatch for {import_.kind} "
                         f"'{dependency.module_id}::{import_.name}'.",
@@ -555,15 +567,46 @@ def link_typed_artifacts(
     return TypedProgram(main=main, functions=tuple(functions), adt_decls=merged_decls)
 
 
+def _pin_imports(
+    artifact: TypedArtifact,
+    modules: Mapping[str, TypedArtifact],
+) -> tuple[TypedArtifact, bool]:
+    imports: list[TypedImport] = []
+    stale = False
+    for import_ in artifact.imports:
+        dependency = modules.get(import_.module_id)
+        if dependency is None:
+            imports.append(import_)
+            continue
+        if import_.kind == "module":
+            expected = module_abi_hash(dependency)
+        else:
+            export = _find_export(dependency, import_.kind, import_.name)
+            if export is None:
+                imports.append(import_)
+                continue
+            expected = export.abi_hash
+        if import_.expected_abi_hash and import_.expected_abi_hash != expected:
+            stale = True
+        imports.append(dataclasses.replace(import_, expected_abi_hash=expected))
+    return dataclasses.replace(artifact, imports=tuple(imports)), stale
+
+
 def build_typed_artifacts(
     units: Sequence[TypedUnit],
+    cache: TypedArtifactCache | None = None,
 ) -> tuple[TypedArtifact, dict[str, TypedArtifact]]:
     """Build all unit artifacts and pin import hashes; root artifact first."""
 
     origins = _origin_map(units)
-    artifacts = [build_typed_artifact(unit, origins) for unit in units]
+    units_by_id = {unit.module_id: unit for unit in units}
     modules: dict[str, TypedArtifact] = {}
-    for artifact in artifacts:
+    dirty: set[str] = set()
+    for unit in units:
+        artifact = cache.load(unit) if cache is not None else None
+        if artifact is None:
+            artifact = build_typed_artifact(unit, origins)
+            dirty.add(unit.module_id)
         if artifact.module_id in modules:
             raise UnsupportedSyntax(
                 f"Duplicate typed module id '{artifact.module_id}'.",
@@ -571,37 +614,47 @@ def build_typed_artifacts(
             )
         modules[artifact.module_id] = artifact
 
-    # Pin each import to the dependency's current export hash.
-    for module_id, artifact in list(modules.items()):
-        imports: list[TypedImport] = []
-        for import_ in artifact.imports:
-            dependency = modules.get(import_.module_id)
-            export = (
-                _find_export(dependency, import_.kind, import_.name)
-                if dependency is not None and import_.kind != "module"
-                else None
-            )
-            if export is None:
-                imports.append(import_)
+    for _ in range(len(units) + 1):
+        rebuilt = False
+        for module_id in list(modules):
+            artifact, stale = _pin_imports(modules[module_id], modules)
+            if stale:
+                modules[module_id] = build_typed_artifact(units_by_id[module_id], origins)
+                dirty.add(module_id)
+                rebuilt = True
             else:
-                imports.append(dataclasses.replace(import_, expected_abi_hash=export.abi_hash))
-        modules[module_id] = dataclasses.replace(artifact, imports=tuple(imports))
-    return modules[artifacts[-1].module_id], modules
+                modules[module_id] = artifact
+        if not rebuilt:
+            break
+    else:
+        raise UnsupportedSyntax(
+            "Typed artifact cache did not converge while pinning ABI hashes.",
+            SourcePosition.from_location(1, 0, "", filename="<typed-cache>"),
+        )
+
+    if cache is not None:
+        for module_id in dirty:
+            cache.store(units_by_id[module_id], modules[module_id])
+    return modules[units[-1].module_id], modules
 
 
-def build_typed_program(units: Sequence[TypedUnit]) -> TypedProgram:
+def build_typed_program(
+    units: Sequence[TypedUnit],
+    cache: TypedArtifactCache | None = None,
+) -> TypedProgram:
     """Compile typed units (dependencies first) and link their artifacts."""
 
-    root, modules = build_typed_artifacts(units)
+    root, modules = build_typed_artifacts(units, cache)
     return link_typed_artifacts(root, modules)
 
 
 def build_typed_program_exports(
     units: Sequence[TypedUnit],
+    cache: TypedArtifactCache | None = None,
 ) -> tuple[TypedProgram, tuple[str, ...]]:
     """Link units and return the root module's exported function names."""
 
-    root, modules = build_typed_artifacts(units)
+    root, modules = build_typed_artifacts(units, cache)
     program = link_typed_artifacts(root, modules)
     names = tuple(export.name for export in root.exports if export.kind == "function")
     return program, names

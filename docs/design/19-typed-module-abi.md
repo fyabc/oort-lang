@@ -155,8 +155,18 @@ Python loader/linker（`load_typed_units` + `build_typed_program`）：
 7. 生成 single-module linked program；
 8. 交给现有 typed VM。
 
-磁盘路径由 `write_typed_artifact`/`read_typed_artifact` 覆盖；编译器当前在
-内存中构建 artifact，磁盘缓存留给 P1c-3。
+磁盘路径由 `write_typed_artifact`/`read_typed_artifact` 覆盖。
+
+### 5.1 编译缓存（P1c-3）
+
+- `--cache-dir DIR` 开启缓存；每个模块 artifact 写成 `DIR/<sha256>.obc`；
+- key 包含源码字节、`module_id`、编译器版本、artifact/ABI 版本；任一变化
+  都会 miss；
+- 缓存命中仍需与当前依赖的导出哈希对齐：`build_typed_artifacts` 重新钉
+  import 哈希，发现过期就重建该模块（并继续向上传播）；
+- namespace import 也钉整个依赖模块的 `module_abi_hash`，因此任何一个导出
+  变化都会使依赖者失效；
+- 解析/类型检查仍每次执行；缓存只跳过 lowering 与字节码编译。
 
 B1 边界使用同一 loader：`build_typed_program_exports` 返回链接后的程序与
 根模块导出函数名，边界只把这些导出绑定到动态环境，不再泄漏依赖模块的
@@ -165,9 +175,10 @@ B1 边界使用同一 loader：`build_typed_program_exports` 返回链接后的�
 Rust（已实现）：
 
 - 读取 kind=2 linked bundle，直接交给 typed VM；
-- Python `compile_files_to_bundle` 负责多模块链接与重定位；
-- P1c-3：原生 module registry + loader、独立缓存；
-- 缓存键含源码 hash、编译器版本、ABI 版本。
+- 读取 v8 module artifact，原生校验 import/export 与 ABI hash、合并声明、
+  重定位 `NEW_ADT`/`DEF_FUN`、重映射类型表里的 ADT 声明 id；
+- CLI：`oort-vm --link <root.obc> <dependency.obc>...`；
+- 缓存仍由 Python 编译器负责；Rust 只读取已经产出的 artifact。
 
 ## 6. 初始化
 
@@ -180,9 +191,12 @@ Rust（已实现）：
 ## 7. 版本与兼容
 
 - artifact `abi_version` 与 kind/version 分离；
-- loader 遇到不兼容版本显式拒绝；
-- v6 与 v8 不静默互读；
-- 暂不承诺跨版本模块混用。
+- 读取方要求精确的 kind/version/ABI 版本，不做兼容猜测：
+  - kind=1 只接受 v6（单模块）或 v8（module artifact）；
+  - kind=2 只接受 v1 linked bundle；
+- v6 与 v8 不静默互读；v7 是未发布的过渡格式；
+- 缓存 key 含 artifact/ABI/compiler 版本，升级后自然 miss；
+- 暂不承诺跨版本模块混用；需要迁移时重新编译源码。
 
 ## 8. 分阶段
 
@@ -190,7 +204,7 @@ Rust（已实现）：
 |---|---|---|
 | P1c-1 | module id/export/import 校验、artifact、Python loader、linked program | 已实现（v7） |
 | P1c-2 | 导入构造器/类型、ABI hash、B1 多模块、Rust linked bundle | 已实现（namespace 类型导入；from-import 类型别名规则待定） |
-| P1c-3 | 独立缓存、Rust 原生 loader、兼容策略 | 待做 |
+| P1c-3 | `--cache-dir` artifact cache、Rust `--link` 原生 loader、版本拒绝策略 | 已实现 |
 
 ## 9. 开放问题
 

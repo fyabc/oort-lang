@@ -21,6 +21,7 @@ from oort_lang.bytecode import (
     write_typed_obc,
 )
 from oort_lang.bytecode.serialize import ObcError
+from oort_lang.bytecode.typed_cache import TypedArtifactCache
 from oort_lang.diagnostics.error_handler import CompilerErrorHandler
 from oort_lang.diagnostics.syntax_errors import UnsupportedSyntax
 from oort_lang.hir import lower_typed_module
@@ -277,6 +278,76 @@ print(Red)
 
     TypedCodeVM(ASTInterpreter(CompilerErrorHandler())).run(loaded)
     assert capsys.readouterr().out == "Red\n"
+
+
+def _path_unit(tmp_path, source: str, module_id: str, imports=()) -> TypedUnit:
+    path = tmp_path / f"{module_id}.ort"
+    path.write_text(source, encoding="utf-8")
+    unit = _unit(source, module_id, imports)
+    unit.path = path
+    return unit
+
+
+def test_artifact_cache_hits_and_rebuilds_dependents(tmp_path, monkeypatch):
+    lib_source = "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n"
+    lib = _path_unit(tmp_path, lib_source, "lib")
+    main = _path_unit(
+        tmp_path,
+        "#lang oort-core\nprint(1)\n",
+        "main",
+        imports=(TypedImportRef("lib", "module", "lib"),),
+    )
+    cache = TypedArtifactCache(tmp_path / "cache")
+
+    import oort_lang.bytecode.typed_artifact as artifact_module
+
+    real_build = artifact_module.build_typed_artifact
+    calls: list[str] = []
+
+    def counting(unit, origins=None):
+        calls.append(unit.module_id)
+        return real_build(unit, origins)
+
+    monkeypatch.setattr(artifact_module, "build_typed_artifact", counting)
+
+    build_typed_program((lib, main), cache)
+    assert set(calls) == {"lib", "main"}
+    assert len(list((tmp_path / "cache").glob("*.obc"))) == 2
+
+    calls.clear()
+    build_typed_program((lib, main), cache)
+    assert calls == []
+
+    changed_lib = _path_unit(
+        tmp_path,
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\ndef extra() -> Int { 1 }\n",
+        "lib",
+    )
+    build_typed_program((changed_lib, main), cache)
+    assert set(calls) == {"lib", "main"}
+
+
+def test_cli_cache_dir_produces_reusable_artifacts(tmp_path, capsys):
+    lib = tmp_path / "lib.ort"
+    lib.write_text(
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        '#lang oort-core\nfrom "./lib" import add\nprint(add(2, 3))\n',
+        encoding="utf-8",
+    )
+    cache_dir = tmp_path / "cache"
+
+    outputs = []
+    for _ in range(2):
+        compiler = get_compiler(["NOT_EXIST", "-t", "tvm", "--cache-dir", str(cache_dir)])
+        compiler.run_file(main)
+        outputs.append(capsys.readouterr().out)
+
+    assert outputs == ["5\n", "5\n"]
+    assert len(list(cache_dir.glob("*.obc"))) == 2
 
 
 def test_build_typed_program_links_units_in_order():

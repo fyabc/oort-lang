@@ -161,6 +161,10 @@ impl<'a> Reader<'a> {
     pub fn boolean(&mut self) -> RResult<bool> {
         Ok(self.u8()? != 0)
     }
+    pub fn is_eof(&self) -> bool {
+        self.pos == self.data.len()
+    }
+
     pub fn string(&mut self) -> RResult<String> {
         let len = self.u32()? as usize;
         let bytes = self.take(len)?;

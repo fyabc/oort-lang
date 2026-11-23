@@ -66,6 +66,16 @@ def get_main_parser() -> argparse.ArgumentParser:
         help="Program passed in as string",
     )
     parser.add_argument(
+        "--cache-dir",
+        type=str,
+        default=None,
+        metavar="DIR",
+        help=(
+            "Enable the typed artifact cache in DIR.\n"
+            "Entries are keyed by source, module id, compiler and ABI versions."
+        ),
+    )
+    parser.add_argument(
         "-I",
         "--module-path",
         action="append",

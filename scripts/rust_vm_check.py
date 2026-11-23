@@ -26,17 +26,19 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from oort_lang.bytecode import (
+    build_typed_artifacts,
     build_typed_program,
     compile_module,
     compile_typed_module,
     write_linked_bundle,
+    write_typed_artifact,
     write_typed_obc,
 )
 from oort_lang.bytecode.serialize import write_obc
 from oort_lang.bytecode.typed_vm import TypedCodeVM
 from oort_lang.diagnostics.error_handler import CompilerErrorHandler
 from oort_lang.hir import lower_module, lower_typed_module
-from oort_lang.hir.typed_link import TypedUnit
+from oort_lang.hir.typed_link import TypedUnit, load_typed_units
 from oort_lang.runtime.bytecode_vm import BytecodeVM
 from oort_lang.runtime.interpreter import ASTInterpreter
 from oort_lang.semantics.core.prelude import inject_core_prelude
@@ -441,9 +443,7 @@ def python_program_stdout(program) -> str:
     return buf.getvalue()
 
 
-def compile_files_to_bundle(main_path: Path, out: Path):
-    """Compile a multi-module core entry through the real frontend + linker."""
-
+def _frontend(main_path: Path):
     compiler = get_compiler("NOT_EXIST -t tvm")
     compiler._entry_dir = main_path.parent
     info = FileInputInfo(main_path)
@@ -457,14 +457,45 @@ def compile_files_to_bundle(main_path: Path, out: Path):
     analyzer = compiler.make_semantic_analyzer(info, dialect)
     ast = compiler.semantic_analyze(ast, analyzer)
     assert ast is not None
+    return compiler, ast, info
+
+
+def compile_files_to_bundle(main_path: Path, out: Path):
+    """Compile a multi-module core entry through the real frontend + linker."""
+
+    compiler, ast, info = _frontend(main_path)
     program = compiler._compile_typed_entry(ast, info)
     write_linked_bundle(program, out)
     return program
 
 
-def rust_stdout(rust_bin: Path, obc: Path) -> str:
+def compile_files_to_artifacts(main_path: Path, out_dir: Path):
+    """Write one v8 artifact per module; return (root_path, dependency_paths)."""
+
+    compiler, ast, _info = _frontend(main_path)
+    resolve = compiler._make_typed_resolver(main_path.parent)
+    units = load_typed_units(ast, main_path, resolve)
+    root, modules = build_typed_artifacts(units)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths: dict[str, Path] = {}
+    for module_id, artifact in modules.items():
+        path = out_dir / f"{module_id.replace('/', '_')}.obc"
+        write_typed_artifact(artifact, path)
+        paths[module_id] = path
+    root_path = paths[root.module_id]
+    dependencies = [path for module_id, path in paths.items() if module_id != root.module_id]
+    return root_path, dependencies
+
+
+def rust_stdout(rust_bin: Path, obc: Path, link_deps: list[Path] | None = None) -> str:
+    command = [str(rust_bin)]
+    if link_deps is not None:
+        command.append("--link")
+    command.append(str(obc))
+    if link_deps is not None:
+        command.extend(str(path) for path in link_deps)
     proc = subprocess.run(
-        [str(rust_bin), str(obc)],
+        command,
         check=False,
         capture_output=True,
         text=True,
@@ -537,6 +568,23 @@ def typed_differential(rust_bin: Path) -> bool:
             else:
                 ok = False
                 print(f"  {name:20s} MISMATCH\n    python={expected!r}\n    rust  ={actual!r}")
+
+            try:
+                root_path, dependencies = compile_files_to_artifacts(
+                    main_path, module_dir / "artifacts"
+                )
+                native = rust_stdout(rust_bin, root_path, dependencies)
+            except (RuntimeError, SystemExit) as e:
+                print(f"  {name:20s} native ERROR: {e}")
+                ok = False
+                continue
+            if native == expected:
+                print(f"  {name:20s} native OK")
+            else:
+                ok = False
+                print(
+                    f"  {name:20s} native MISMATCH\n    python={expected!r}\n    rust  ={native!r}"
+                )
     return ok
 
 

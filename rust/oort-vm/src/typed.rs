@@ -326,6 +326,446 @@ pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
     })
 }
 
+// ----------------------------------------------------------------------
+// v8 module artifacts and the native linker (P1c-3)
+// ----------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct TypedExport {
+    pub kind: u8,
+    pub name: String,
+    pub adt_name: String,
+    pub symbol: u32,
+    pub abi_hash: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedImport {
+    pub module_id: String,
+    pub kind: u8,
+    pub name: String,
+    pub expected_abi_hash: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedConstructorRef {
+    pub origin: String,
+    pub adt_name: String,
+    pub name: String,
+    pub arity: u16,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedArtifact {
+    pub module_id: String,
+    pub abi_version: u16,
+    pub exports: Vec<TypedExport>,
+    pub imports: Vec<TypedImport>,
+    pub constructors: Vec<TypedConstructorRef>,
+    pub module: TypedModule,
+}
+
+pub fn read_typed_artifact(data: &[u8]) -> TResult<TypedArtifact> {
+    if data.len() < 5 || &data[0..3] != b"OBC" {
+        return Err("not an Oort bytecode file (bad magic)".into());
+    }
+    let kind = data[3];
+    if kind != 1 {
+        return Err(format!("expected typed module artifact (kind=1), got kind={kind}"));
+    }
+    let version = data[4];
+    if version != 8 {
+        return Err(format!("unsupported typed module artifact version {version}"));
+    }
+    let mut r = Reader::new(&data[5..]);
+    let module_id = r.string()?;
+    let abi_version = r.u16()?;
+    if abi_version != 1 {
+        return Err(format!("unsupported typed module ABI version {abi_version}"));
+    }
+
+    let nexports = r.u32()?;
+    let mut exports = Vec::with_capacity(nexports as usize);
+    for _ in 0..nexports {
+        exports.push(TypedExport {
+            kind: r.u8()?,
+            name: r.string()?,
+            adt_name: r.string()?,
+            symbol: r.u32()?,
+            abi_hash: r.i64()?,
+        });
+    }
+
+    let nimports = r.u32()?;
+    let mut imports = Vec::with_capacity(nimports as usize);
+    for _ in 0..nimports {
+        imports.push(TypedImport {
+            module_id: r.string()?,
+            kind: r.u8()?,
+            name: r.string()?,
+            expected_abi_hash: r.i64()?,
+        });
+    }
+
+    let nconstructors = r.u32()?;
+    let mut constructors = Vec::with_capacity(nconstructors as usize);
+    for _ in 0..nconstructors {
+        constructors.push(TypedConstructorRef {
+            origin: r.string()?,
+            adt_name: r.string()?,
+            name: r.string()?,
+            arity: r.u16()?,
+        });
+    }
+
+    let nadt = r.u32()?;
+    let mut adt_decls = Vec::with_capacity(nadt as usize);
+    for _ in 0..nadt {
+        let origin = r.string()?;
+        let name = r.string()?;
+        let ctor_count = r.u16()?;
+        let mut decl_constructors = Vec::with_capacity(ctor_count as usize);
+        for _ in 0..ctor_count {
+            let ctor_name = r.string()?;
+            let arity = r.u8()?;
+            decl_constructors.push((ctor_name, arity));
+        }
+        adt_decls.push(TypedAdtDecl {
+            origin,
+            name,
+            constructors: decl_constructors,
+        });
+    }
+
+    let nf = r.u32()?;
+    let mut functions = Vec::with_capacity(nf as usize);
+    for _ in 0..nf {
+        functions.push(Rc::new(read_proto(&mut r, &adt_decls)?));
+    }
+    let main = Rc::new(read_proto(&mut r, &adt_decls)?);
+    if !r.is_eof() {
+        return Err("trailing bytes in typed module artifact".into());
+    }
+    Ok(TypedArtifact {
+        module_id,
+        abi_version,
+        exports,
+        imports,
+        constructors,
+        module: TypedModule {
+            functions,
+            main,
+            adt_decls,
+        },
+    })
+}
+
+fn fnv1a(text: &str) -> i64 {
+    let mut value: u64 = 0xCBF29CE484222325;
+    for byte in text.as_bytes() {
+        value ^= *byte as u64;
+        value = (value.wrapping_mul(0x100000001B3)) & 0x7FFF_FFFF_FFFF_FFFF;
+    }
+    value as i64
+}
+
+fn export_kind_name(kind: u8) -> &'static str {
+    match kind {
+        1 => "function",
+        2 => "adt",
+        3 => "constructor",
+        _ => "?",
+    }
+}
+
+fn module_abi_hash(artifact: &TypedArtifact) -> i64 {
+    let mut entries: Vec<(String, String, i64)> = artifact
+        .exports
+        .iter()
+        .map(|export| {
+            (
+                export_kind_name(export.kind).to_string(),
+                export.name.clone(),
+                export.abi_hash,
+            )
+        })
+        .collect();
+    entries.sort();
+    let text = entries
+        .iter()
+        .map(|(kind, name, hash)| format!("{kind}:{name}:{hash}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fnv1a(&text)
+}
+
+fn find_export<'a>(artifact: &'a TypedArtifact, kind: u8, name: &str) -> Option<&'a TypedExport> {
+    artifact
+        .exports
+        .iter()
+        .find(|export| export.kind == kind && export.name == name)
+}
+
+fn remap_type(ty: &TypedType, decl_map: &HashMap<u16, u16>) -> TResult<TypedType> {
+    Ok(match ty {
+        TypedType::Adt(decl_id, args) => {
+            let mapped = *decl_map
+                .get(decl_id)
+                .ok_or_else(|| "ADT declaration id out of range".to_string())?;
+            let mut mapped_args = Vec::with_capacity(args.len());
+            for argument in args {
+                mapped_args.push(remap_type(argument, decl_map)?);
+            }
+            TypedType::Adt(mapped, mapped_args)
+        }
+        TypedType::List(element) => TypedType::List(Box::new(remap_type(element, decl_map)?)),
+        TypedType::Set(element) => TypedType::Set(Box::new(remap_type(element, decl_map)?)),
+        TypedType::Dict(key, value) => TypedType::Dict(
+            Box::new(remap_type(key, decl_map)?),
+            Box::new(remap_type(value, decl_map)?),
+        ),
+        TypedType::Tuple(elements) => {
+            let mut mapped = Vec::with_capacity(elements.len());
+            for element in elements {
+                mapped.push(remap_type(element, decl_map)?);
+            }
+            TypedType::Tuple(mapped)
+        }
+        other => other.clone(),
+    })
+}
+
+fn remap_proto(
+    proto: &Rc<TypedProto>,
+    decl_map: &HashMap<u16, u16>,
+    ctor_map: &HashMap<u8, u16>,
+    function_map: Option<&HashMap<u16, u16>>,
+) -> TResult<Rc<TypedProto>> {
+    let mut copy = (**proto).clone();
+    let mut types = Vec::with_capacity(copy.types.len());
+    for ty in &copy.types {
+        types.push(remap_type(ty, decl_map)?);
+    }
+    copy.types = types;
+    let mut param_types = Vec::with_capacity(copy.param_types.len());
+    for ty in &copy.param_types {
+        param_types.push(remap_type(ty, decl_map)?);
+    }
+    copy.param_types = param_types;
+    copy.ret_type = remap_type(&copy.ret_type, decl_map)?;
+    for word in &mut copy.code {
+        let op = *word >> 24;
+        if op == NEW_ADT {
+            let a = (*word >> 16) & 0xff;
+            let b = ((*word >> 8) & 0xff) as u8;
+            let c = *word & 0xff;
+            let mapped = *ctor_map
+                .get(&b)
+                .ok_or_else(|| "typed constructor symbol out of range".to_string())?;
+            *word = (op << 24) | (a << 16) | ((mapped as u32) << 8) | c;
+        } else if op == DEF_FUN {
+            if let Some(function_map) = function_map {
+                let a = (*word >> 16) & 0xff;
+                let bx = (*word & 0xffff) as u16;
+                let mapped = *function_map
+                    .get(&bx)
+                    .ok_or_else(|| "typed function index out of range".to_string())?;
+                *word = (op << 24) | (a << 16) | mapped as u32;
+            }
+        }
+    }
+    Ok(Rc::new(copy))
+}
+
+fn visit_artifact(
+    module_id: &str,
+    modules: &HashMap<String, TypedArtifact>,
+    state: &mut HashMap<String, u8>,
+    order: &mut Vec<String>,
+) -> TResult<()> {
+    match state.get(module_id).copied().unwrap_or(0) {
+        1 => return Err(format!("circular typed module import involving '{module_id}'")),
+        2 => return Ok(()),
+        _ => {}
+    }
+    state.insert(module_id.to_string(), 1);
+    let artifact = modules
+        .get(module_id)
+        .ok_or_else(|| format!("missing typed module '{module_id}'"))?;
+    for import in &artifact.imports {
+        let dependency = modules.get(&import.module_id).ok_or_else(|| {
+            format!(
+                "typed module '{}' imports missing module '{}'",
+                artifact.module_id, import.module_id
+            )
+        })?;
+        let export_kind = match import.kind {
+            1 => None,
+            2 => Some(1),
+            3 => Some(2),
+            4 => Some(3),
+            _ => return Err(format!("invalid typed import kind {}", import.kind)),
+        };
+        let actual = match export_kind {
+            None => module_abi_hash(dependency),
+            Some(kind) => {
+                let export = find_export(dependency, kind, &import.name).ok_or_else(|| {
+                    format!(
+                        "typed module '{}' does not export kind {} '{}'",
+                        dependency.module_id, import.kind, import.name
+                    )
+                })?;
+                export.abi_hash
+            }
+        };
+        if import.expected_abi_hash != 0 && import.expected_abi_hash != actual {
+            return Err(format!(
+                "typed ABI hash mismatch for '{}::{}'",
+                dependency.module_id, import.name
+            ));
+        }
+        visit_artifact(&import.module_id, modules, state, order)?;
+    }
+    state.insert(module_id.to_string(), 2);
+    order.push(module_id.to_string());
+    Ok(())
+}
+
+/// Link v8 module artifacts into one typed module for the Rust VM.
+pub fn link_artifacts(root: TypedArtifact, dependencies: Vec<TypedArtifact>) -> TResult<TypedModule> {
+    let root_id = root.module_id.clone();
+    let mut modules: HashMap<String, TypedArtifact> = HashMap::new();
+    for artifact in dependencies {
+        if modules.insert(artifact.module_id.clone(), artifact).is_some() {
+            return Err("duplicate typed module id".into());
+        }
+    }
+    if modules.insert(root.module_id.clone(), root).is_some() {
+        return Err("duplicate typed module id".into());
+    }
+
+    let mut order: Vec<String> = Vec::new();
+    let mut state: HashMap<String, u8> = HashMap::new();
+    visit_artifact(&root_id, &modules, &mut state, &mut order)?;
+
+    let mut merged: Vec<TypedAdtDecl> = Vec::new();
+    let mut decl_index: HashMap<(String, String), u16> = HashMap::new();
+    let mut bases: HashMap<(String, String), u16> = HashMap::new();
+    let mut constructor_total: u16 = 0;
+    for module_id in &order {
+        for decl in &modules[module_id].module.adt_decls {
+            let key = (decl.origin.clone(), decl.name.clone());
+            if let Some(existing) = decl_index.get(&key) {
+                let known = &merged[*existing as usize];
+                if known.constructors != decl.constructors {
+                    return Err(format!(
+                        "typed ADT '{}' from '{}' has conflicting definitions",
+                        decl.name, decl.origin
+                    ));
+                }
+                continue;
+            }
+            let index = u16::try_from(merged.len())
+                .map_err(|_| "too many typed ADT declarations".to_string())?;
+            decl_index.insert(key.clone(), index);
+            bases.insert(key, constructor_total);
+            constructor_total = constructor_total
+                .checked_add(decl.constructors.len() as u16)
+                .ok_or_else(|| "too many typed constructors".to_string())?;
+            merged.push(decl.clone());
+        }
+    }
+    if constructor_total > 255 {
+        return Err("linked constructor table exceeds 255 entries".into());
+    }
+
+    let mut maps: HashMap<String, (HashMap<u16, u16>, HashMap<u8, u16>)> = HashMap::new();
+    for module_id in &order {
+        let artifact = &modules[module_id];
+        let mut decl_map = HashMap::new();
+        for (local, decl) in artifact.module.adt_decls.iter().enumerate() {
+            let key = (decl.origin.clone(), decl.name.clone());
+            let mapped = *decl_index
+                .get(&key)
+                .ok_or_else(|| "ADT declaration missing from merged table".to_string())?;
+            decl_map.insert(
+                u16::try_from(local).map_err(|_| "too many ADT declarations".to_string())?,
+                mapped,
+            );
+        }
+        let mut ctor_map = HashMap::new();
+        for (symbol, reference) in artifact.constructors.iter().enumerate() {
+            let key = (reference.origin.clone(), reference.adt_name.clone());
+            let decl_id = *decl_index
+                .get(&key)
+                .ok_or_else(|| "constructor refers to a missing ADT".to_string())?;
+            let decl = &merged[decl_id as usize];
+            let (ctor_index, constructor) = decl
+                .constructors
+                .iter()
+                .enumerate()
+                .find(|(_, (name, _))| *name == reference.name)
+                .ok_or_else(|| "constructor missing from its ADT".to_string())?;
+            if constructor.1 as u16 != reference.arity {
+                return Err("constructor arity mismatch".into());
+            }
+            let global = bases[&key]
+                .checked_add(ctor_index as u16)
+                .ok_or_else(|| "constructor id overflow".to_string())?;
+            ctor_map.insert(
+                u8::try_from(symbol).map_err(|_| "too many constructor symbols".to_string())?,
+                global,
+            );
+        }
+        maps.insert(module_id.clone(), (decl_map, ctor_map));
+    }
+
+    let mut functions: Vec<Rc<TypedProto>> = Vec::new();
+    let mut owners: HashMap<String, String> = HashMap::new();
+    let mut function_maps: HashMap<String, HashMap<u16, u16>> = HashMap::new();
+    let mut function_order: Vec<&String> = Vec::with_capacity(order.len());
+    if let Some(root) = order.last() {
+        function_order.push(root);
+    }
+    function_order.extend(order[..order.len().saturating_sub(1)].iter());
+
+    for module_id in function_order {
+        let artifact = &modules[module_id];
+        let (decl_map, ctor_map) = &maps[module_id];
+        let mut function_map: HashMap<u16, u16> = HashMap::new();
+        for (local, proto) in artifact.module.functions.iter().enumerate() {
+            if let Some(owner) = owners.insert(proto.name.clone(), module_id.clone()) {
+                return Err(format!(
+                    "typed function name collision: '{}' in '{owner}' and '{module_id}'",
+                    proto.name
+                ));
+            }
+            let global = u16::try_from(functions.len())
+                .map_err(|_| "too many typed functions".to_string())?;
+            function_map.insert(
+                u16::try_from(local).map_err(|_| "too many typed functions".to_string())?,
+                global,
+            );
+            functions.push(remap_proto(proto, decl_map, ctor_map, None)?);
+        }
+        function_maps.insert(module_id.clone(), function_map);
+    }
+
+    let root_artifact = &modules[&root_id];
+    let (decl_map, ctor_map) = &maps[&root_id];
+    let main = remap_proto(
+        &root_artifact.module.main,
+        decl_map,
+        ctor_map,
+        function_maps.get(&root_id),
+    )?;
+    Ok(TypedModule {
+        functions,
+        main,
+        adt_decls: merged,
+    })
+}
+
 #[derive(Clone)]
 enum TypedValue {
     Unit,

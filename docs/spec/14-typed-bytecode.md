@@ -236,7 +236,7 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   遇到未知 version/opcode/tag 必须报错而不是猜测；破坏既有布局的变更必须
   提升 version；
 - `-t tvm` 与 `-t tbc` 共享 v8 artifact + loader 的同一链接结果（tbc 只是
-  反汇编该程序）；`-t thir` 仍用 P1a/P1b 的 HIR 拍平器，作为链接前的调试
+  反汇编该程序）；`--cache-dir DIR` 复用磁盘上的 v8 artifact；`-t thir` 仍用 P1a/P1b 的 HIR 拍平器，作为链接前的调试
   视图；
 - kind=1 本身不编码跨方言边界；`oort-object → oort-core` 由 B1
   边界（OP 0028）处理，反向仍拒绝；`box`/`unbox`/blame 的稳定 ABI
@@ -251,5 +251,5 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
 |---|---|
 | Python | `bytecode/typed_compile.py`、`typed_artifact.py`、`typed_vm.py`、`typed_serialize.py` |
 | CLI | `-t tbc`（反汇编）、`-t tvm`（执行） |
-| Rust | `rust/oort-vm/src/typed.rs`；`oort-vm <file.obc>` 按 kind 分派 |
+| Rust | `rust/oort-vm/src/typed.rs`；`oort-vm <file.obc>` 按 kind 分派；`oort-vm --link <root.obc> <dep.obc>...` 原生链接 v8 artifact |
 | 差分 | `scripts/rust_vm_check.py --diff-only`（含 typed 程序） |
