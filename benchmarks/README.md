@@ -99,12 +99,14 @@ uv run python benchmarks/boundary_run.py --repeat 3 --json
 
 ### 编译缓存冷/热（诊断）
 
-`benchmarks/cache_run.py` 对若干 typed 示例测量 `-t tvm` 在空缓存与热缓存下
-的端到端耗时。解析与类型检查仍每次执行，所以加速只反映 lowering、typed
-字节码与链接的缓存命中。不进入 CI。
+`benchmarks/cache_run.py` 对若干 typed 示例和一个自动生成的多模块程序
+（默认 32 个库模块 + 1 个入口）测量 `-t tvm` 在空缓存与热缓存下的端到端
+耗时。解析与类型检查仍每次执行，所以加速只反映 lowering、typed 字节码与
+链接的缓存命中；`cold#`/`warm#` 列直接显示实际编译的 artifact 数。不进入 CI。
 
 ```bash
 uv run --frozen python benchmarks/cache_run.py --repeat 5
+uv run --frozen python benchmarks/cache_run.py --repeat 5 --modules 48
 uv run --frozen python benchmarks/cache_run.py --repeat 5 --json
 ```
 
