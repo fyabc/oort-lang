@@ -499,7 +499,7 @@ def test_cache_env_precedence_and_no_cache(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("OORT_CACHE_DIR", str(env_dir))
 
     def run(*extra: str) -> None:
-        compiler = get_compiler(["NOT_EXIST", "-t", "tvm", *extra, str(main)])
+        compiler = get_compiler([*extra, "-t", "tvm", "NOT_EXIST", str(main)])
         compiler.run_file(main)
         assert capsys.readouterr().out == "5\n"
 
