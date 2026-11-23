@@ -130,6 +130,29 @@ def test_boundary_core_module_can_import_core(tmp_path, run_file, target):
     assert run_file(main, target=target).stdout == "42\n"
 
 
+def test_boundary_binds_only_module_exports(tmp_path, caplog):
+    _write(
+        tmp_path,
+        "math.ort",
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",
+    )
+    _write(
+        tmp_path,
+        "lib.ort",
+        '#lang oort-core\nfrom "./math" import add\ndef calc(n: Int) -> Int { add(n, 1) }\n',
+    )
+    main = _write(
+        tmp_path,
+        "main.ort",
+        '#lang oort-object\nfrom "./lib" import calc\nprint(calc(41))\nprint(add(1, 2))\n',
+    )
+
+    compiler = get_compiler(["NOT_EXIST", "-t", "vm"])
+    with pytest.raises(CompilerError):
+        compiler.run_file(main)
+    assert "Name 'add' is not defined" in caplog.text
+
+
 def test_boundary_guard_rejects_wrong_argument_type(tmp_path, caplog):
     _write(
         tmp_path,

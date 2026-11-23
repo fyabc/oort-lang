@@ -552,8 +552,10 @@ def link_typed_artifacts(
     return TypedProgram(main=main, functions=tuple(functions), adt_decls=merged_decls)
 
 
-def build_typed_program(units: Sequence[TypedUnit]) -> TypedProgram:
-    """Compile typed units (dependencies first) and link their artifacts."""
+def build_typed_artifacts(
+    units: Sequence[TypedUnit],
+) -> tuple[TypedArtifact, dict[str, TypedArtifact]]:
+    """Build all unit artifacts and pin import hashes; root artifact first."""
 
     origins = _origin_map(units)
     artifacts = [build_typed_artifact(unit, origins) for unit in units]
@@ -581,8 +583,25 @@ def build_typed_program(units: Sequence[TypedUnit]) -> TypedProgram:
             else:
                 imports.append(dataclasses.replace(import_, expected_abi_hash=export.abi_hash))
         modules[module_id] = dataclasses.replace(artifact, imports=tuple(imports))
+    return modules[artifacts[-1].module_id], modules
 
-    return link_typed_artifacts(modules[artifacts[-1].module_id], modules)
+
+def build_typed_program(units: Sequence[TypedUnit]) -> TypedProgram:
+    """Compile typed units (dependencies first) and link their artifacts."""
+
+    root, modules = build_typed_artifacts(units)
+    return link_typed_artifacts(root, modules)
+
+
+def build_typed_program_exports(
+    units: Sequence[TypedUnit],
+) -> tuple[TypedProgram, tuple[str, ...]]:
+    """Link units and return the root module's exported function names."""
+
+    root, modules = build_typed_artifacts(units)
+    program = link_typed_artifacts(root, modules)
+    names = tuple(export.name for export in root.exports if export.kind == "function")
+    return program, names
 
 
 # ----------------------------------------------------------------------
@@ -728,7 +747,9 @@ __all__ = [
     "TypedExport",
     "TypedImport",
     "build_typed_artifact",
+    "build_typed_artifacts",
     "build_typed_program",
+    "build_typed_program_exports",
     "link_typed_artifacts",
     "read_typed_artifact",
     "write_typed_artifact",

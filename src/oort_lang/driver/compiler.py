@@ -415,10 +415,14 @@ class Compiler:
                 return vm.run_module(compile_bytecode(lower_module(ast)), env)
 
         def execute_core_module(ast: nodes.ModuleNode, env: Environment, path: Path) -> None:
+            from ..bytecode import build_typed_program_exports
             from ..bytecode.typed_boundary import execute_core_module as run_core
+            from ..hir.typed_link import load_typed_units
 
-            typed = self._link_typed_core(ast, path, path.parent if path else entry_dir)
-            run_core(ast, env, interpreter, typed)
+            resolve = self._make_typed_resolver(path.parent if path else entry_dir)
+            units = load_typed_units(ast, path, resolve)
+            program, exports = build_typed_program_exports(units)
+            run_core(env, interpreter, program, exports)
 
         return ModuleLoader(
             compile_module=compile_module,
@@ -441,10 +445,14 @@ class Compiler:
             return CompiledModule(result.ast, result.dialect.name)
 
         def execute_core_module(ast: nodes.ModuleNode, env: Environment, path: Path) -> None:
+            from ..bytecode import build_typed_program_exports
             from ..bytecode.typed_boundary import execute_core_module as run_core
+            from ..hir.typed_link import load_typed_units
 
-            typed = self._link_typed_core(ast, path, path.parent if path else entry_dir)
-            run_core(ast, env, interpreter, typed)
+            resolve = self._make_typed_resolver(path.parent if path else entry_dir)
+            units = load_typed_units(ast, path, resolve)
+            program, exports = build_typed_program_exports(units)
+            run_core(env, interpreter, program, exports)
 
         return ModuleLoader(
             compile_module=compile_module,

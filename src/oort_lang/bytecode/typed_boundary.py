@@ -25,7 +25,6 @@ from ..hir.typed import (
     IrType,
     IrTypeLike,
     adt_runtime_name,
-    lower_typed_module,
 )
 from ..runtime.functions import OortNativeFunction
 from ..runtime.native import NativeMode
@@ -43,15 +42,13 @@ from ..runtime.objects import (
     OortTuple,
 )
 from ..source.source_position import SourcePosition
-from .typed_compile import TypedProto, compile_typed_module
 from .typed_vm import TypedCodeVM
 
 if TYPE_CHECKING:
-    from ..ast import nodes
-    from ..hir.typed import TypedModule
     from ..runtime.environment import Environment
     from ..runtime.interpreter import ASTInterpreter
     from ..runtime.native import NativeContext
+    from .typed_compile import TypedProgram, TypedProto
 
 _BOUNDARY_POSITION = SourcePosition.from_location(1, 0, "", filename="<boundary>")
 
@@ -188,19 +185,24 @@ class TypedBoundaryFunction(OortNativeFunction):
 
 
 def execute_core_module(
-    module: nodes.ModuleNode,
     env: Environment,
     interpreter: ASTInterpreter,
-    typed: TypedModule | None = None,
+    program: TypedProgram,
+    exports: tuple[str, ...],
 ) -> None:
-    """Execute one imported core module and bind its functions in ``env``."""
+    """Run a linked core program and bind the module's exports in ``env``."""
 
-    typed = typed or lower_typed_module(module)
-    program = compile_typed_module(typed)
     vm = TypedCodeVM(interpreter)
     vm.run(program)
-    for proto in program.functions:
-        env.define(proto.name, TypedBoundaryFunction(vm, proto))
+    protos = {proto.name: proto for proto in program.functions}
+    for name in exports:
+        proto = protos.get(name)
+        if proto is None:
+            raise OortTypeError(
+                f"Core module export '{name}' is missing from the linked program.",
+                _BOUNDARY_POSITION,
+            )
+        env.define(name, TypedBoundaryFunction(vm, proto))
 
 
 __all__ = ["TypedBoundaryFunction", "execute_core_module"]

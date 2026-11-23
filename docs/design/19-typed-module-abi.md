@@ -136,10 +136,14 @@ Python loader/linker（`load_typed_units` + `build_typed_program`）：
 磁盘路径由 `write_typed_artifact`/`read_typed_artifact` 覆盖；编译器当前在
 内存中构建 artifact，磁盘缓存留给 P1c-3。
 
+B1 边界使用同一 loader：`build_typed_program_exports` 返回链接后的程序与
+根模块导出函数名，边界只把这些导出绑定到动态环境，不再泄漏依赖模块的
+函数。
+
 Rust：
 
-- P1c-1：消费 Python 生成的 linked bundle；
-- P1c-2：原生 module registry + loader；
+- P1c-2：消费 Python 生成的 linked bundle；
+- P1c-3：原生 module registry + loader；
 - 缓存键含源码 hash、编译器版本、ABI 版本。
 
 ## 6. 初始化
@@ -162,7 +166,7 @@ Rust：
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | P1c-1 | module id/export/import 校验、artifact、Python loader、linked program | 已实现（v7） |
-| P1c-2 | 导入构造器/类型、ABI hash、B1 多模块、Rust linked bundle | 进行中（构造器表/导入构造器/ABI hash 已实现，v8） |
+| P1c-2 | 导入构造器/类型、ABI hash、B1 多模块、Rust linked bundle | 进行中（构造器表/导入构造器/ABI hash/B1 多模块已实现，v8） |
 | P1c-3 | 独立缓存、Rust 原生 loader、兼容策略 | 待做 |
 
 ## 9. 开放问题
