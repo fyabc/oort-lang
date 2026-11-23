@@ -82,11 +82,18 @@ print(paint(Red))
 
     assert loaded.module_id == "solo"
     assert loaded.abi_version == artifact.abi_version
-    assert {(export.kind, export.name) for export in loaded.exports} >= {
+    export_keys = {(export.kind, export.name) for export in loaded.exports}
+    assert export_keys >= {
         ("function", "paint"),
         ("adt", "Color"),
         ("constructor", "Red"),
         ("constructor", "Green"),
+    }
+    assert ("adt", "Option") not in export_keys
+    assert ("constructor", "Some") not in export_keys
+    assert {ref.name for ref in loaded.constructors if ref.origin == "solo"} >= {
+        "Red",
+        "Green",
     }
     raw = path.read_bytes()
     assert str(tmp_path).encode() not in raw
@@ -95,11 +102,11 @@ print(paint(Red))
         assert decl.origin in {"solo", "<core-prelude>"}
 
 
-def test_v7_and_v6_artifacts_do_not_cross_read(tmp_path):
+def test_v8_and_v6_artifacts_do_not_cross_read(tmp_path):
     unit = _unit("#lang oort-core\nprint(1)\n", "solo")
     artifact = build_typed_artifact(unit)
-    v7_path = tmp_path / "v7.obc"
-    write_typed_artifact(artifact, v7_path)
+    v8_path = tmp_path / "v8.obc"
+    write_typed_artifact(artifact, v8_path)
 
     dynamic_source = "#lang oort-core\ndef one() -> Int { 1 }\nprint(one())\n"
     v6_path = tmp_path / "v6.obc"
@@ -110,8 +117,8 @@ def test_v7_and_v6_artifacts_do_not_cross_read(tmp_path):
 
     with pytest.raises(ObcError, match="unsupported typed module artifact version 6"):
         read_typed_artifact(v6_path)
-    with pytest.raises(ObcError, match="unsupported typed bytecode version 7"):
-        read_typed_obc(v7_path)
+    with pytest.raises(ObcError, match="unsupported typed bytecode version 8"):
+        read_typed_obc(v8_path)
 
 
 def test_link_artifacts_remaps_same_named_adts(tmp_path, capsys):

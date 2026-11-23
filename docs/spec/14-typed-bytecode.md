@@ -17,6 +17,8 @@
 
 ```text
 magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=6)
+# v6 单模块布局；v8 module artifact 的头部（module_id/export/import/
+# constructor 表）见 design 19
 u32 adt_decl_count
 adt_decl[adt_decl_count]:
   string origin
@@ -139,7 +141,7 @@ ABx: [op:8][A:8][Bx:16]
 | 70 | `NEW_DICT` | ABC | A=窗口基址, B=条目数, C=目标 | 构造 Dict；窗口为 `key,value` 交替的 `2*B` 个寄存器 |
 | 71/72 | `EQ_SET` / `NE_SET` | ABC | A=目标, B=左, C=右 | Set 深相等/不等（顺序无关）→ Bool |
 | 73/74 | `EQ_DICT` / `NE_DICT` | ABC | 同上 | Dict 深相等/不等（键查找 + 值比较）→ Bool |
-| 75 | `NEW_ADT` | ABC | A=payload 窗口基址, B=构造器 ID, C=目标 | 构造 ADT；payload 数由模块声明表 arity 决定 |
+| 75 | `NEW_ADT` | ABC | A=payload 窗口基址, B=构造器 ID, C=目标 | 构造 ADT；v6 中 B 为声明表扁平 id，v8 artifact 中为构造器表下标（loader 回填为全局 id）；payload 数由声明 arity 决定 |
 | 76 | `ADT_TAG` | ABC | A=目标 Int, B=ADT 值, C=0 | 返回构造器在声明内的索引 |
 | 77 | `ADT_FIELD` | ABC | A=目标, B=ADT 值, C=字段索引 | 读取 payload 字段 |
 | 78/79 | `EQ_ADT` / `NE_ADT` | ABC | A=目标, B=左, C=右 | ADT 名义 + 变体 + payload 深相等/不等 → Bool |
@@ -208,8 +210,8 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
 - 除零、类型守卫失败、未知全局/函数索引、未知操作码都必须显式报错，禁止静默
   执行；
 - `DEF_FUN` 的绑定可在主函数执行时发生；实现可以预绑定全部函数，语义等价；
-- v6 单模块文件不编码 import；v7 module artifact 用文件头的 import/export
-  表描述模块边，但函数体仍没有 import opcode——loader 在加载时完成链接；
+- v6 单模块文件不编码 import；v8 module artifact 用文件头的 import/export
+  表与构造器表描述模块边，但函数体仍没有 import opcode——loader 在加载时完成链接；
 - kind=1 **没有全局存储**（无顶层变量、无 `STORE_G`），因此实现可以在加载时
   预解析 `LOAD_G` 并缓存；若未来版本加入全局存储，写入时必须使缓存失效
   （实现采用全局版本号 + 惰性重解析）；动态 kind=0 仍走名字查找；
@@ -227,17 +229,17 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
 - 无集合原地修改（`SET_ITEM` 预留；核心检查器尚未允许 `xs[i] = v`）、`in`/
   集合运算、类/接口/泛型/lambda、切片；typed 模块导入在 loader 中解析，
   函数体不进入 kind=1 字节码；
-- kind=1 有两个不再互读的版本：**v6** 为单模块程序，**v7** 为 module
-  artifact（module_id/export/import 表）；ADT 模块声明表位于文件头；旧读者
+- kind=1 有两个不再互读的版本：**v6** 为单模块程序，**v8** 为 module
+  artifact（module_id/export/import 表 + 构造器表；v7 为未发布的过渡格式）；ADT 模块声明表位于文件头；旧读者
   遇到未知 version/opcode/tag 必须报错而不是猜测；破坏既有布局的变更必须
   提升 version；
-- `-t tvm` 与 `-t tbc` 共享 v7 artifact + loader 的同一链接结果（tbc 只是
+- `-t tvm` 与 `-t tbc` 共享 v8 artifact + loader 的同一链接结果（tbc 只是
   反汇编该程序）；`-t thir` 仍用 P1a/P1b 的 HIR 拍平器，作为链接前的调试
   视图；
 - kind=1 本身不编码跨方言边界；`oort-object → oort-core` 由 B1
   边界（OP 0028）处理，反向仍拒绝；`box`/`unbox`/blame 的稳定 ABI
   尚未定义；
-- 单模块格式版本 `version=6`，module artifact 版本 `version=7`；不兼容变更
+- 单模块格式版本 `version=6`，module artifact 版本 `version=8`；不兼容变更
   必须提升 version，并保持 kind=1 的独立命名空间。
 
 ## 6. 参考实现入口

@@ -97,7 +97,7 @@
 | 2026-11-23 | object→core 导入由 B1 边界支持；core→object 仍拒绝；边界规范见 OP 0028 | [OP 0028](0028-object-core-boundary.md)（Proposed） |
 | 2026-11-23 | Int 任意精度、Float binary64、混合比较精确、Float 显示对齐 Python；Rust i64 仅为 spike | [OP 0029](0029-numeric-semantics.md)（Accepted） |
 | 2026-11-23 | typed core 模块进入 module artifact/loader 设计；P1a/P1b 先以编译期 linker 过渡 | [OP 0027](0027-typed-modules.md)（Draft） |
-| 2026-11-23 | P1c-1：kind=1 v7 module artifact + Python loader；`-t tvm` 走模块链接；artifact 的 ADT origin/位置表使用 module_id，不写宿主路径 | [OP 0027](0027-typed-modules.md)（Draft） |
+| 2026-11-23 | P1c-1：kind=1 module artifact + Python loader；`-t tvm` 走模块链接；artifact 的 ADT origin/位置表使用 module_id，不写宿主路径 | [OP 0027](0027-typed-modules.md)（Draft） |
 | 2026-11-23 | Dict 插入顺序仅作为实现特性，不是语言保证；Set 顺序未定义 | [spec 09](../spec/09-iterators.md) |
 
 ## 设计原则（所有提案必须满足）

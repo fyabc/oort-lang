@@ -10,7 +10,8 @@ and its export/import surface explicit:
 - namespace imports resolve exported functions by alias;
 - ADT declarations are merged and constructor ids are remapped.
 
-A real v7 artifact/loader will replace the in-memory merge later.
+A real v8 artifact/loader handles executable linking; this in-memory merge
+now only serves the `-t thir` debug view and the B1 boundary prototype.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from pathlib import Path
 
 from ..ast import nodes
 from ..diagnostics.syntax_errors import UnsupportedSyntax
+from ..semantics.core.prelude import CORE_PRELUDE_ORIGIN
 from ..source.source_position import SourcePosition
 from .nodes import (
     BuildAdt,
@@ -32,7 +34,7 @@ from .nodes import (
     LoadConst,
     Return,
 )
-from .typed import AdtDecl, TypedFunction, TypedModule, lower_typed_module
+from .typed import AdtDecl, ConstructorRef, TypedFunction, TypedModule, lower_typed_module
 
 ResolveModule = Callable[[str, Path | None, SourcePosition], tuple[Path, nodes.ModuleNode] | None]
 
@@ -86,21 +88,43 @@ def _binding_name(stmt: nodes.ImportStmt) -> str:
     return name
 
 
+def _own_decls(module: TypedModule) -> tuple[AdtDecl, ...]:
+    return tuple(decl for decl in module.adt_decls if not _is_prelude(decl))
+
+
+def _is_prelude(decl: AdtDecl) -> bool:
+    return decl.origin == CORE_PRELUDE_ORIGIN
+
+
 def _exports(module: TypedModule) -> tuple[set[str], set[str], set[str]]:
     functions = {function.hir.name for function in module.functions}
     constructors: set[str] = set()
     adts: set[str] = set()
-    for decl in module.adt_decls:
+    for decl in _own_decls(module):
         adts.add(decl.name)
         constructors.update(constructor.name for constructor in decl.constructors)
     return functions, constructors, adts
+
+
+def _find_constructor(module: TypedModule, name: str) -> ConstructorRef | None:
+    for decl in _own_decls(module):
+        for constructor in decl.constructors:
+            if constructor.name == name:
+                return ConstructorRef(
+                    decl.origin,
+                    decl.name,
+                    constructor.name,
+                    constructor.arity,
+                    constructor.payload,
+                )
+    return None
 
 
 def _merged_decls(units: list[TypedUnit]) -> tuple[AdtDecl, ...]:
     merged: list[AdtDecl] = []
     seen: set[tuple[str, str]] = set()
     for unit in units:
-        for decl in unit.module.adt_decls:
+        for decl in (*unit.module.adt_decls, *unit.module.external_decls):
             key = (decl.origin, decl.name)
             if key in seen:
                 continue
@@ -111,11 +135,23 @@ def _merged_decls(units: list[TypedUnit]) -> tuple[AdtDecl, ...]:
 
 def _constructor_map(unit: TypedUnit, merged: tuple[AdtDecl, ...]) -> dict[int, int]:
     bases: dict[tuple[str, str], int] = {}
+    decls: dict[tuple[str, str], AdtDecl] = {}
     offset = 0
     for decl in merged:
         bases[(decl.origin, decl.name)] = offset
+        decls[(decl.origin, decl.name)] = decl
         offset += len(decl.constructors)
     mapping: dict[int, int] = {}
+    if unit.module.constructors:
+        for local, ref in enumerate(unit.module.constructors):
+            decl = decls[(ref.origin, ref.adt_name)]
+            ctor_index = next(
+                index
+                for index, constructor in enumerate(decl.constructors)
+                if constructor.name == ref.name
+            )
+            mapping[local] = bases[(ref.origin, ref.adt_name)] + ctor_index
+        return mapping
     local = 0
     for decl in unit.module.adt_decls:
         base = bases[(decl.origin, decl.name)]
@@ -202,6 +238,9 @@ def load_typed_units(
 
         module_functions: dict[str, set[str]] = {}
         imports: list[TypedImportRef] = []
+        external_constructors: dict[str, ConstructorRef] = {}
+        external_decls: list[AdtDecl] = []
+        seen_decls: set[tuple[str, str]] = set()
         for stmt in ast.body.statements:
             if not isinstance(stmt, (nodes.ImportStmt, nodes.ImportFromStmt)):
                 continue
@@ -210,6 +249,11 @@ def load_typed_units(
                 raise UnsupportedSyntax(f"Typed import failed: {stmt.module_path}", stmt.position)
             dep_path, dep_ast = resolved
             dependency = load(dep_ast, dep_path)
+            for decl in _own_decls(dependency.module):
+                key = (decl.origin, decl.name)
+                if key not in seen_decls:
+                    seen_decls.add(key)
+                    external_decls.append(decl)
             if isinstance(stmt, nodes.ImportStmt):
                 alias = _binding_name(stmt)
                 if alias in module_functions:
@@ -219,14 +263,16 @@ def load_typed_units(
                 module_functions[alias] = set(dependency.functions)
                 imports.append(TypedImportRef(dependency.module_id, "module", alias))
                 continue
-            for source_name in stmt.names:
+            for source_name, local_alias in stmt.names.items():
                 if source_name in dependency.functions:
                     imports.append(TypedImportRef(dependency.module_id, "function", source_name))
                     continue
-                if source_name in dependency.constructors:
-                    raise UnsupportedSyntax(
-                        "Imported constructors are not supported yet.", stmt.position
-                    )
+                constructor = _find_constructor(dependency.module, source_name)
+                if constructor is not None:
+                    local_name = local_alias or source_name
+                    external_constructors[local_name] = constructor
+                    imports.append(TypedImportRef(dependency.module_id, "constructor", source_name))
+                    continue
                 if source_name in dependency.adts:
                     raise UnsupportedSyntax(
                         f"'{source_name}' is a type-only export from "
@@ -238,7 +284,12 @@ def load_typed_units(
                     stmt.position,
                 )
 
-        module = lower_typed_module(ast, module_functions)
+        module = lower_typed_module(
+            ast,
+            module_functions,
+            external_constructors=external_constructors,
+            external_decls=tuple(external_decls),
+        )
         functions, constructors, adts = _exports(module)
         unit = TypedUnit(
             path,

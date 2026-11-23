@@ -69,9 +69,9 @@ artifact 至少记录：
 
 ### 5. ABI 与版本
 
-- kind=1 提升到 v7（artifact 带 module/export/import 表）；
+- kind=1 提升到 v8（artifact 带 module/export/import 与构造器表）；
 - 模块记录 ABI/version；loader 校验；
-- 旧 v6 文件不被 v7 reader 静默接受；
+- 旧 v6 文件不被 artifact reader 静默接受；
 - 不承诺跨大版本二进制兼容；先做显式版本拒绝。
 
 ### 6. Loader / linker
@@ -102,15 +102,16 @@ artifact 至少记录：
 ## 向后兼容
 
 - P1a/P1b 拍平器保留为过渡实现；
-- v7 artifact 与 v6 不兼容，需要迁移/重新编译；
+- artifact 与 v6 不兼容，需要迁移/重新编译；
 - B1 object→core 路径改为加载 typed module artifacts；
 - 未实现的模块语义继续显式拒绝。
 
 ## 实现计划
 
-1. **P1c-1（已实现）**：module id/export/import 校验；v7 artifact；Python
+1. **P1c-1（已实现）**：module id/export/import 校验；artifact；Python
    loader/linker；linked program 接入 `-t tvm`；artifact 不含宿主路径。
-2. **P1c-2（待做）**：导入构造器/类型、ABI hash、B1 多模块、Rust linked bundle。
+2. **P1c-2（进行中）**：导入构造器已实现（v8 构造器表）；待做：导入类型、
+   ABI hash、B1 多模块、Rust linked bundle。
 3. **P1c-3（待做）**：独立编译缓存、Rust 原生 loader、版本兼容策略。
 
 ## 未解决问题

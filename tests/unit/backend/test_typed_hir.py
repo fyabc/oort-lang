@@ -739,9 +739,31 @@ def test_typed_link_rejects_type_only_export(tmp_path):
         _link_sources(tmp_path, 'from "./lib" import Color\nprint(1)\n')
 
 
-def test_typed_link_rejects_imported_constructor(tmp_path):
-    with pytest.raises(UnsupportedSyntax, match=r"Imported constructors are not supported yet\."):
-        _link_sources(tmp_path, 'from "./lib" import Red\nprint(1)\n')
+def test_typed_imported_constructors_run(tmp_path, run_file):
+    lib = tmp_path / "lib.ort"
+    lib.write_text(
+        """#lang oort-core
+enum Color { Red, Green }
+enum Shape { Circle(radius: Int), Dot }
+def make_red() -> Color { Red }
+""",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        """#lang oort-core
+import "./lib"
+from "./lib" import Red, Green, Circle, Dot, make_red
+def area(shape: lib.Shape) -> Int { match shape { Circle(r) => r * r, Dot => 0 } }
+print(Red, Green, make_red())
+print(area(Circle(3)), area(Dot))
+""",
+        encoding="utf-8",
+    )
+
+    typed = run_file(main, target="tvm")
+    vm = run_file(main, target="vm")
+    assert typed.stdout == vm.stdout == "Red Green Red\n9 0\n"
 
 
 def test_typed_link_rejects_function_collision(tmp_path):

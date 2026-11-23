@@ -156,6 +156,21 @@ class AdtDecl:
     constructors: tuple[AdtConstructor, ...]
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class ConstructorRef:
+    """One constructor in a module's artifact-level constructor table.
+
+    Own constructors come first, followed by imported constructors used by
+    the module. ``BuildAdt.constructor_id`` indexes this table.
+    """
+
+    origin: str
+    adt_name: str
+    name: str
+    arity: int
+    payload: tuple[IrTypeLike, ...] = ()
+
+
 class ConstructorSite:
     """Where a constructor lives in the module ADT table."""
 
@@ -228,6 +243,10 @@ class TypedModule:
     main: TypedFunction
     functions: tuple[TypedFunction, ...]
     adt_decls: tuple[AdtDecl, ...] = ()
+    # Artifact-level constructor table; empty means "flatten adt_decls".
+    constructors: tuple[ConstructorRef, ...] = ()
+    # ADT declarations imported for constructor/type use, not re-exported.
+    external_decls: tuple[AdtDecl, ...] = ()
 
 
 def _reject(node: nodes.ASTNode, detail: str) -> NoReturn:
@@ -613,9 +632,10 @@ def _constructor_payload(
 
 def _collect_adt_decls(
     module: nodes.ModuleNode,
-) -> tuple[tuple[AdtDecl, ...], dict[str, ConstructorSite]]:
+) -> tuple[tuple[AdtDecl, ...], dict[str, ConstructorSite], tuple[ConstructorRef, ...]]:
     decls: list[AdtDecl] = []
     sites: dict[str, ConstructorSite] = {}
+    refs: list[ConstructorRef] = []
     next_constructor = 0
     for stmt in module.body.statements:
         if not isinstance(stmt, nodes.EnumDef):
@@ -648,8 +668,13 @@ def _collect_adt_decls(
                 constructor.payload,
                 constructor.arity,
             )
+            refs.append(
+                ConstructorRef(
+                    origin, stmt.name, constructor.name, constructor.arity, constructor.payload
+                )
+            )
             next_constructor += 1
-    return tuple(decls), sites
+    return tuple(decls), sites, tuple(refs)
 
 
 class _TypedHirLowerer(HirLowerer):
@@ -1037,6 +1062,8 @@ def _infer_control_register_types(function: HirFunction, recorded: dict[int, IrT
 def lower_typed_module(
     module: nodes.ModuleNode,
     module_functions: dict[str, set[str]] | None = None,
+    external_constructors: dict[str, ConstructorRef] | None = None,
+    external_decls: tuple[AdtDecl, ...] = (),
 ) -> TypedModule:
     """Lower a checked ``oort-core`` module to typed HIR.
 
@@ -1046,7 +1073,13 @@ def lower_typed_module(
 
     module = _user_module(module)
     _validate_module(module)
-    adt_decls, constructors = _collect_adt_decls(module)
+    adt_decls, constructors, refs = _collect_adt_decls(module)
+    table = list(refs)
+    for name, ref in (external_constructors or {}).items():
+        if name in constructors:
+            continue
+        constructors[name] = ConstructorSite(len(table), -1, -1, ref.payload, ref.arity)
+        table.append(ref)
     lowerer = _TypedHirLowerer(adt_decls, constructors, module_functions)
     hir = lowerer.lower(module)
 
@@ -1074,7 +1107,13 @@ def lower_typed_module(
         _main_return_type(hir.main, main_register_types),
         main_register_types,
     )
-    typed_module = TypedModule(main, tuple(typed_functions), adt_decls)
+    typed_module = TypedModule(
+        main,
+        tuple(typed_functions),
+        adt_decls,
+        tuple(table),
+        tuple(external_decls),
+    )
     validate_typed_module(typed_module)
     return typed_module
 
@@ -1278,12 +1317,16 @@ def _adt_decl_index(module: TypedModule) -> dict[tuple[str, str], int]:
     return {(decl.origin, decl.name): index for index, decl in enumerate(module.adt_decls)}
 
 
-def _flat_constructors(
-    module: TypedModule,
-) -> list[tuple[AdtDecl, AdtConstructor]]:
-    result: list[tuple[AdtDecl, AdtConstructor]] = []
-    for decl in module.adt_decls:
-        result.extend((decl, constructor) for constructor in decl.constructors)
+def _all_decls(module: TypedModule) -> tuple[AdtDecl, ...]:
+    return (*module.adt_decls, *module.external_decls)
+
+
+def _flat_constructors(module: TypedModule) -> list[AdtConstructor]:
+    if module.constructors:
+        return [AdtConstructor(ref.name, ref.payload, ref.arity) for ref in module.constructors]
+    result: list[AdtConstructor] = []
+    for decl in _all_decls(module):
+        result.extend(decl.constructors)
     return result
 
 
@@ -1349,7 +1392,7 @@ def validate_typed_module(module: TypedModule) -> None:
                 candidates = _flat_constructors(module)
                 if not 0 <= instruction.constructor_id < len(candidates):
                     _invalid(function, instruction, "ADT constructor id out of range")
-                _, constructor = candidates[instruction.constructor_id]
+                constructor = candidates[instruction.constructor_id]
                 target = table[instruction.dst]
                 if not isinstance(target, AdtType):
                     _invalid(function, instruction, "ADT constructor target is not an ADT")
@@ -1377,7 +1420,7 @@ def validate_typed_module(module: TypedModule) -> None:
                 target = table[instruction.dst]
                 field_types = [
                     constructor.payload[instruction.index]
-                    for decl in module.adt_decls
+                    for decl in _all_decls(module)
                     if (decl.origin, decl.name) == (source.origin, source.name)
                     for constructor in decl.constructors
                     if instruction.index < len(constructor.payload)

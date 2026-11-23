@@ -1,13 +1,16 @@
 #! /usr/bin/env python
 
-"""Typed module artifacts and the link-time loader (v7, design 19).
+"""Typed module artifacts and the link-time loader (v8, design 19).
 
-A v7 artifact is one compiled typed core module plus its export/import
-surface. Artifacts never store host paths: the module id is a relative POSIX
-path, ADT origins are rewritten to it, and position tables use it as the
-filename. The loader validates import/export edges, merges ADT declarations,
-remaps constructor and function ids, and produces one ``TypedProgram`` for
-the existing typed VM.
+A v8 artifact is one compiled typed core module plus its export/import
+surface and an artifact-level constructor table. Artifacts never store host
+paths: the module id is a relative POSIX path, ADT origins are rewritten to
+it, and position tables use it as the filename.
+
+``NEW_ADT`` operands index the artifact's constructor table. The loader
+resolves each entry to a merged declaration/constructor pair, patches the
+operand to a flat global id, merges ADT declarations, remaps ``DEF_FUN``
+function ids, and produces one ``TypedProgram`` for the typed VM.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from ..hir.typed import (
     AdtConstructor,
     AdtDecl,
     AdtType,
+    ConstructorRef,
     ContainerType,
     IrTypeLike,
     TypedFunction,
@@ -47,7 +51,7 @@ if TYPE_CHECKING:
 
     from ..hir.typed_link import TypedUnit
 
-ARTIFACT_VERSION = 7
+ARTIFACT_VERSION = 8
 ABI_VERSION = 1
 
 _EXPORT_CODES = {"function": 1, "adt": 2, "constructor": 3}
@@ -79,6 +83,7 @@ class TypedArtifact:
     abi_version: int
     exports: tuple[TypedExport, ...]
     imports: tuple[TypedImport, ...]
+    constructors: tuple[ConstructorRef, ...]
     program: TypedProgram
 
 
@@ -141,33 +146,66 @@ def _normalize_function(
     )
 
 
+def _normalize_decl(decl: AdtDecl, module_id: str, origins: Mapping[str, str]) -> AdtDecl:
+    return dataclasses.replace(
+        decl,
+        origin=_artifact_origin(decl.origin, module_id, origins),
+        constructors=tuple(
+            dataclasses.replace(
+                constructor,
+                payload=tuple(_normalize_type(t, module_id, origins) for t in constructor.payload),
+            )
+            for constructor in decl.constructors
+        ),
+    )
+
+
+def _normalize_constructor_ref(
+    ref: ConstructorRef, module_id: str, origins: Mapping[str, str]
+) -> ConstructorRef:
+    return dataclasses.replace(
+        ref,
+        origin=_artifact_origin(ref.origin, module_id, origins),
+        payload=tuple(_normalize_type(t, module_id, origins) for t in ref.payload),
+    )
+
+
+def _module_constructor_refs(module: TypedModule) -> tuple[ConstructorRef, ...]:
+    if module.constructors:
+        return module.constructors
+    return tuple(
+        ConstructorRef(
+            decl.origin, decl.name, constructor.name, constructor.arity, constructor.payload
+        )
+        for decl in module.adt_decls
+        for constructor in decl.constructors
+    )
+
+
 def _normalize_module(
     module: TypedModule,
     module_id: str,
     origins: Mapping[str, str],
 ) -> TypedModule:
-    decls = tuple(
-        dataclasses.replace(
-            decl,
-            origin=_artifact_origin(decl.origin, module_id, origins),
-            constructors=tuple(
-                dataclasses.replace(
-                    constructor,
-                    payload=tuple(
-                        _normalize_type(t, module_id, origins) for t in constructor.payload
-                    ),
-                )
-                for constructor in decl.constructors
-            ),
-        )
-        for decl in module.adt_decls
-    )
+    decls: list[AdtDecl] = []
+    seen: set[tuple[str, str]] = set()
+    for decl in (*module.adt_decls, *module.external_decls):
+        normalized = _normalize_decl(decl, module_id, origins)
+        key = (normalized.origin, normalized.name)
+        if key in seen:
+            continue
+        seen.add(key)
+        decls.append(normalized)
     return TypedModule(
         main=_normalize_function(module.main, module_id, origins),
         functions=tuple(
             _normalize_function(function, module_id, origins) for function in module.functions
         ),
-        adt_decls=decls,
+        adt_decls=tuple(decls),
+        constructors=tuple(
+            _normalize_constructor_ref(ref, module_id, origins)
+            for ref in _module_constructor_refs(module)
+        ),
     )
 
 
@@ -198,19 +236,19 @@ def build_typed_artifact(
     exports: list[TypedExport] = []
     for index, proto in enumerate(program.functions):
         exports.append(TypedExport("function", proto.name, index))
-    constructor_id = 0
     for decl_index, decl in enumerate(program.adt_decls):
-        exports.append(TypedExport("adt", decl.name, decl_index))
-        for constructor in decl.constructors:
+        if decl.origin == unit.module_id:
+            exports.append(TypedExport("adt", decl.name, decl_index))
+    for symbol, ref in enumerate(module.constructors):
+        if ref.origin == unit.module_id:
             exports.append(
                 TypedExport(
                     "constructor",
-                    constructor.name,
-                    constructor_id,
-                    adt_name=decl.name,
+                    ref.name,
+                    symbol,
+                    adt_name=ref.adt_name,
                 )
             )
-            constructor_id += 1
 
     imports = tuple(TypedImport(ref.module_id, ref.kind, ref.name) for ref in unit.imports)
     artifact = TypedArtifact(
@@ -218,6 +256,7 @@ def build_typed_artifact(
         ABI_VERSION,
         tuple(exports),
         imports,
+        module.constructors,
         program,
     )
     _validate_artifact(artifact)
@@ -234,16 +273,6 @@ def _export_keys(artifact: TypedArtifact) -> set[tuple[str, str]]:
     return {(export.kind, export.name) for export in artifact.exports}
 
 
-def _constructor_owner(artifact: TypedArtifact, symbol: int) -> tuple[str, str] | None:
-    offset = 0
-    for decl in artifact.program.adt_decls:
-        for constructor in decl.constructors:
-            if offset == symbol:
-                return decl.name, constructor.name
-            offset += 1
-    return None
-
-
 def _validate_artifact(artifact: TypedArtifact) -> None:
     if not artifact.module_id:
         raise ObcError("typed artifact has an empty module id")
@@ -254,6 +283,7 @@ def _validate_artifact(artifact: TypedArtifact) -> None:
 
     functions = artifact.program.functions
     decls = artifact.program.adt_decls
+    constructors = artifact.constructors
     seen: set[tuple[str, str]] = set()
     for export in artifact.exports:
         if export.kind not in _EXPORT_CODES:
@@ -271,9 +301,20 @@ def _validate_artifact(artifact: TypedArtifact) -> None:
             if export.symbol >= len(decls) or decls[export.symbol].name != export.name:
                 raise ObcError(f"typed ADT export {export.name!r} has a bad symbol")
         else:
-            owner = _constructor_owner(artifact, export.symbol)
-            if owner is None or owner != (export.adt_name, export.name):
+            if export.symbol >= len(constructors):
                 raise ObcError(f"typed constructor export {export.name!r} has a bad symbol")
+            ref = constructors[export.symbol]
+            if (ref.adt_name, ref.name) != (export.adt_name, export.name):
+                raise ObcError(f"typed constructor export {export.name!r} has a bad symbol")
+
+    seen_constructors: set[tuple[str, str, str]] = set()
+    for ref in constructors:
+        if _is_absolute_module_id(ref.origin) and ref.origin != CORE_PRELUDE_ORIGIN:
+            raise ObcError(f"typed constructor names an absolute module id: {ref.origin!r}")
+        constructor_key = (ref.origin, ref.adt_name, ref.name)
+        if constructor_key in seen_constructors:
+            raise ObcError(f"duplicate typed constructor {ref.origin}::{ref.adt_name}::{ref.name}")
+        seen_constructors.add(constructor_key)
 
     seen_imports: set[tuple[str, str, str]] = set()
     for import_ in artifact.imports:
@@ -315,12 +356,10 @@ def _rewrite_proto(
     return dataclasses.replace(proto, code=tuple(code))
 
 
-def _constructor_maps(
-    units: Sequence[TypedArtifact],
-) -> tuple[tuple[AdtDecl, ...], dict[str, dict[int, int]]]:
+def _merged_decls(artifacts: Sequence[TypedArtifact]) -> tuple[AdtDecl, ...]:
     merged: list[AdtDecl] = []
     index: dict[tuple[str, str], int] = {}
-    for artifact in units:
+    for artifact in artifacts:
         for decl in artifact.program.adt_decls:
             key = (decl.origin, decl.name)
             existing = index.get(key)
@@ -333,7 +372,14 @@ def _constructor_maps(
                 continue
             index[key] = len(merged)
             merged.append(decl)
+    return tuple(merged)
 
+
+def _constructor_maps(
+    artifacts: Sequence[TypedArtifact],
+    merged: tuple[AdtDecl, ...],
+) -> dict[str, dict[int, int]]:
+    decl_by_key = {(decl.origin, decl.name): decl for decl in merged}
     bases: dict[tuple[str, str], int] = {}
     offset = 0
     for decl in merged:
@@ -341,16 +387,34 @@ def _constructor_maps(
         offset += len(decl.constructors)
 
     maps: dict[str, dict[int, int]] = {}
-    for artifact in units:
+    for artifact in artifacts:
         mapping: dict[int, int] = {}
-        local = 0
-        for decl in artifact.program.adt_decls:
-            base = bases[(decl.origin, decl.name)]
-            for constructor_index in range(len(decl.constructors)):
-                mapping[local] = base + constructor_index
-                local += 1
+        for local, ref in enumerate(artifact.constructors):
+            key = (ref.origin, ref.adt_name)
+            target_decl = decl_by_key.get(key)
+            if target_decl is None:
+                raise UnsupportedSyntax(
+                    f"Typed constructor '{ref.name}' refers to missing ADT "
+                    f"'{ref.origin}::{ref.adt_name}'.",
+                    _artifact_position(artifact),
+                )
+            ctor_index = next(
+                (
+                    index
+                    for index, constructor in enumerate(target_decl.constructors)
+                    if constructor.name == ref.name
+                ),
+                None,
+            )
+            if ctor_index is None:
+                raise UnsupportedSyntax(
+                    f"Typed constructor '{ref.name}' is missing from "
+                    f"'{ref.origin}::{ref.adt_name}'.",
+                    _artifact_position(artifact),
+                )
+            mapping[local] = bases[key] + ctor_index
         maps[artifact.module_id] = mapping
-    return tuple(merged), maps
+    return maps
 
 
 def _dependency_order(
@@ -403,7 +467,8 @@ def link_typed_artifacts(
     table = dict(modules)
     table[root.module_id] = root
     order = _dependency_order(root, table)
-    merged_decls, constructor_maps = _constructor_maps(order)
+    merged_decls = _merged_decls(order)
+    constructor_maps = _constructor_maps(order, merged_decls)
 
     functions: list[TypedProto] = []
     function_maps: dict[str, dict[int, int]] = {}
@@ -450,12 +515,12 @@ def build_typed_program(units: Sequence[TypedUnit]) -> TypedProgram:
 
 
 # ----------------------------------------------------------------------
-# v7 serialization
+# v8 serialization
 # ----------------------------------------------------------------------
 
 
 def write_typed_artifact(artifact: TypedArtifact, path: str | Path) -> None:
-    """Serialize a typed module artifact as a kind=1 v7 file."""
+    """Serialize a typed module artifact as a kind=1 v8 file."""
 
     _validate_artifact(artifact)
     w = _Writer()
@@ -480,6 +545,13 @@ def write_typed_artifact(artifact: TypedArtifact, path: str | Path) -> None:
         w.string(import_.name)
         w.i64(import_.expected_abi_hash)
 
+    w.u32(len(artifact.constructors))
+    for ref in artifact.constructors:
+        w.string(ref.origin)
+        w.string(ref.adt_name)
+        w.string(ref.name)
+        w.u16(ref.arity)
+
     decls = artifact.program.adt_decls
     w.u32(len(decls))
     for decl in decls:
@@ -500,7 +572,7 @@ def write_typed_artifact(artifact: TypedArtifact, path: str | Path) -> None:
 
 
 def read_typed_artifact(path: str | Path) -> TypedArtifact:
-    """Read a kind=1 v7 typed module artifact."""
+    """Read a kind=1 v8 typed module artifact."""
 
     data = Path(path).read_bytes()
     if not data.startswith(MAGIC):
@@ -545,16 +617,20 @@ def read_typed_artifact(path: str | Path) -> TypedArtifact:
             )
         )
 
+    constructors: list[ConstructorRef] = []
+    for _ in range(r.u32()):
+        constructors.append(ConstructorRef(r.string(), r.string(), r.string(), r.u16()))
+
     adt_decls: list[AdtDecl] = []
     for _ in range(r.u32()):
         origin = r.string()
         name = r.string()
-        constructors = []
+        decl_constructors = []
         for _ in range(r.u16()):
             constructor_name = r.string()
             arity = r.u8()
-            constructors.append(AdtConstructor(constructor_name, arity=arity))
-        adt_decls.append(AdtDecl(origin, name, tuple(constructors)))
+            decl_constructors.append(AdtConstructor(constructor_name, arity=arity))
+        adt_decls.append(AdtDecl(origin, name, tuple(decl_constructors)))
     decls = tuple(adt_decls)
 
     functions = tuple(_read_proto(r, decls) for _ in range(r.u32()))
@@ -567,6 +643,7 @@ def read_typed_artifact(path: str | Path) -> TypedArtifact:
         abi_version,
         tuple(exports),
         tuple(imports),
+        tuple(constructors),
         TypedProgram(main=main, functions=functions, adt_decls=decls),
     )
     _validate_artifact(artifact)
