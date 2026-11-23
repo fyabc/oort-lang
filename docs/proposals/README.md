@@ -48,7 +48,7 @@
 | [0024](0024-adt-and-slot-equality.md) | ADT 相等与槽对象相等 | Implemented |
 | [0025](0025-static-object-model.md) | 静态对象模型：单继承与跨模块类型标注 | Implemented |
 | [0026](0026-static-interfaces.md) | 静态接口：显式契约、多接口实现与接口继承 | Implemented |
-| [0027](0027-typed-modules.md) | `oort-core` typed modules 与模块 ABI | Draft（P1c 已实现） |
+| [0027](0027-typed-modules.md) | `oort-core` typed modules 与模块 ABI | Implemented（`import type` 未来项） |
 | [0028](0028-object-core-boundary.md) | object → core 跨方言边界 | Proposed（B1 原型已实现） |
 | [0029](0029-numeric-semantics.md) | Int / Float 数值语义 | Accepted（D1–D6 已定） |
 | [0030](0030-compilation-cache.md) | 编译缓存（键、依赖失效、存储与清理） | Proposed（S1 已实现） |
@@ -101,6 +101,7 @@
 | 2026-11-23 | P1c-1：kind=1 module artifact + Python loader；`-t tvm` 走模块链接；artifact 的 ADT origin/位置表使用 module_id，不写宿主路径 | [OP 0027](0027-typed-modules.md)（Draft） |
 | 2026-11-24 | P1c-2/3：v8 构造器表与导入构造器、导出/导入 ABI hash（含 namespace 模块哈希）、B1 多模块、kind=2 linked bundle、`--cache-dir` 缓存、Rust `--link` 原生 loader | [OP 0027](0027-typed-modules.md)（Draft） |
 | 2026-11-24 | 编译缓存采用内容寻址 + 版本目录 + 依赖接口哈希；短期项目内 opt-in，长期接口/代码分离与共享缓存 | [OP 0030](0030-compilation-cache.md)（Proposed） |
+| 2026-11-24 | P1 收尾：移除 HIR 合并 linker，`-t thir` 改逐模块输出；enum 类型名仍不能 `from` 导入，显式 `import type` 留待后续 | [OP 0027](0027-typed-modules.md)（Implemented） |
 | 2026-11-23 | Dict 插入顺序仅作为实现特性，不是语言保证；Set 顺序未定义 | [spec 09](../spec/09-iterators.md) |
 
 ## 设计原则（所有提案必须满足）

@@ -1,17 +1,17 @@
 #! /usr/bin/env python
 
-"""Link typed core modules for the single-module typed VM.
+"""Load a typed core module graph for the debug and linking pipelines.
 
-P1c-1 keeps the current in-memory linked program, but makes the module graph
-and its export/import surface explicit:
+This module owns the source-level graph walk:
 
 - every unit gets a logical module id (relative path, never an absolute path);
 - imports are checked against the dependency's export table;
 - namespace imports resolve exported functions by alias;
-- ADT declarations are merged and constructor ids are remapped.
+- imported constructors and ADTs are attached for lowering.
 
-A real v8 artifact/loader handles executable linking; this in-memory merge
-now only serves the `-t thir` debug view and the B1 boundary prototype.
+Executable linking (relocation, ABI hashes, merged programs) lives in
+``bytecode/typed_artifact.py``. ``-t thir`` prints the loaded units with
+``format_typed_units``.
 """
 
 from __future__ import annotations
@@ -24,17 +24,13 @@ from ..ast import nodes
 from ..diagnostics.syntax_errors import UnsupportedSyntax
 from ..semantics.core.prelude import CORE_PRELUDE_ORIGIN
 from ..source.source_position import SourcePosition
-from .nodes import (
-    BuildAdt,
-    DefineFunction,
-    HirFunction,
-    ImportFrom,
-    ImportModule,
-    Instruction,
-    LoadConst,
-    Return,
+from .typed import (
+    AdtDecl,
+    ConstructorRef,
+    TypedModule,
+    format_typed_module,
+    lower_typed_module,
 )
-from .typed import AdtDecl, ConstructorRef, TypedFunction, TypedModule, lower_typed_module
 
 ResolveModule = Callable[[str, Path | None, SourcePosition], tuple[Path, nodes.ModuleNode] | None]
 
@@ -118,102 +114,6 @@ def _find_constructor(module: TypedModule, name: str) -> ConstructorRef | None:
                     constructor.payload,
                 )
     return None
-
-
-def _merged_decls(units: list[TypedUnit]) -> tuple[AdtDecl, ...]:
-    merged: list[AdtDecl] = []
-    seen: set[tuple[str, str]] = set()
-    for unit in units:
-        for decl in (*unit.module.adt_decls, *unit.module.external_decls):
-            key = (decl.origin, decl.name)
-            if key in seen:
-                continue
-            seen.add(key)
-            merged.append(decl)
-    return tuple(merged)
-
-
-def _constructor_map(unit: TypedUnit, merged: tuple[AdtDecl, ...]) -> dict[int, int]:
-    bases: dict[tuple[str, str], int] = {}
-    decls: dict[tuple[str, str], AdtDecl] = {}
-    offset = 0
-    for decl in merged:
-        bases[(decl.origin, decl.name)] = offset
-        decls[(decl.origin, decl.name)] = decl
-        offset += len(decl.constructors)
-    mapping: dict[int, int] = {}
-    if unit.module.constructors:
-        for local, ref in enumerate(unit.module.constructors):
-            decl = decls[(ref.origin, ref.adt_name)]
-            ctor_index = next(
-                index
-                for index, constructor in enumerate(decl.constructors)
-                if constructor.name == ref.name
-            )
-            mapping[local] = bases[(ref.origin, ref.adt_name)] + ctor_index
-        return mapping
-    local = 0
-    for decl in unit.module.adt_decls:
-        base = bases[(decl.origin, decl.name)]
-        for ctor_index in range(len(decl.constructors)):
-            mapping[local] = base + ctor_index
-            local += 1
-    return mapping
-
-
-def _remap_hir(hir: HirFunction, mapping: dict[int, int]) -> HirFunction:
-    code: list[Instruction] = []
-    for instruction in hir.code:
-        if isinstance(instruction, BuildAdt):
-            instruction = dataclasses.replace(
-                instruction, constructor_id=mapping[instruction.constructor_id]
-            )
-        code.append(instruction)
-    return dataclasses.replace(hir, code=tuple(code))
-
-
-def _remap_function(function: TypedFunction, mapping: dict[int, int]) -> TypedFunction:
-    return dataclasses.replace(function, hir=_remap_hir(function.hir, mapping))
-
-
-def _check_imported_main(hir: HirFunction) -> None:
-    for instruction in hir.code:
-        if isinstance(instruction, (DefineFunction, Return, ImportFrom, ImportModule)):
-            continue
-        if isinstance(instruction, LoadConst) and instruction.value is None:
-            continue
-        raise UnsupportedSyntax(
-            "Typed imported modules with top-level side effects are not supported yet.",
-            hir.position,
-        )
-
-
-def _link(units: list[TypedUnit]) -> TypedModule:
-    merged_decls = _merged_decls(units)
-    root = units[-1]
-    root_mapping = _constructor_map(root, merged_decls)
-
-    functions: list[TypedFunction] = []
-    owners: dict[str, str] = {}
-    # Root functions first: root main's DefineFunction indices stay local.
-    for unit in [root, *units[:-1]]:
-        mapping = root_mapping if unit is root else _constructor_map(unit, merged_decls)
-        for function in unit.module.functions:
-            name = function.hir.name
-            if name in owners:
-                raise UnsupportedSyntax(
-                    f"Typed function name collision: '{name}' in "
-                    f"'{owners[name]}' and '{unit.module_id}'.",
-                    function.hir.position,
-                )
-            owners[name] = unit.module_id
-            functions.append(_remap_function(function, mapping))
-
-    for unit in units[:-1]:
-        _check_imported_main(unit.module.main.hir)
-
-    main = _remap_function(root.module.main, root_mapping)
-    return TypedModule(main, tuple(functions), merged_decls)
 
 
 def load_typed_units(
@@ -311,14 +211,16 @@ def load_typed_units(
     return tuple(units)
 
 
-def link_typed_modules(
-    root_ast: nodes.ModuleNode,
-    root_path: Path | None,
-    resolve: ResolveModule,
-) -> TypedModule:
-    """Lower root and its typed imports into one typed module."""
+def format_typed_units(units: tuple[TypedUnit, ...]) -> str:
+    """Render loaded typed units as a pre-link debug view."""
 
-    return _link(list(load_typed_units(root_ast, root_path, resolve)))
+    blocks: list[str] = []
+    for unit in reversed(units):
+        body = format_typed_module(unit.module)
+        if len(units) > 1:
+            body = f"# module {unit.module_id}\n{body}"
+        blocks.append(body)
+    return "\n\n".join(blocks)
 
 
 __all__ = [
@@ -326,6 +228,6 @@ __all__ = [
     "ResolveModule",
     "TypedImportRef",
     "TypedUnit",
-    "link_typed_modules",
+    "format_typed_units",
     "load_typed_units",
 ]

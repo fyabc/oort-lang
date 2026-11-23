@@ -221,6 +221,23 @@ def test_link_artifacts_rejects_abi_hash_mismatch():
         link_typed_artifacts(tampered, {"lib": lib, "main": tampered})
 
 
+def test_link_artifacts_rejects_function_collision():
+    source = "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n"
+    a = _unit(source, "a")
+    b = _unit(source, "b")
+    root = _unit(
+        "#lang oort-core\nprint(1)\n",
+        "main",
+        imports=(
+            TypedImportRef("a", "module", "a"),
+            TypedImportRef("b", "module", "b"),
+        ),
+    )
+
+    with pytest.raises(UnsupportedSyntax, match="Typed function name collision: 'add'"):
+        build_typed_program((a, b, root))
+
+
 def test_link_artifacts_rejects_missing_module():
     main = _unit(
         "#lang oort-core\nprint(1)\n",

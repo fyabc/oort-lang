@@ -18,7 +18,7 @@ from oort_lang.diagnostics.error_handler import CompilerErrorHandler
 from oort_lang.diagnostics.syntax_errors import UnsupportedSyntax
 from oort_lang.driver.compiler import CompilerError
 from oort_lang.hir import AdtType, ContainerType, IrType, lower_module, lower_typed_module
-from oort_lang.hir.typed_link import link_typed_modules
+from oort_lang.hir.typed_link import load_typed_units
 from oort_lang.runtime.interpreter import ASTInterpreter
 from oort_lang.source.input_info import StringInputInfo
 from tests.helpers import EXAMPLES_DIR, build_ast, get_compiler
@@ -716,7 +716,7 @@ def make_red() -> Color { Red }
 """
 
 
-def _link_sources(tmp_path, main_source: str, lib_source: str = LIB_SOURCE):
+def _load_sources(tmp_path, main_source: str, lib_source: str = LIB_SOURCE):
     lib_path = tmp_path / "lib.ort"
     main_path = tmp_path / "main.ort"
     lib_ast = build_ast(lib_source)
@@ -727,17 +727,17 @@ def _link_sources(tmp_path, main_source: str, lib_source: str = LIB_SOURCE):
             return lib_path, lib_ast
         return None
 
-    return link_typed_modules(main_ast, main_path, resolve)
+    return load_typed_units(main_ast, main_path, resolve)
 
 
 def test_typed_link_rejects_missing_export(tmp_path):
     with pytest.raises(UnsupportedSyntax, match=r"Module 'lib' does not export 'missing'\."):
-        _link_sources(tmp_path, 'from "./lib" import missing\nprint(1)\n')
+        _load_sources(tmp_path, 'from "./lib" import missing\nprint(1)\n')
 
 
 def test_typed_link_rejects_type_only_export(tmp_path):
     with pytest.raises(UnsupportedSyntax, match="type-only export from 'lib'"):
-        _link_sources(tmp_path, 'from "./lib" import Color\nprint(1)\n')
+        _load_sources(tmp_path, 'from "./lib" import Color\nprint(1)\n')
 
 
 def test_typed_imported_constructors_run(tmp_path, run_file):
@@ -767,19 +767,6 @@ print(area(Circle(3)), area(Dot))
     assert typed.stdout == vm.stdout == "Red Green Red\n9 0\n"
 
 
-def test_typed_link_rejects_function_collision(tmp_path):
-    lib_ast = build_ast(LIB_SOURCE)
-    a_path = tmp_path / "a.ort"
-    b_path = tmp_path / "b.ort"
-    main_ast = _parse_only('#lang oort-core\nimport "./a"\nimport "./b"\n')
-
-    def resolve(spec: str, importer, position):
-        return {"./a": (a_path, lib_ast), "./b": (b_path, lib_ast)}.get(spec)
-
-    with pytest.raises(UnsupportedSyntax, match="Typed function name collision: 'add'"):
-        link_typed_modules(main_ast, tmp_path / "main.ort", resolve)
-
-
 def test_typed_link_rejects_circular_import(tmp_path):
     a_path = tmp_path / "a.ort"
     b_path = tmp_path / "b.ort"
@@ -794,7 +781,7 @@ def test_typed_link_rejects_circular_import(tmp_path):
         return None
 
     with pytest.raises(UnsupportedSyntax, match=r"Circular typed import\."):
-        link_typed_modules(a_ast, a_path, resolve)
+        load_typed_units(a_ast, a_path, resolve)
 
 
 def test_typed_namespace_import_uses_export_table(tmp_path, run_file):

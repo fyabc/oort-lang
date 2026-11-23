@@ -2,9 +2,9 @@
 
 > **状态**：设计（2026-11-23）。配合 [OP 0027](../proposals/0027-typed-modules.md)
 > 与 [spec 14](../spec/14-typed-bytecode.md)；P1c-1 的 artifact 与 Python
-> loader 已实现（`bytecode/typed_artifact.py`），P1c-2 已加入构造器表与
-> 导入构造器（v8）；`-t tvm`/`-t tbc` 共享该链接结果；P1a/P1b 的 HIR
-> 拍平器仅保留给 `-t thir`（调试视图）。
+> loader 已实现（`bytecode/typed_artifact.py`）；P1c-1/2/3 完成。`-t tvm`/
+> `-t tbc` 共享 artifact 链接结果；`-t thir` 打印逐模块的链接前 HIR，不再
+> 维护第二套合并 linker。
 
 ## 1. 目标
 
@@ -154,6 +154,9 @@ Python loader/linker（`load_typed_units` + `build_typed_program`）：
    `DEF_FUN` 函数 id；
 7. 生成 single-module linked program；
 8. 交给现有 typed VM。
+
+`-t thir` 使用 `load_typed_units` + `format_typed_units`，逐模块输出，
+不做声明合并或构造器重映射。
 
 磁盘路径由 `write_typed_artifact`/`read_typed_artifact` 覆盖。
 

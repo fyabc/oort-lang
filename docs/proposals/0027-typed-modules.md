@@ -1,6 +1,6 @@
 # OP 0027: `oort-core` typed modules 与模块 ABI
 
-- **状态**：Draft（P1c-1/2/3 已实现）
+- **状态**：Implemented（P1c；`import type` 显式语法留待未来）
 - **作者**：Oort 设计讨论
 - **创建日期**：2026-11-23
 - **相关**：[OP 0006](0006-modules-and-imports.md)、[OP 0017](0017-oort-core-thin-probe.md)、[design 18](../design/18-typed-adt.md)、[design 19](../design/19-typed-module-abi.md)
@@ -101,7 +101,7 @@ artifact 至少记录：
 
 ## 向后兼容
 
-- P1a/P1b 拍平器保留为过渡实现；
+- P1a/P1b 拍平器已移除；`-t thir` 改为逐模块调试视图；
 - artifact 与 v6 不兼容，需要迁移/重新编译；
 - B1 object→core 路径改为加载 typed module artifacts；
 - 未实现的模块语义继续显式拒绝。

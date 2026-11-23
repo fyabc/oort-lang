@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 
     from ..bytecode import TypedProgram
     from ..bytecode.typed_cache import TypedArtifactCache
-    from ..hir.typed import TypedModule
+    from ..hir.typed_link import TypedUnit
     from ..runtime.bytecode_vm import BytecodeVM
     from ..runtime.environment import Environment
     from ..runtime.objects import OortObject
@@ -153,17 +153,17 @@ class Compiler:
             return None
 
         if self.args.target == "thir":
-            from ..hir import format_typed_module
+            from ..hir.typed_link import format_typed_units
 
             assert isinstance(ast, nodes.ModuleNode)
             try:
-                typed_hir = self._link_typed_entry(ast, input_info)
+                units = self._load_typed_entry(ast, input_info)
             except OortException as e:
                 matched = self.error_handler.input_info_for(e.position) or input_info
                 self.error_handler.add(e, matched)
                 self.error_handler.report(exit_on_error=False, clear=True)
                 raise CompilerError() from None
-            print(format_typed_module(typed_hir))
+            print(format_typed_units(units))
             return None
 
         if self.args.target == "bc":
@@ -271,16 +271,16 @@ class Compiler:
             self.error_handler.report(exit_on_error=False, clear=True)
         return result.host_value
 
-    def _link_typed_core(
+    def _load_typed_entry(
         self,
         ast: nodes.ModuleNode,
-        path: Path | None,
-        entry_dir: Path,
-    ) -> TypedModule:
-        from ..hir.typed_link import link_typed_modules
+        input_info: InputInfo,
+    ) -> tuple[TypedUnit, ...]:
+        from ..hir.typed_link import load_typed_units
 
+        entry_dir = self._entry_dir or input_info.module_dir
         resolve = self._make_typed_resolver(entry_dir)
-        return link_typed_modules(ast, path, resolve)
+        return load_typed_units(ast, input_info.module_path, resolve)
 
     def _make_typed_resolver(self, entry_dir: Path):
         def resolve(spec: str, importer_path: Path | None, position: SourcePosition):
@@ -311,14 +311,11 @@ class Compiler:
         ast: nodes.ModuleNode,
         input_info: InputInfo,
     ) -> TypedProgram:
-        """Lower, compile and link typed modules through v7 artifacts."""
+        """Lower, compile and link typed modules through v8 artifacts."""
 
         from ..bytecode import build_typed_program
-        from ..hir.typed_link import load_typed_units
 
-        entry_dir = self._entry_dir or input_info.module_dir
-        resolve = self._make_typed_resolver(entry_dir)
-        units = load_typed_units(ast, input_info.module_path, resolve)
+        units = self._load_typed_entry(ast, input_info)
         return build_typed_program(units, self._typed_cache())
 
     def _typed_cache(self) -> TypedArtifactCache | None:
@@ -328,17 +325,6 @@ class Compiler:
         from ..bytecode.typed_cache import TypedArtifactCache
 
         return TypedArtifactCache(directory, max_size=getattr(self.args, "cache_max_size", None))
-
-    def _link_typed_entry(
-        self,
-        ast: nodes.ModuleNode,
-        input_info: InputInfo,
-    ) -> TypedModule:
-        return self._link_typed_core(
-            ast,
-            input_info.module_path,
-            self._entry_dir or input_info.module_dir,
-        )
 
     def compile_unit_details(self, input_info: InputInfo) -> CompiledUnit | None:
         """Compile one module and return its AST, dialect and static exports."""
