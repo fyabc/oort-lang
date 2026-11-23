@@ -231,8 +231,9 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   artifact（module_id/export/import 表）；ADT 模块声明表位于文件头；旧读者
   遇到未知 version/opcode/tag 必须报错而不是猜测；破坏既有布局的变更必须
   提升 version；
-- `-t tvm` 走 v7 artifact + loader；`-t thir`/`-t tbc` 仍用 P1a/P1b 的 HIR
-  拍平器，两者共享 typed HIR 语义；
+- `-t tvm` 与 `-t tbc` 共享 v7 artifact + loader 的同一链接结果（tbc 只是
+  反汇编该程序）；`-t thir` 仍用 P1a/P1b 的 HIR 拍平器，作为链接前的调试
+  视图；
 - kind=1 本身不编码跨方言边界；`oort-object → oort-core` 由 B1
   边界（OP 0028）处理，反向仍拒绝；`box`/`unbox`/blame 的稳定 ABI
   尚未定义；

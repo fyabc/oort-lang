@@ -180,11 +180,11 @@ class Compiler:
             return None
 
         if self.args.target == "tbc":
-            from ..bytecode import compile_typed_module, disassemble_typed_program
+            from ..bytecode import disassemble_typed_program
 
             assert isinstance(ast, nodes.ModuleNode)
             try:
-                typed_bytecode = compile_typed_module(self._link_typed_entry(ast, input_info))
+                typed_bytecode = self._compile_typed_entry(ast, input_info)
             except OortException as e:
                 matched = self.error_handler.input_info_for(e.position) or input_info
                 self.error_handler.add(e, matched)

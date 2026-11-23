@@ -2,8 +2,8 @@
 
 > **状态**：设计（2026-11-23）。配合 [OP 0027](../proposals/0027-typed-modules.md)
 > 与 [spec 14](../spec/14-typed-bytecode.md)；P1c-1 的 v7 artifact 与 Python
-> loader 已实现（`bytecode/typed_artifact.py`），P1a/P1b 的 HIR 拍平器仍服务
-> `-t thir`/`-t tbc`。
+> loader 已实现（`bytecode/typed_artifact.py`），`-t tvm`/`-t tbc` 共享该
+> 链接结果；P1a/P1b 的 HIR 拍平器仅保留给 `-t thir`（调试视图）。
 
 ## 1. 目标
 

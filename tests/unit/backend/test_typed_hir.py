@@ -9,6 +9,7 @@ from oort_lang.bytecode import (
     TypedOp,
     compile_module,
     compile_typed_module,
+    disassemble_typed_program,
     read_typed_obc,
     write_typed_obc,
 )
@@ -199,6 +200,44 @@ def test_tbc_target_prints_typed_disassembly(capsys: pytest.CaptureFixture):
     assert "CALL" in captured.out
     assert "JMP_FALSE" in captured.out
     assert "register types:" in captured.out
+
+
+def test_tbc_disassembles_the_program_tvm_runs(
+    tmp_path, run_file, capsys: pytest.CaptureFixture, monkeypatch
+):
+    lib = tmp_path / "lib.ort"
+    lib.write_text(
+        """#lang oort-core
+enum Color { Red, Green }
+def add(a: Int, b: Int) -> Int { a + b }
+def make() -> Color { Green }
+""",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        """#lang oort-core
+enum Shape { Circle }
+from "./lib" import add, make
+print(add(1, 2), make(), Circle)
+""",
+        encoding="utf-8",
+    )
+
+    captured = {}
+    original_run = TypedCodeVM.run
+
+    def capture(self, program):
+        captured["program"] = program
+        return original_run(self, program)
+
+    monkeypatch.setattr(TypedCodeVM, "run", capture)
+    run_file(main, target="tvm")
+    capsys.readouterr()
+
+    expected = disassemble_typed_program(captured["program"])
+    tbc = run_file(main, target="tbc")
+    assert tbc.stdout == expected + "\n"
 
 
 def test_typed_obc_round_trip(tmp_path):
