@@ -107,6 +107,7 @@ nav:
       - OP 0028 object→core 边界: proposals/0028-object-core-boundary.md
       - OP 0029 数值语义: proposals/0029-numeric-semantics.md
       - OP 0030 编译缓存: proposals/0030-compilation-cache.md
+      - OP 0031 core 集合表面: proposals/0031-core-collection-surface.md
   - 设计:
       - 设计索引: design/00-INDEX.md
       - 运行时值表示: design/01-runtime-value-representation.md

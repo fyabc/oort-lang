@@ -52,6 +52,7 @@
 | [0028](0028-object-core-boundary.md) | object → core 跨方言边界 | Proposed（B1 原型已实现） |
 | [0029](0029-numeric-semantics.md) | Int / Float 数值语义 | Accepted（D1–D6 已定） |
 | [0030](0030-compilation-cache.md) | 编译缓存（键、依赖失效、存储与清理） | Proposed（S1 已实现） |
+| [0031](0031-core-collection-surface.md) | `oort-core` 集合表面（成员、下标写入、切片、集合代数） | Draft |
 
 ## 流程
 
