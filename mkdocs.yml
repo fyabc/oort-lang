@@ -106,6 +106,7 @@ nav:
       - OP 0027 类型化模块: proposals/0027-typed-modules.md
       - OP 0028 object→core 边界: proposals/0028-object-core-boundary.md
       - OP 0029 数值语义: proposals/0029-numeric-semantics.md
+      - OP 0030 编译缓存: proposals/0030-compilation-cache.md
   - 设计:
       - 设计索引: design/00-INDEX.md
       - 运行时值表示: design/01-runtime-value-representation.md

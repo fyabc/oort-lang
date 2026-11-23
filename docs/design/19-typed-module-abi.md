@@ -157,7 +157,7 @@ Python loader/linker（`load_typed_units` + `build_typed_program`）：
 
 磁盘路径由 `write_typed_artifact`/`read_typed_artifact` 覆盖。
 
-### 5.1 编译缓存（P1c-3）
+### 5.1 编译缓存（P1c-3，契约见 [OP 0030](../proposals/0030-compilation-cache.md)）
 
 - `--cache-dir DIR` 开启缓存；每个模块 artifact 写成 `DIR/<sha256>.obc`；
 - key 包含源码字节、`module_id`、编译器版本、artifact/ABI 版本；任一变化

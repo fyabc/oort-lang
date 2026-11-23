@@ -232,12 +232,13 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   集合运算、类/接口/泛型/lambda、切片；typed 模块导入在 loader 中解析，
   函数体不进入 kind=1 字节码；
 - kind=1 有两个不再互读的版本：**v6** 为单模块程序，**v8** 为 module
-  artifact（module_id/export/import 表 + 构造器表；v7 为未发布的过渡格式）；ADT 模块声明表位于文件头；旧读者
-  遇到未知 version/opcode/tag 必须报错而不是猜测；破坏既有布局的变更必须
-  提升 version；
+  artifact（module_id/export/import 表 + 构造器表；v7 为未发布的过渡格式）；
+  ADT 模块声明表位于文件头；旧读者遇到未知 version/opcode/tag 必须报错
+  而不是猜测；破坏既有布局的变更必须提升 version；
 - `-t tvm` 与 `-t tbc` 共享 v8 artifact + loader 的同一链接结果（tbc 只是
-  反汇编该程序）；`--cache-dir DIR` 复用磁盘上的 v8 artifact；`-t thir` 仍用 P1a/P1b 的 HIR 拍平器，作为链接前的调试
-  视图；
+  反汇编该程序）；`--cache-dir DIR` 复用磁盘上的 v8 artifact（缓存契约见
+  [OP 0030](../proposals/0030-compilation-cache.md)）；`-t thir` 仍用
+  P1a/P1b 的 HIR 拍平器，作为链接前的调试视图；
 - kind=1 本身不编码跨方言边界；`oort-object → oort-core` 由 B1
   边界（OP 0028）处理，反向仍拒绝；`box`/`unbox`/blame 的稳定 ABI
   尚未定义；
