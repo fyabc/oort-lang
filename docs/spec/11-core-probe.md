@@ -168,7 +168,7 @@ print(match c { Red => "red", Green => "green" })
 | `xs[i] = v` | List 用 Int 下标、Dict 用键；原地替换/插入；越界错误不扩容；Tuple/String/Set 拒绝 |
 | `xs[a:b]` | List/Tuple/String 切片读；省略端点、负索引、Python 夹取；步长显式拒绝 |
 | `x in c`、`x !in c` | List/Tuple 查值、Set/Dict 查键、String 子串 -> Bool |
-| `s | t`、`&`、`-`、`^` | 同一 `Set[T]` 的并/交/差/对称差 -> 新 Set |
+| Set 运算符 | 同一 `Set[T]` 的并/交/差/对称差 -> 新 Set |
 | `len(x)` | String 或集合 -> Int |
 | `this`、`obj.slot`、`obj.method` | 方法内的当前实例、槽读取、方法引用 |
 | `this.slot = value` | 槽赋值；`val` 只读，固定布局拒绝未声明槽 |

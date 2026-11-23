@@ -112,11 +112,11 @@ print({. 1 .} | {. 2 .})    # Operator '|' is not supported in oort-core yet.
 
 | 语言 | 成员 | 下标写入 | 切片 | 集合代数 |
 |---|---|---|---|---|
-| Python | `x in s`（List 值、Dict 键、String 子串） | `s[i] = v`，越界错误 | `s[a:b]`，负索引、夹取 | `| & - ^` |
+| Python | `x in s`（List 值、Dict 键、String 子串） | `s[i] = v`，越界错误 | `s[a:b]`，负索引、夹取 | 并/交/差/对称差 |
 | Rust | `contains`，无 `in` | `IndexMut`，越界 panic；`get_mut` 返回 Option | `&s[a..b]`，越界 panic | `BitAnd/Bitor/Sub` 等 trait |
 | Kotlin | `x in s` | `s[i] = v` | `slice(a..b)`；区间语义显式 | `union/intersect/subtract` |
 | Swift | `contains` | `s[i] = v` | `s[a..<b]`；Range 类型 | `union/intersection/subtracting` |
-| Ruby | `include?` | `s[i] = v`，可扩容 | `s[a, len]` / `s[a..b]` | `| & - ^` |
+| Ruby | `include?` | `s[i] = v`，可扩容 | `s[a, len]` / `s[a..b]` | 并/交/差/对称差 |
 | JavaScript | `x in obj` 检查**键** | 数组可越界扩容 | `slice(a, b)` | `Set` 操作需方法 |
 | Go | 无运算符，手写循环 | 越界 panic | `s[a:b]`，越界 panic | 无内建 |
 
@@ -156,7 +156,7 @@ print({. 1 .} | {. 2 .})    # Operator '|' is not supported in oort-core yet.
 | C1（已实现） | `in`/`!in`：List/Tuple/Set/Dict/String；类型检查；HIR/字节码/VM | 与动态差分一致；类型错误显式 |
 | C2（已实现） | List/Dict 下标写入；负索引/越界；别名与迭代快照测试 | `xs[i] = v`、`d[k] = v` 与动态一致；Tuple/String/Set 拒绝 |
 | C3（已实现） | List/Tuple/String 切片读；Python 夹取；步长显式拒绝 | 差分覆盖空/负/越界切片 |
-| C4（已实现） | Set `| & - ^`；类型一致；结果新集合 | 与动态差分一致；混合元素类型拒绝 |
+| C4（已实现） | Set 并/交/差/对称差；类型一致；结果新集合 | 与动态差分一致；混合元素类型拒绝 |
 
 C1–C4 一次性提升 kind=1 v7 / artifact v9 / linked bundle v2，并补 Python/Rust 差分；缓存按版本自然失效。
 
