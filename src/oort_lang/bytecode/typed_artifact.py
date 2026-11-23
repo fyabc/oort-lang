@@ -53,6 +53,9 @@ if TYPE_CHECKING:
 
 ARTIFACT_VERSION = 8
 ABI_VERSION = 1
+LINKED_KIND = 2
+LINKED_VERSION = 1
+_LINKED_FILENAME = "<linked>"
 
 _EXPORT_CODES = {"function": 1, "adt": 2, "constructor": 3}
 _IMPORT_CODES = {"module": 1, "function": 2, "adt": 3, "constructor": 4}
@@ -740,9 +743,107 @@ def read_typed_artifact(path: str | Path) -> TypedArtifact:
     return artifact
 
 
+# ----------------------------------------------------------------------
+# Linked bundles (kind=2)
+# ----------------------------------------------------------------------
+
+
+def _flat_constructor_refs(program: TypedProgram) -> tuple[ConstructorRef, ...]:
+    return tuple(
+        ConstructorRef(decl.origin, decl.name, constructor.name, constructor.arity)
+        for decl in program.adt_decls
+        for constructor in decl.constructors
+    )
+
+
+def write_linked_bundle(program: TypedProgram, path: str | Path) -> None:
+    """Serialize a linked typed program as a path-free kind=2 bundle."""
+
+    refs = _flat_constructor_refs(program)
+    w = _Writer()
+    w._buf += MAGIC
+    w.u8(LINKED_KIND)
+    w.u8(LINKED_VERSION)
+    w.u16(ABI_VERSION)
+
+    decls = program.adt_decls
+    w.u32(len(decls))
+    for decl in decls:
+        w.string(decl.origin)
+        w.string(decl.name)
+        w.u16(len(decl.constructors))
+        for constructor in decl.constructors:
+            w.string(constructor.name)
+            w.u8(constructor.arity)
+
+    w.u32(len(refs))
+    for ref in refs:
+        w.string(ref.origin)
+        w.string(ref.adt_name)
+        w.string(ref.name)
+        w.u16(ref.arity)
+
+    adt_index = {(decl.origin, decl.name): index for index, decl in enumerate(decls)}
+    w.u32(len(program.functions))
+    for proto in program.functions:
+        _write_proto(w, proto, adt_index, filename=_LINKED_FILENAME)
+    _write_proto(w, program.main, adt_index, filename=_LINKED_FILENAME)
+    Path(path).write_bytes(w.bytes())
+
+
+def read_linked_bundle(path: str | Path) -> TypedProgram:
+    """Read a kind=2 linked bundle and validate its constructor table."""
+
+    data = Path(path).read_bytes()
+    if not data.startswith(MAGIC):
+        raise ObcError("not an OBC file")
+    if len(data) < 5:
+        raise ObcError("truncated OBC header")
+    kind = data[3]
+    version = data[4]
+    if kind != LINKED_KIND:
+        raise ObcError(f"expected linked typed bundle (kind=2), got kind={kind}")
+    if version != LINKED_VERSION:
+        raise ObcError(f"unsupported linked bundle version {version}")
+
+    r = _Reader(data[5:])
+    abi_version = r.u16()
+    if abi_version != ABI_VERSION:
+        raise ObcError(f"unsupported linked bundle ABI version {abi_version}")
+
+    adt_decls: list[AdtDecl] = []
+    for _ in range(r.u32()):
+        origin = r.string()
+        name = r.string()
+        constructors = []
+        for _ in range(r.u16()):
+            constructors.append(AdtConstructor(r.string(), arity=r.u8()))
+        adt_decls.append(AdtDecl(origin, name, tuple(constructors)))
+    decls = tuple(adt_decls)
+
+    table = []
+    for _ in range(r.u32()):
+        table.append(ConstructorRef(r.string(), r.string(), r.string(), r.u16()))
+    expected = tuple(
+        ConstructorRef(decl.origin, decl.name, constructor.name, constructor.arity)
+        for decl in decls
+        for constructor in decl.constructors
+    )
+    if tuple(table) != expected:
+        raise ObcError("linked bundle constructor table does not match its declarations")
+
+    functions = tuple(_read_proto(r, decls) for _ in range(r.u32()))
+    main = _read_proto(r, decls)
+    if r._pos != len(r._data):
+        raise ObcError("trailing bytes in linked bundle")
+    return TypedProgram(main=main, functions=functions, adt_decls=decls)
+
+
 __all__ = [
     "ABI_VERSION",
     "ARTIFACT_VERSION",
+    "LINKED_KIND",
+    "LINKED_VERSION",
     "TypedArtifact",
     "TypedExport",
     "TypedImport",
@@ -751,6 +852,8 @@ __all__ = [
     "build_typed_program",
     "build_typed_program_exports",
     "link_typed_artifacts",
+    "read_linked_bundle",
     "read_typed_artifact",
+    "write_linked_bundle",
     "write_typed_artifact",
 ]

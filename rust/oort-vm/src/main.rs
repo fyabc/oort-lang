@@ -1,8 +1,8 @@
 //! oort-vm: spike register VM consuming `.obc` bytecode (spec 13).
 //!
 //! Usage: oort-vm <file.obc>
-//! Both kind=0 (type-erased) and kind=1 (typed scalar subset) files are
-//! accepted; the kind byte selects the reader and VM.
+//! kind=0 (type-erased), kind=1 (typed scalar subset) and kind=2 (linked
+//! typed bundle) files are accepted; the kind byte selects the reader and VM.
 //! Program `print` output goes to stdout; the final value is reported on stderr
 //! (prefixed `value:`) for differential comparison. Errors exit non-zero.
 
@@ -38,6 +38,10 @@ fn main() -> ExitCode {
         1 => match typed::read_typed_module(&data) {
             Ok(module) => typed::TypedVm::new(module).run_main(),
             Err(e) => Err(format!("typed bytecode error: {e}")),
+        },
+        2 => match typed::read_linked_bundle(&data) {
+            Ok(module) => typed::TypedVm::new(module).run_main(),
+            Err(e) => Err(format!("linked bundle error: {e}")),
         },
         _ => Err(format!("unsupported bytecode kind: {kind}")),
     };

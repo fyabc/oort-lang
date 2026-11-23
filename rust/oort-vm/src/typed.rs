@@ -254,6 +254,78 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
     })
 }
 
+/// Read a linked typed bundle (kind=2): one merged program with a flat
+/// constructor table whose order matches the declaration table.
+pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
+    if data.len() < 5 || &data[0..3] != b"OBC" {
+        return Err("not an Oort bytecode file (bad magic)".into());
+    }
+    let kind = data[3];
+    if kind != 2 {
+        return Err(format!("expected linked typed bundle (kind=2), got kind={kind}"));
+    }
+    let version = data[4];
+    if version != 1 {
+        return Err(format!("unsupported linked bundle version {version}"));
+    }
+    let mut r = Reader::new(&data[5..]);
+    let abi_version = r.u16()?;
+    if abi_version != 1 {
+        return Err(format!("unsupported linked bundle ABI version {abi_version}"));
+    }
+
+    let nadt = r.u32()?;
+    let mut adt_decls = Vec::with_capacity(nadt as usize);
+    for _ in 0..nadt {
+        let origin = r.string()?;
+        let name = r.string()?;
+        let ctor_count = r.u16()?;
+        let mut constructors = Vec::with_capacity(ctor_count as usize);
+        for _ in 0..ctor_count {
+            let ctor_name = r.string()?;
+            let arity = r.u8()?;
+            constructors.push((ctor_name, arity));
+        }
+        adt_decls.push(TypedAdtDecl {
+            origin,
+            name,
+            constructors,
+        });
+    }
+
+    let nctor = r.u32()?;
+    let mut table = Vec::with_capacity(nctor as usize);
+    for _ in 0..nctor {
+        table.push((r.string()?, r.string()?, r.string()?, r.u16()?));
+    }
+    let mut expected = Vec::new();
+    for decl in &adt_decls {
+        for (name, arity) in &decl.constructors {
+            expected.push((
+                decl.origin.clone(),
+                decl.name.clone(),
+                name.clone(),
+                *arity as u16,
+            ));
+        }
+    }
+    if table != expected {
+        return Err("linked bundle constructor table does not match its declarations".into());
+    }
+
+    let nf = r.u32()?;
+    let mut functions = Vec::with_capacity(nf as usize);
+    for _ in 0..nf {
+        functions.push(Rc::new(read_proto(&mut r, &adt_decls)?));
+    }
+    let main = Rc::new(read_proto(&mut r, &adt_decls)?);
+    Ok(TypedModule {
+        functions,
+        main,
+        adt_decls,
+    })
+}
+
 #[derive(Clone)]
 enum TypedValue {
     Unit,

@@ -36,7 +36,9 @@ from .typed_artifact import (
     build_typed_program,
     build_typed_program_exports,
     link_typed_artifacts,
+    read_linked_bundle,
     read_typed_artifact,
+    write_linked_bundle,
     write_typed_artifact,
 )
 from .typed_compile import TypedProgram, TypedProto, compile_typed_module
@@ -83,8 +85,10 @@ __all__ = [
     "encode_asbx",
     "encode_ax",
     "link_typed_artifacts",
+    "read_linked_bundle",
     "read_typed_artifact",
     "read_typed_obc",
+    "write_linked_bundle",
     "write_typed_artifact",
     "write_typed_obc",
 ]

@@ -11,7 +11,9 @@
 - 参考实现：Python `src/oort_lang/bytecode/typed_{opcodes,compile,serialize,vm}.py`，
   Rust `rust/oort-vm/src/typed.rs`；
 - 类型系统与 typed HIR 的研究背景见 [design 15](../design/15-typed-ir.md)；
-- kind=1 与 kind=0 **互斥**：kind=0 读者必须拒绝 kind=1，反之亦然。
+- kind=0、kind=1 与 kind=2 互斥：各自读者必须拒绝其他 kind；
+- kind=2 是 loader 链接后的 typed linked bundle（见 design 19 §3.1），
+  只保存合并声明表、扁平构造器表与 proto，不含 import/export。
 
 ## 2. 文件头与布局
 
@@ -239,7 +241,8 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
 - kind=1 本身不编码跨方言边界；`oort-object → oort-core` 由 B1
   边界（OP 0028）处理，反向仍拒绝；`box`/`unbox`/blame 的稳定 ABI
   尚未定义；
-- 单模块格式版本 `version=6`，module artifact 版本 `version=8`；不兼容变更
+- 单模块格式版本 `version=6`，module artifact 版本 `version=8`，
+  linked bundle `kind=2, version=1`；不兼容变更
   必须提升 version，并保持 kind=1 的独立命名空间。
 
 ## 6. 参考实现入口

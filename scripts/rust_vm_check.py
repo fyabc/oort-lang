@@ -25,14 +25,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from oort_lang.bytecode import compile_module, compile_typed_module, write_typed_obc
+from oort_lang.bytecode import (
+    build_typed_program,
+    compile_module,
+    compile_typed_module,
+    write_linked_bundle,
+    write_typed_obc,
+)
 from oort_lang.bytecode.serialize import write_obc
 from oort_lang.bytecode.typed_vm import TypedCodeVM
 from oort_lang.diagnostics.error_handler import CompilerErrorHandler
 from oort_lang.hir import lower_module, lower_typed_module
+from oort_lang.hir.typed_link import TypedUnit
 from oort_lang.runtime.bytecode_vm import BytecodeVM
 from oort_lang.runtime.interpreter import ASTInterpreter
-from tests.helpers import build_ast
+from oort_lang.semantics.core.prelude import inject_core_prelude
+from oort_lang.source.input_info import FileInputInfo
+from tests.helpers import build_ast, get_compiler
 
 DEFAULT_RUST_BIN = ROOT / "rust" / "target" / "release" / "oort-vm.exe"
 
@@ -355,6 +364,45 @@ print(last_char("Oort"))
 }
 
 
+# Multi-module typed cases: (dependency sources, root source). They exercise
+# v8 artifact linking (imported constructors, same-named ADTs) through kind=2.
+TYPED_MODULE_DIFF_PROGRAMS = {
+    "typed_imported_ctors": (
+        {
+            "lib.ort": """#lang oort-core
+enum Color { Red, Green }
+def make() -> Color { Red }
+""",
+        },
+        """#lang oort-core
+import "./lib"
+from "./lib" import Red, Green, make
+def paint(color: lib.Color) -> Int { match color { Red => 1, Green => 2 } }
+print(paint(make()), paint(Green))
+""",
+    ),
+    "typed_same_named_adts": (
+        {
+            "a.ort": """#lang oort-core
+enum Color { Red }
+def make_a() -> Color { Red }
+def area_a(color: Color) -> Int { match color { Red => 1 } }
+""",
+            "b.ort": """#lang oort-core
+enum Color { Blue }
+def make_b() -> Color { Blue }
+def area_b(color: Color) -> Int { match color { Blue => 2 } }
+""",
+        },
+        """#lang oort-core
+import "./a"
+import "./b"
+print(a.area_a(a.make_a()), b.area_b(b.make_b()))
+""",
+    ),
+}
+
+
 def python_typed_stdout(source: str) -> str:
     typed = lower_typed_module(build_ast(source))
     program = compile_typed_module(typed)
@@ -368,6 +416,50 @@ def python_typed_stdout(source: str) -> str:
 def compile_to_typed_obc(source: str, path: Path) -> None:
     typed = lower_typed_module(build_ast(source))
     write_typed_obc(compile_typed_module(typed), path)
+
+
+def compile_to_linked_bundle(source: str, path: Path) -> None:
+    ast = build_ast(source)
+    module = lower_typed_module(ast)
+    unit = TypedUnit(
+        None,
+        "<string>",
+        ast,
+        module,
+        {function.hir.name for function in module.functions},
+        {constructor.name for decl in module.adt_decls for constructor in decl.constructors},
+        {decl.name for decl in module.adt_decls},
+    )
+    write_linked_bundle(build_typed_program((unit,)), path)
+
+
+def python_program_stdout(program) -> str:
+    interpreter = ASTInterpreter(CompilerErrorHandler())
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf), interpreter.runtime.activate():
+        TypedCodeVM(interpreter).run(program)
+    return buf.getvalue()
+
+
+def compile_files_to_bundle(main_path: Path, out: Path):
+    """Compile a multi-module core entry through the real frontend + linker."""
+
+    compiler = get_compiler("NOT_EXIST -t tvm")
+    compiler._entry_dir = main_path.parent
+    info = FileInputInfo(main_path)
+    compiler.error_handler.register_input(info)
+    dialect = compiler._resolve_dialect(info)
+    assert dialect is not None
+    parser, tokenized = compiler.prepare_parser(info)
+    ast = compiler.build_ast(parser, info, dialect=dialect, tokenized=tokenized)
+    assert ast is not None
+    inject_core_prelude(ast)
+    analyzer = compiler.make_semantic_analyzer(info, dialect)
+    ast = compiler.semantic_analyze(ast, analyzer)
+    assert ast is not None
+    program = compiler._compile_typed_entry(ast, info)
+    write_linked_bundle(program, out)
+    return program
 
 
 def rust_stdout(rust_bin: Path, obc: Path) -> str:
@@ -406,16 +498,37 @@ def differential(rust_bin: Path) -> bool:
 
 
 def typed_differential(rust_bin: Path) -> bool:
-    print("\n== typed differential (kind=1 Rust VM vs Python typed VM, stdout) ==")
+    print("\n== typed differential (kind=2 bundles, Rust vs Python typed VM) ==")
     ok = True
     with tempfile.TemporaryDirectory() as tmp:
         for name, source in TYPED_DIFF_PROGRAMS.items():
             obc = Path(tmp) / f"{name}.obc"
-            compile_to_typed_obc(source, obc)
+            compile_to_linked_bundle(source, obc)
             expected = python_typed_stdout(source)
             try:
                 actual = rust_stdout(rust_bin, obc)
             except RuntimeError as e:
+                print(f"  {name:20s} ERROR: {e}")
+                ok = False
+                continue
+            if actual == expected:
+                print(f"  {name:20s} OK")
+            else:
+                ok = False
+                print(f"  {name:20s} MISMATCH\n    python={expected!r}\n    rust  ={actual!r}")
+
+        for name, (dependencies, main_source) in TYPED_MODULE_DIFF_PROGRAMS.items():
+            module_dir = Path(tmp) / name
+            module_dir.mkdir()
+            for filename, source in dependencies.items():
+                (module_dir / filename).write_text(source, encoding="utf-8")
+            main_path = module_dir / "main.ort"
+            main_path.write_text(main_source, encoding="utf-8")
+            obc = Path(tmp) / f"{name}.obc"
+            try:
+                expected = python_program_stdout(compile_files_to_bundle(main_path, obc))
+                actual = rust_stdout(rust_bin, obc)
+            except (RuntimeError, SystemExit) as e:
                 print(f"  {name:20s} ERROR: {e}")
                 ok = False
                 continue

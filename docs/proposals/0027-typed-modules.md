@@ -110,8 +110,9 @@ artifact 至少记录：
 
 1. **P1c-1（已实现）**：module id/export/import 校验；artifact；Python
    loader/linker；linked program 接入 `-t tvm`；artifact 不含宿主路径。
-2. **P1c-2（进行中）**：导入构造器（v8 构造器表）、导出/导入 ABI hash、
-   B1 多模块链接已实现；待做：导入类型、Rust linked bundle。
+2. **P1c-2（已实现）**：导入构造器（v8 构造器表）、导出/导入 ABI hash、
+   B1 多模块链接、Rust kind=2 linked bundle；namespace 类型导入已可用，
+   from-import 类型别名仍是独立语法决策。
 3. **P1c-3（待做）**：独立编译缓存、Rust 原生 loader、版本兼容策略。
 
 ## 未解决问题

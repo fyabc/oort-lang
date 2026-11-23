@@ -13,8 +13,10 @@ from oort_lang.bytecode import (
     build_typed_program,
     compile_typed_module,
     link_typed_artifacts,
+    read_linked_bundle,
     read_typed_artifact,
     read_typed_obc,
+    write_linked_bundle,
     write_typed_artifact,
     write_typed_obc,
 )
@@ -245,6 +247,36 @@ def test_link_artifacts_rejects_cycle():
 
     with pytest.raises(UnsupportedSyntax, match="Circular typed module import"):
         link_typed_artifacts(a, {"a": a, "b": b})
+
+
+def test_linked_bundle_round_trips_and_runs(tmp_path, capsys):
+    lib = _unit(
+        """#lang oort-core
+enum Color { Blue, Red }
+def make() -> Color { Red }
+""",
+        "lib",
+    )
+    main = _unit(
+        """#lang oort-core
+enum Color { Red }
+print(Red)
+""",
+        "main",
+        imports=(TypedImportRef("lib", "module", "lib"),),
+    )
+    program = build_typed_program((lib, main))
+
+    path = tmp_path / "linked.obc"
+    write_linked_bundle(program, path)
+    loaded = read_linked_bundle(path)
+
+    assert [decl.origin for decl in loaded.adt_decls] == [decl.origin for decl in program.adt_decls]
+    raw = path.read_bytes()
+    assert str(tmp_path).encode() not in raw
+
+    TypedCodeVM(ASTInterpreter(CompilerErrorHandler())).run(loaded)
+    assert capsys.readouterr().out == "Red\n"
 
 
 def test_build_typed_program_links_units_in_order():

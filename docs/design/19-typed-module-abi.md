@@ -94,6 +94,28 @@ proto(main)
 - `build_typed_program` 在链接前把 import 的 `expected_abi_hash` 钉到依赖
   当前导出哈希；loader 在非零时校验，不一致显式拒绝。
 
+### 3.1 Linked bundle（kind=2）
+
+链接后的单程序写成新的 `kind=2`：
+
+```text
+OBC | kind=2 | version=1
+u16 abi_version
+u32 adt_decl_count        # 合并后的声明表
+adt_decl[...]
+u32 constructor_count     # 与声明表扁平顺序一致
+constructor[...]          # origin/adt_name/name/arity
+u32 function_count
+proto[...]
+proto(main)
+```
+
+- 位置表 filename 固定为 `<linked>`，不含宿主路径；
+- 构造器表按声明表扁平顺序排列，`NEW_ADT` 直接使用全局 id；
+- kind=1 仍是模块/单模块格式，kind=2 只表示已完成重定位的链接结果；
+- Rust typed VM 直接消费 kind=2；Python `read_linked_bundle` 会校验构造器表
+  与声明表一致。
+
 ## 4. 符号模型
 
 ### 函数
@@ -140,10 +162,11 @@ B1 边界使用同一 loader：`build_typed_program_exports` 返回链接后的�
 根模块导出函数名，边界只把这些导出绑定到动态环境，不再泄漏依赖模块的
 函数。
 
-Rust：
+Rust（已实现）：
 
-- P1c-2：消费 Python 生成的 linked bundle；
-- P1c-3：原生 module registry + loader；
+- 读取 kind=2 linked bundle，直接交给 typed VM；
+- Python `compile_files_to_bundle` 负责多模块链接与重定位；
+- P1c-3：原生 module registry + loader、独立缓存；
 - 缓存键含源码 hash、编译器版本、ABI 版本。
 
 ## 6. 初始化
@@ -166,7 +189,7 @@ Rust：
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | P1c-1 | module id/export/import 校验、artifact、Python loader、linked program | 已实现（v7） |
-| P1c-2 | 导入构造器/类型、ABI hash、B1 多模块、Rust linked bundle | 进行中（构造器表/导入构造器/ABI hash/B1 多模块已实现，v8） |
+| P1c-2 | 导入构造器/类型、ABI hash、B1 多模块、Rust linked bundle | 已实现（namespace 类型导入；from-import 类型别名规则待定） |
 | P1c-3 | 独立缓存、Rust 原生 loader、兼容策略 | 待做 |
 
 ## 9. 开放问题
@@ -174,7 +197,7 @@ Rust：
 1. module_id 是否应脱离文件路径，改由 manifest 生成？
 2. import/export 是否要显式 `pub`/可见性？
 3. 泛型 ADT 的模块接口如何表示类型参数模板？
-4. linked bundle 是新 `.obc` kind，还是纯内存结构？
+4. ~~linked bundle 是新 `.obc` kind，还是纯内存结构？~~ 已定：`kind=2`。
 5. Rust loader 是否需要与 Python loader 共用 ABI hash 计算？
 6. 顶层副作用/初始化失败如何映射为诊断？
 7. 模块级常量/顶层 val 何时进入 typed 子集？
