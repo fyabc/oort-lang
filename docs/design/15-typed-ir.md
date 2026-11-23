@@ -373,6 +373,10 @@ TypedFunction
   慢）。typed HIR 在 Python 宿主上不带来性能收益——这符合预期，M2 只验证
   语义与类型来源；真正的收益需要 M3 的 typed 字节码与 M4 的未装箱/Rust 值表示。
 
+> **后续（2026-11-23）**：M2 的 typed HIR 解释器（`hir/typed_exec.py`）已删除。
+> `-t tvm` 走 M3 typed 字节码 + P1c-1 模块 artifact，typed HIR 仅作为
+> lowering 中间表示；Rust typed VM 与 Python typed VM 的差分是当前语义门禁。
+
 ### M3 实现状态（2026-11-22，第一切片）
 
 - 新增 typed 字节码：`bytecode/typed_opcodes.py`（独立 opcode 命名空间）、

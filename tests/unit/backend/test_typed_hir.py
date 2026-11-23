@@ -18,7 +18,6 @@ from oort_lang.diagnostics.error_handler import CompilerErrorHandler
 from oort_lang.diagnostics.syntax_errors import UnsupportedSyntax
 from oort_lang.driver.compiler import CompilerError
 from oort_lang.hir import AdtType, ContainerType, IrType, lower_module, lower_typed_module
-from oort_lang.hir.typed_exec import TypedInterpreter
 from oort_lang.hir.typed_link import link_typed_modules
 from oort_lang.runtime.interpreter import ASTInterpreter
 from oort_lang.source.input_info import StringInputInfo
@@ -149,22 +148,6 @@ add(2, 3)
 
     compiler = get_compiler("NOT_EXIST -t tvm")
     assert compiler.run_string(source) == 5
-
-
-def test_typed_bytecode_matches_typed_hir_interpreter(capsys: pytest.CaptureFixture):
-    typed = lower_typed_module(build_ast(FIB))
-    program = compile_typed_module(typed)
-
-    hir_interpreter = ASTInterpreter(CompilerErrorHandler())
-    hir_value = TypedInterpreter(hir_interpreter).run(typed)
-    hir_out = capsys.readouterr().out
-
-    code_interpreter = ASTInterpreter(CompilerErrorHandler())
-    code_value = TypedCodeVM(code_interpreter).run(program)
-    code_out = capsys.readouterr().out
-
-    assert code_out == hir_out
-    assert code_value.host_value == hir_value.host_value
 
 
 def test_typed_bytecode_uses_typed_opcodes():
