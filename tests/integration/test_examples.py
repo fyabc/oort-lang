@@ -68,6 +68,10 @@ EXPECTED_OUTPUTS = {
     "08_core/08_18_typed_adts.ort": "12\n12\n0\n6\ntrue false true\nCircle(2)\n",
     "08_core/08_19_typed_generic_adts.ort": "7\n9\n3 9\n7\n",
     "08_core/08_20_typed_modules.ort": "12 9\ncircle square\n",
+    "08_core/08_21_typed_collection_surface.ort": (
+        "true true true true\n9 3 ort\n[2, 3] (a, true)\n"
+        "{. 1, 2, 3 .} {. 2 .}\n{. 1 .} {. 1, 3 .}\n"
+    ),
     "09_boundary/09_00_object_calls_core.ort": "10\n0.6\n4\n3\n(7, x)\n",
     "09_boundary/09_01_object_calls_nested_core.ort": "10\n",
 }

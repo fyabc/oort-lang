@@ -64,6 +64,7 @@ from .nodes import (
     OpenIterator,
     Return,
     SetItem,
+    Slice,
     StoreGlobal,
     StoreLocal,
     TupleItem,
@@ -224,7 +225,9 @@ def ir_type_tag(ir_type: IrTypeLike) -> int:
 _ARITHMETIC_OPS = {"+", "-", "*", "//", "%"}
 _COMPARISON_OPS = {"<", "<=", ">", ">="}
 _EQUALITY_OPS = {"==", "!="}
-_ALLOWED_BINARY_OPS = _ARITHMETIC_OPS | {"/"} | _COMPARISON_OPS | _EQUALITY_OPS
+_ALLOWED_BINARY_OPS = (
+    _ARITHMETIC_OPS | {"/", "in", "!in", "|", "&", "^", "-"} | _COMPARISON_OPS | _EQUALITY_OPS
+)
 _ALLOWED_UNARY_OPS = {"+", "-", "not"}
 
 
@@ -414,8 +417,11 @@ def _validate_assignment(node: nodes.Assignment) -> None:
         _reject(node, f"augmented assignment {node.op.text!r}")
     if isinstance(node.lhs, nodes.Subscript):
         container_type = _ir_type_for_node(node.lhs.value)
-        if not isinstance(container_type, ContainerType) or container_type.kind != "List":
-            _reject(node, "only List element assignment is supported")
+        if not isinstance(container_type, ContainerType) or container_type.kind not in (
+            "List",
+            "Dict",
+        ):
+            _reject(node, "only List and Dict element assignment is supported")
         _validate_expr(node.lhs.value)
         _validate_expr(node.lhs.index)
         _validate_expr(node.rhs)
@@ -572,6 +578,14 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
         _validate_expr(node.index)
         _ir_type_for_node(node)
         return
+    if isinstance(node, nodes.SliceLiteral):
+        if node.step is not None:
+            _reject(node, "slice steps")
+        if node.start is not None:
+            _validate_expr(node.start)
+        if node.stop is not None:
+            _validate_expr(node.stop)
+        return
     if isinstance(node, nodes.Attribute):
         _ir_type_for_node(node, allow_function=True)
         return
@@ -722,6 +736,14 @@ class _TypedHirLowerer(HirLowerer):
                 self._emit(LoadGlobal(node.position, dst, node.attribute))
                 self._record(dst, _ir_type_for_node(node, allow_function=True), node.position)
                 return dst
+        if isinstance(node, nodes.Subscript) and isinstance(node.index, nodes.SliceLiteral):
+            container = self._require_value(node.value)
+            start = None if node.index.start is None else self._require_value(node.index.start)
+            stop = None if node.index.stop is None else self._require_value(node.index.stop)
+            dst = self._alloc(node.position)
+            self._emit(Slice(node.position, dst, container, start, stop))
+            self._record(dst, _ir_type_for_node(node), node.position)
+            return dst
         if isinstance(node, nodes.Call) and isinstance(node.func, nodes.Name):
             site = self.constructors.get(node.func.id)
             binding = node.func.binding
@@ -1144,6 +1166,42 @@ def _check_binop(function: TypedFunction, instruction: BinOp) -> None:
         if result is not IrType.STRING:
             _invalid(function, instruction, f"+ result {result} != String")
         return
+    if op in ("in", "!in"):
+        if result is not IrType.BOOL:
+            _invalid(function, instruction, f"{op} result {result} != Bool")
+        if isinstance(rhs, ContainerType):
+            if rhs.kind in ("List", "Set", "Dict"):
+                expected = rhs.args[0]
+            elif rhs.kind == "Tuple":
+                if rhs.args and lhs not in rhs.args:
+                    _invalid(function, instruction, f"Tuple membership element {lhs} not in {rhs}")
+                return
+            else:
+                _invalid(function, instruction, f"membership container {rhs} is unsupported")
+            if lhs != expected:
+                _invalid(function, instruction, f"membership element {lhs} != {expected}")
+            return
+        if rhs is IrType.STRING and lhs is IrType.STRING:
+            return
+        _invalid(function, instruction, f"membership container {rhs} is unsupported")
+
+    is_set_operand = (isinstance(lhs, ContainerType) and lhs.kind == "Set") or (
+        isinstance(rhs, ContainerType) and rhs.kind == "Set"
+    )
+    if op in ("|", "&", "^") or (op == "-" and is_set_operand):
+        if not (
+            isinstance(lhs, ContainerType)
+            and lhs.kind == "Set"
+            and isinstance(rhs, ContainerType)
+            and rhs.kind == "Set"
+        ):
+            _invalid(function, instruction, f"{op} requires two Sets, got {lhs} and {rhs}")
+        if lhs.args != rhs.args:
+            _invalid(function, instruction, f"{op} Set element types differ: {lhs} vs {rhs}")
+        if result != lhs:
+            _invalid(function, instruction, f"{op} result {result} != {lhs}")
+        return
+
     if op in _ARITHMETIC_OPS | {"/"}:
         if not (_is_numeric(lhs) and _is_numeric(rhs)):
             _invalid(function, instruction, f"non-numeric operands for {op}")
@@ -1437,13 +1495,43 @@ def validate_typed_module(module: TypedModule) -> None:
                     _invalid(function, instruction, "TupleItem type mismatch")
             elif isinstance(instruction, GetItem):
                 _validate_get_item(function, instruction)
+            elif isinstance(instruction, Slice):
+                container = table[instruction.container]
+                if not isinstance(container, ContainerType) or container.kind not in (
+                    "List",
+                    "Tuple",
+                ):
+                    if container is not IrType.STRING:
+                        _invalid(
+                            function, instruction, f"Slice source {container} is not sliceable"
+                        )
+                for bound in (instruction.start, instruction.stop):
+                    if bound is not None and table[bound] is not IrType.INT:
+                        _invalid(function, instruction, "Slice bound is not Int")
+                result = table[instruction.dst]
+                if container is IrType.STRING:
+                    if result is not IrType.STRING:
+                        _invalid(function, instruction, "String slice result is not String")
+                elif isinstance(container, ContainerType) and container.kind == "List":
+                    if not isinstance(result, ContainerType) or result != container:
+                        _invalid(function, instruction, "List slice result type mismatch")
+                elif isinstance(container, ContainerType) and container.kind == "Tuple":
+                    if not isinstance(result, ContainerType) or result.kind != "Tuple":
+                        _invalid(function, instruction, "Tuple slice result is not a Tuple")
             elif isinstance(instruction, SetItem):
                 container = table[instruction.container]
-                if not isinstance(container, ContainerType) or container.kind != "List":
-                    _invalid(function, instruction, "SetItem target is not a List")
-                if table[instruction.index] is not IrType.INT:
-                    _invalid(function, instruction, "SetItem index is not Int")
-                if table[instruction.src] != container.args[0]:
+                if not isinstance(container, ContainerType) or container.kind not in (
+                    "List",
+                    "Dict",
+                ):
+                    _invalid(function, instruction, "SetItem target is not a List or Dict")
+                expected_index = IrType.INT if container.kind == "List" else container.args[0]
+                expected_value = (
+                    container.args[0] if container.kind == "List" else container.args[1]
+                )
+                if table[instruction.index] != expected_index:
+                    _invalid(function, instruction, "SetItem index type mismatch")
+                if table[instruction.src] != expected_value:
                     _invalid(function, instruction, "SetItem value type mismatch")
             elif isinstance(instruction, OpenIterator):
                 if table[instruction.dst] is not IrType.ITERATOR:

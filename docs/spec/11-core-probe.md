@@ -164,7 +164,11 @@ print(match c { Red => "red", Green => "green" })
 | `a < b`、`<=`、`>`、`>=` | 两个数值或两个 String -> Bool |
 | `a == b`、`!=` | 两个数值、两个 Bool、两个 String、同类型集合、同类型 ADT（结构相等）或兼容类/接口实例（身份相等） -> Bool；`1 == 1.0` 允许 |
 | `[1, 2]`、`(1, true)`、`{: ... :}`、`{. ... .}` | 集合字面量；同质 List/Set/Dict 推断，Tuple 可异构 |
-| `xs[i]` | List/Tuple/String 用 Int，Dict 用键类型；Tuple 字面量下标检查越界 |
+| `xs[i]` | List/Tuple/String 用 Int，Dict 用键类型；Tuple 字面量下标检查越界；负索引从尾部计 |
+| `xs[i] = v` | List 用 Int 下标、Dict 用键；原地替换/插入；越界错误不扩容；Tuple/String/Set 拒绝 |
+| `xs[a:b]` | List/Tuple/String 切片读；省略端点、负索引、Python 夹取；步长显式拒绝 |
+| `x in c`、`x !in c` | List/Tuple 查值、Set/Dict 查键、String 子串 -> Bool |
+| `s | t`、`&`、`-`、`^` | 同一 `Set[T]` 的并/交/差/对称差 -> 新 Set |
 | `len(x)` | String 或集合 -> Int |
 | `this`、`obj.slot`、`obj.method` | 方法内的当前实例、槽读取、方法引用 |
 | `this.slot = value` | 槽赋值；`val` 只读，固定布局拒绝未声明槽 |
@@ -215,7 +219,11 @@ while total > 0 {
   `break value` 与把循环结果当值使用（循环类型为 Unit）均不支持。
 - 集合相等要求同类型（`List[Int]` 对 `List[Int]`）；跨 List/Tuple 或
   元素类型不同显式拒绝。集合大小比较（`<` 等）在 core 中尚未支持。
-- core 集合不可原地修改：下标赋值、切片与 `in` 第一切片均未实现。
+- core 集合现在支持成员测试、List/Dict 下标写入、List/Tuple/String 切片读
+  与 Set 代数（OP 0031）。切片赋值、步长切片、Set 子集比较仍未实现；
+  Tuple 切片只接受整数字面量端点，以便静态确定结果 Tuple 类型。
+- `for` 迭代使用快照；循环内写入容器不影响本次迭代（OP 0013）。
+- Dict 写入插入顺序不是语言保证（spec 09）。
 
 ## 静态类与槽
 
@@ -518,7 +526,6 @@ enum Result[out T, out E] {
 | 扩展方法 | `def C.f` | `Extension methods...` |
 | lambda/嵌套函数 | `do: 1`、函数体里的 `def` | `Lambdas...` / `Nested function definitions...` |
 | null | `null` | `null is not supported...` |
-| 切片 | `xs[1:2]`、`text[1:]` | `Slices are not supported...` |
 | 属性 | `xs.length`、`a.b`（非模块/非类成员） | `Attribute access is only supported on imported modules...` |
 | 空字面量 | 无标注的 `[]`、`{: :}`、`{. .}` | `Cannot infer ...; add a type annotation.` |
 | 异构容器 | `[1, true]`、`{: 1: true :}` | `... have incompatible types` |
@@ -529,7 +536,9 @@ enum Result[out T, out E] {
 | 多目标/增强赋值 | `val a, b = ...`、`x += 1` | 对应诊断 |
 | 默认值/关键字/变长 | `def f(x: Int = 1)`、`f(x = 1)`、`*args` | 对应诊断 |
 | `**` | `2 ** -1` | 结果类型依赖指数，显式拒绝 |
-| 位运算/`in`/`is` | `1 & 2`、`x in xs` | 运算符不支持 |
+| 位运算/`is` | `1 & 2`、`x is y` | 运算符不支持 |
+| 切片步长/切片赋值 | `xs[0:2:1]`、`xs[1:2] = ys` | 对应显式诊断 |
+| Tuple 动态切片端点 | `pair[a:]` | `Tuple slice bounds must be integer literals...` |
 | 跨方言 import | core 导入 object 模块 | `Cannot import a 'oort-object' module...` |
 | native import | `import "math"` | `Native modules are not supported...` |
 | enum/接口类型名 from 导入 | `from "m" import E`、`from "m" import I` | `'E' is a type-only export; use 'm.E' to name the type.` |

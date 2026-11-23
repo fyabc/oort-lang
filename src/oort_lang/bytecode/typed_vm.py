@@ -306,11 +306,29 @@ class TypedCodeVM:
                 registers[c] = OortBool.get_bool_value(valid)
             elif op is TypedOp.SET_ITEM:
                 container = registers[a]
-                if type(container) is not OortList:
-                    raise OortTypeError("Typed SetItem expects a List.", position)
-                if type(registers[b]) is not OortInt:
-                    raise OortTypeError("Typed SetItem index must be Int.", position)
-                container[registers[b]] = registers[c]
+                if type(container) is OortList:
+                    if type(registers[b]) is not OortInt:
+                        raise OortTypeError("Typed SetItem index must be Int.", position)
+                    container[registers[b]] = registers[c]
+                elif type(container) is OortDict:
+                    container[registers[b]] = registers[c]
+                else:
+                    raise OortTypeError("Typed SetItem expects a List or Dict.", position)
+            elif op is TypedOp.CONTAINS:
+                registers[a] = OortBool.get_bool_value(
+                    self._contains(registers[b], registers[c], position)
+                )
+            elif op is TypedOp.SLICE:
+                start = registers[a + 1] if b & 1 else None
+                stop = registers[a + 2] if b & 2 else None
+                registers[c] = self._slice(registers[a], start, stop, position)
+            elif op in (
+                TypedOp.SET_UNION,
+                TypedOp.SET_INTERSECT,
+                TypedOp.SET_DIFFERENCE,
+                TypedOp.SET_SYMMETRIC,
+            ):
+                registers[a] = self._set_operation(op, registers[b], registers[c], position)
             elif op is TypedOp.JMP:
                 pc = bx
                 continue
@@ -574,6 +592,69 @@ class TypedCodeVM:
         if type(value) is OortFloat:
             return value.value
         raise OortTypeError("Typed mixed comparison expects Int or Float.", position)
+
+    def _contains(self, container: Any, value: Any, position: SourcePosition) -> bool:
+        if type(container) is OortList:
+            return any(
+                self.interpreter.values_equal(item, value, position) for item in container.value
+            )
+        if type(container) is OortTuple:
+            return any(
+                self.interpreter.values_equal(item, value, position) for item in container.value
+            )
+        if type(container) is OortSet:
+            return value in container.value
+        if type(container) is OortDict:
+            return value in container.value
+        if type(container) is OortString and type(value) is OortString:
+            return value.value in container.value
+        raise OortTypeError(
+            f"Typed membership is not supported for {getattr(container, 'type', None)}.",
+            position,
+        )
+
+    def _slice(
+        self,
+        container: Any,
+        start: Any,
+        stop: Any,
+        position: SourcePosition,
+    ) -> OortObject:
+        def bound(value: Any) -> int | None:
+            if value is None:
+                return None
+            if type(value) is not OortInt:
+                raise OortTypeError("Typed slice bound must be Int.", position)
+            return value.value
+
+        begin = bound(start)
+        end = bound(stop)
+        if type(container) is OortList:
+            return OortList(container.value[begin:end])
+        if type(container) is OortTuple:
+            return OortTuple(container.value[begin:end])
+        if type(container) is OortString:
+            return OortString(container.value[begin:end])
+        raise OortTypeError("Typed slice source must be List, Tuple or String.", position)
+
+    def _set_operation(
+        self,
+        op: TypedOp,
+        lhs: Any,
+        rhs: Any,
+        position: SourcePosition,
+    ) -> OortSet:
+        if type(lhs) is not OortSet or type(rhs) is not OortSet:
+            raise OortTypeError("Typed set operators require two Sets.", position)
+        if op is TypedOp.SET_UNION:
+            values = lhs.value | rhs.value
+        elif op is TypedOp.SET_INTERSECT:
+            values = lhs.value & rhs.value
+        elif op is TypedOp.SET_DIFFERENCE:
+            values = lhs.value - rhs.value
+        else:
+            values = lhs.value ^ rhs.value
+        return OortSet(values)
 
     def _get_item(self, container: Any, index: Any, position: SourcePosition) -> OortObject:
         if type(container) is OortDict:

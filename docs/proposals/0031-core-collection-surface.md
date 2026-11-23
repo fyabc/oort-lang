@@ -1,6 +1,6 @@
 # OP 0031: `oort-core` 集合表面（成员、下标写入、切片、集合代数）
 
-- **状态**：Draft
+- **状态**：Implemented（C1–C4）
 - **作者**：Oort 设计讨论
 - **创建日期**：2026-11-24
 - **相关**：[OP 0016](0016-equality-protocol.md)、[OP 0013](0013-iterator-protocol.md)、[OP 0017](0017-oort-core-thin-probe.md)、[OP 0022](0022-generic-adts.md)、[spec 11](../spec/11-core-probe.md)、[spec 14](../spec/14-typed-bytecode.md)
@@ -8,7 +8,7 @@
 ## 摘要
 
 把 `oort-object` 已支持、而 `oort-core` 仍显式拒绝的常用集合操作逐步引入
-静态方言：`in`/`not in`、List/Dict 下标写入、List/Tuple/String 切片读、
+静态方言：`in`/`!in`、List/Dict 下标写入、List/Tuple/String 切片读、
 Set 代数（`| & - ^`）。排序与列表拼接等需要“可排序”契约的操作留到后续。
 
 ## 动机
@@ -31,9 +31,9 @@ print({. 1 .} | {. 2 .})    # Operator '|' is not supported in oort-core yet.
 
 ## 设计
 
-### D1：成员测试 `in` / `not in`
+### D1：成员测试 `in` / `!in`
 
-- `x in expr` 返回 `Bool`；`not in` 为取反，不新增求值路径；
+- `x in expr` 返回 `Bool`；`!in` 为取反，不新增求值路径；
 - 支持类型：
 
 | 容器 | 元素/键类型 | 语义 |
@@ -153,13 +153,12 @@ print({. 1 .} | {. 2 .})    # Operator '|' is not supported in oort-core yet.
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| C1 | `in`/`not in`：List/Tuple/Set/Dict/String；类型检查；HIR/字节码/VM | 与动态差分一致；类型错误显式 |
-| C2 | List/Dict 下标写入；负索引/越界；别名与迭代快照测试 | `xs[i] = v`、`d[k] = v` 与动态一致；Tuple/String/Set 拒绝 |
-| C3 | List/Tuple/String 切片读；Python 夹取；步长显式拒绝 | 差分覆盖空/负/越界切片 |
-| C4 | Set `| & - ^`；类型一致；结果新集合 | 与动态差分一致；混合元素类型拒绝 |
+| C1（已实现） | `in`/`!in`：List/Tuple/Set/Dict/String；类型检查；HIR/字节码/VM | 与动态差分一致；类型错误显式 |
+| C2（已实现） | List/Dict 下标写入；负索引/越界；别名与迭代快照测试 | `xs[i] = v`、`d[k] = v` 与动态一致；Tuple/String/Set 拒绝 |
+| C3（已实现） | List/Tuple/String 切片读；Python 夹取；步长显式拒绝 | 差分覆盖空/负/越界切片 |
+| C4（已实现） | Set `| & - ^`；类型一致；结果新集合 | 与动态差分一致；混合元素类型拒绝 |
 
-实现顺序建议：C1 → C2 → C3 → C4，每一步独立提升字节码版本并补 Python/Rust
-差分；缓存版本随之失效。
+C1–C4 一次性提升 kind=1 v7 / artifact v9 / linked bundle v2，并补 Python/Rust 差分；缓存按版本自然失效。
 
 ### 长期（C5+）
 

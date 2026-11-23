@@ -42,6 +42,7 @@ from ..hir.nodes import (
     OpenIterator,
     Return,
     SetItem,
+    Slice,
     StoreGlobal,
     StoreLocal,
     TupleItem,
@@ -275,6 +276,8 @@ class _ProtoBuilder:
                 ),
                 position,
             )
+        elif isinstance(instruction, Slice):
+            self._emit_slice(instruction)
         elif isinstance(instruction, TupleItem):
             self._emit(
                 encode_abc(
@@ -350,6 +353,30 @@ class _ProtoBuilder:
                 position,
             )
 
+    def _emit_slice(self, instruction: Slice) -> None:
+        position = instruction.position
+        container_type = self._register_type(instruction.container, position)
+        base = self._alloc(container_type, position)
+        self._emit(encode_abc(TypedOp.MOVE, base, instruction.container, 0), position)
+        flags = 0
+        for offset, bound in ((1, instruction.start), (2, instruction.stop)):
+            if bound is None:
+                slot = self._alloc(IrType.UNIT, position)
+                self._emit(
+                    encode_abx(TypedOp.LOAD_K, slot, self._constant(None, position)), position
+                )
+            else:
+                bound_type = self._register_type(bound, position)
+                slot = self._alloc(bound_type, position)
+                self._emit(encode_abc(TypedOp.MOVE, slot, bound, 0), position)
+                flags |= 1 << (offset - 1)
+            if slot != base + offset:
+                raise UnsupportedSyntax("Typed slice window is not contiguous.", position)
+        self._emit(
+            encode_abc(TypedOp.SLICE, base, flags, instruction.dst),
+            position,
+        )
+
     def _emit_sequence(
         self, instruction: BuildList | BuildSet | BuildTuple, opcode: TypedOp
     ) -> None:
@@ -424,6 +451,28 @@ class _ProtoBuilder:
         op = instruction.op
         lhs = instruction.lhs
         rhs = instruction.rhs
+
+        if op in ("in", "!in"):
+            self._emit(encode_abc(TypedOp.CONTAINS, instruction.dst, rhs, lhs), position)
+            if op == "!in":
+                self._emit(encode_abc(TypedOp.NOT_B, instruction.dst, instruction.dst, 0), position)
+            return
+
+        set_ops = {
+            "|": TypedOp.SET_UNION,
+            "&": TypedOp.SET_INTERSECT,
+            "-": TypedOp.SET_DIFFERENCE,
+            "^": TypedOp.SET_SYMMETRIC,
+        }
+        lhs_set = isinstance(lhs_type, ContainerType) and lhs_type.kind == "Set"
+        rhs_set = isinstance(rhs_type, ContainerType) and rhs_type.kind == "Set"
+        if op in set_ops and (lhs_set or rhs_set):
+            if not (lhs_set and rhs_set):
+                raise UnsupportedSyntax(
+                    f"Typed bytecode set operator {op!r} requires two Sets.", position
+                )
+            self._emit(encode_abc(set_ops[op], instruction.dst, lhs, rhs), position)
+            return
 
         if (
             isinstance(lhs_type, ContainerType)

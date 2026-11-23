@@ -219,7 +219,7 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
         return Err(format!("expected typed bytecode (kind=1), got kind={kind}"));
     }
     let version = data[4];
-    if version != 6 {
+    if version != 6 && version != 7 {
         return Err(format!("unsupported typed bytecode version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -265,7 +265,7 @@ pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
         return Err(format!("expected linked typed bundle (kind=2), got kind={kind}"));
     }
     let version = data[4];
-    if version != 1 {
+    if version != 2 {
         return Err(format!("unsupported linked bundle version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -374,7 +374,7 @@ pub fn read_typed_artifact(data: &[u8]) -> TResult<TypedArtifact> {
         return Err(format!("expected typed module artifact (kind=1), got kind={kind}"));
     }
     let version = data[4];
-    if version != 8 {
+    if version != 9 {
         return Err(format!("unsupported typed module artifact version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -989,6 +989,166 @@ fn constant_value(constant: &Constant) -> TResult<TypedValue> {
     })
 }
 
+fn typed_contains(container: &TypedValue, value: &TypedValue) -> TResult<bool> {
+    match container {
+        TypedValue::List(items) => {
+            for item in items.borrow().iter() {
+                if typed_equal(item, value)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        TypedValue::Tuple(items) => {
+            for item in items.iter() {
+                if typed_equal(item, value)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        TypedValue::Set(items) => {
+            for item in items.borrow().iter() {
+                if typed_equal(item, value)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        TypedValue::Dict(entries) => {
+            for (key, _) in entries.borrow().iter() {
+                if typed_equal(key, value)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        TypedValue::Str(haystack) => match value {
+            TypedValue::Str(needle) => Ok(haystack.contains(&**needle)),
+            _ => Err("typed String membership expects a String".into()),
+        },
+        _ => Err("typed membership expects a container".into()),
+    }
+}
+
+fn slice_bounds(
+    len: usize,
+    start: Option<&TypedValue>,
+    stop: Option<&TypedValue>,
+) -> TResult<(usize, usize)> {
+    let n = len as i64;
+    let normalize = |value: i64| {
+        let value = if value < 0 { value + n } else { value };
+        value.clamp(0, n) as usize
+    };
+    let begin = match start {
+        Some(value) => normalize(as_int(value)?),
+        None => 0,
+    };
+    let end = match stop {
+        Some(value) => normalize(as_int(value)?),
+        None => len,
+    };
+    Ok((begin, end.max(begin)))
+}
+
+fn typed_slice(
+    container: &TypedValue,
+    start: Option<&TypedValue>,
+    stop: Option<&TypedValue>,
+) -> TResult<TypedValue> {
+    match container {
+        TypedValue::List(items) => {
+            let items = items.borrow();
+            let (begin, end) = slice_bounds(items.len(), start, stop)?;
+            Ok(TypedValue::List(Rc::new(RefCell::new(
+                items[begin..end].to_vec(),
+            ))))
+        }
+        TypedValue::Tuple(items) => {
+            let (begin, end) = slice_bounds(items.len(), start, stop)?;
+            Ok(TypedValue::Tuple(items[begin..end].into()))
+        }
+        TypedValue::Str(text) => {
+            let chars: Vec<char> = text.chars().collect();
+            let (begin, end) = slice_bounds(chars.len(), start, stop)?;
+            let slice: String = chars[begin..end].iter().collect();
+            Ok(TypedValue::Str(Rc::from(slice.as_str())))
+        }
+        _ => Err("typed slice expects List, Tuple or String".into()),
+    }
+}
+
+fn typed_set_op(op: u32, left: &TypedValue, right: &TypedValue) -> TResult<TypedValue> {
+    let (TypedValue::Set(left), TypedValue::Set(right)) = (left, right) else {
+        return Err("typed set operators expect two Sets".into());
+    };
+    let left = left.borrow();
+    let right = right.borrow();
+    let mut result: Vec<TypedValue> = Vec::new();
+    let in_right = |value: &TypedValue| -> TResult<bool> {
+        for item in right.iter() {
+            if typed_equal(item, value)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    };
+    let mut push = |value: &TypedValue| -> TResult<()> {
+        for item in result.iter() {
+            if typed_equal(item, value)? {
+                return Ok(());
+            }
+        }
+        result.push(value.clone());
+        Ok(())
+    };
+    match op {
+        SET_UNION => {
+            for item in left.iter() {
+                push(item)?;
+            }
+            for item in right.iter() {
+                push(item)?;
+            }
+        }
+        SET_INTERSECT => {
+            for item in left.iter() {
+                if in_right(item)? {
+                    push(item)?;
+                }
+            }
+        }
+        SET_DIFFERENCE => {
+            for item in left.iter() {
+                if !in_right(item)? {
+                    push(item)?;
+                }
+            }
+        }
+        _ => {
+            for item in left.iter() {
+                if !in_right(item)? {
+                    push(item)?;
+                }
+            }
+            for item in right.iter() {
+                let mut in_left = false;
+                for existing in left.iter() {
+                    if typed_equal(existing, item)? {
+                        in_left = true;
+                        break;
+                    }
+                }
+                if !in_left {
+                    result.push(item.clone());
+                }
+            }
+        }
+    }
+    Ok(TypedValue::Set(Rc::new(RefCell::new(result))))
+}
+
 fn as_int(value: &TypedValue) -> TResult<i64> {
     match value {
         TypedValue::Int(i) => Ok(*i),
@@ -1298,6 +1458,12 @@ const ADT_FIELD: u32 = 77;
 const EQ_ADT: u32 = 78;
 const NE_ADT: u32 = 79;
 const TUPLE_ITEM: u32 = 80;
+const CONTAINS: u32 = 81;
+const SLICE: u32 = 82;
+const SET_UNION: u32 = 83;
+const SET_INTERSECT: u32 = 84;
+const SET_DIFFERENCE: u32 = 85;
+const SET_SYMMETRIC: u32 = 86;
 
 pub struct TypedVm {
     functions: Vec<ResolvedProto>,
@@ -1725,14 +1891,36 @@ fn execute(
                 registers[c] = TypedValue::Bool(valid);
             }
             SET_ITEM => {
-                let index = as_int(&registers[b])?;
                 if let TypedValue::List(items) = &registers[a] {
+                    let index = as_int(&registers[b])?;
                     let mut items = items.borrow_mut();
                     let position = normalize_index(index, items.len())?;
                     items[position] = registers[c].clone();
+                } else if let TypedValue::Dict(entries) = &registers[a] {
+                    let mut entries = entries.borrow_mut();
+                    dict_set(&mut entries, registers[b].clone(), registers[c].clone())?;
                 } else {
-                    return Err("typed SET_ITEM expects a List".into());
+                    return Err("typed SET_ITEM expects a List or Dict".into());
                 }
+            }
+            CONTAINS => {
+                registers[a] = TypedValue::Bool(typed_contains(&registers[b], &registers[c])?);
+            }
+            SLICE => {
+                let start = if b & 1 != 0 {
+                    Some(&registers[a + 1])
+                } else {
+                    None
+                };
+                let stop = if b & 2 != 0 {
+                    Some(&registers[a + 2])
+                } else {
+                    None
+                };
+                registers[c] = typed_slice(&registers[a], start, stop)?;
+            }
+            SET_UNION | SET_INTERSECT | SET_DIFFERENCE | SET_SYMMETRIC => {
+                registers[a] = typed_set_op(op, &registers[b], &registers[c])?;
             }
             EQ_LIST | NE_LIST | EQ_TUPLE | NE_TUPLE | EQ_SET | NE_SET | EQ_DICT | NE_DICT
             | EQ_ADT | NE_ADT => {

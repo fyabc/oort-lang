@@ -70,6 +70,7 @@
 | [类型化 ADT](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_18_typed_adts.ort) | typed 单态 ADT、构造器、`match`、递归 ADT、相等/打印 |
 | [类型化泛型 ADT](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_19_typed_generic_adts.ort) | typed 泛型 enum、`Option`、构造器实参推断、匹配 |
 | [类型化模块](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_20_typed_modules.ort) | 多模块 typed core、导入构造器、同名 ADT 按 module_id 区分 |
+| [类型化集合表面](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_21_typed_collection_surface.ort) | `in`/`!in`、List/Dict 下标写入、切片读、Set 代数 |
 
 ```bash
 oort examples/08_core/08_01_core_functions.ort

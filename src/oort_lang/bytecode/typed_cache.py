@@ -4,7 +4,7 @@
 
 Entries are content-addressed under a versioned layout:
 
-``<dir>/v8/abi<N>/<ab>/<cd>/<key>.obc``
+``<dir>/v<artifact>/abi<N>/<ab>/<cd>/<key>.obc``
 
 The key covers source bytes, module id, compiler version, artifact/ABI
 versions, codegen options and the interface hashes of direct dependencies.
@@ -72,7 +72,7 @@ class TypedArtifactCache:
         self.directory = Path(directory)
         self.max_size = max_size
         self.directory.mkdir(parents=True, exist_ok=True)
-        self._version_dir = self.directory / "v8" / f"abi{ABI_VERSION}"
+        self._version_dir = self.directory / f"v{ARTIFACT_VERSION}" / f"abi{ABI_VERSION}"
         self._tmp_dir = self.directory / "tmp"
         self._lock_dir = self.directory / "locks"
 

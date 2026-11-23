@@ -64,6 +64,8 @@ ModuleResolver = Callable[[str, Path, SourcePosition], CoreModuleInfo | None]
 _ARITHMETIC = frozenset({"+", "-", "*", "//", "%"})
 _ORDERING = frozenset({"<", "<=", ">", ">="})
 _EQUALITY = frozenset({"==", "!="})
+_MEMBERSHIP = frozenset({"in", "!in"})
+_SET_OPERATORS = frozenset({"|", "&", "-", "^"})
 _RESERVED_TYPE_NAMES = frozenset(
     {"Int", "Float", "Bool", "String", "Unit", "List", "Set", "Dict", "Tuple", "_"}
 )
@@ -689,6 +691,9 @@ class CoreTypeChecker(ASTVisitor[Type]):
             )
         if isinstance(node.lhs, nodes.Attribute):
             self._check_slot_assignment(node)
+            return UNIT
+        if isinstance(node.lhs, nodes.Subscript):
+            self._check_subscript_assignment(node)
             return UNIT
         if not isinstance(node.lhs, nodes.Name):
             return self._unsupported(
@@ -2152,6 +2157,14 @@ class CoreTypeChecker(ASTVisitor[Type]):
             right_type = UNKNOWN
         operator = node.op.text
 
+        if operator in _MEMBERSHIP:
+            return self._check_membership(node, left_type, right_type)
+        if operator in _SET_OPERATORS:
+            if operator == "-" and not (
+                isinstance(left_type, SetType) or isinstance(right_type, SetType)
+            ):
+                return self._check_arithmetic(node, left_type, right_type)
+            return self._check_set_operator(node, left_type, right_type)
         if operator in _ARITHMETIC or operator == "/":
             return self._check_arithmetic(node, left_type, right_type)
         if operator in _ORDERING:
@@ -2165,6 +2178,86 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 "type depends on the exponent.",
             )
         return self._unsupported(node, f"Operator '{operator}' is not supported in oort-core yet.")
+
+    def _check_membership(self, node: nodes.BinaryExpr, element: Type, container: Type) -> Type:
+        if isinstance(element, UnknownType) or isinstance(container, UnknownType):
+            return self._record(node, BOOL)
+        if isinstance(container, ListType):
+            self.expect(container.element, element, node.lhs)
+            return self._record(node, BOOL)
+        if isinstance(container, SetType):
+            self.expect(container.element, element, node.lhs)
+            return self._record(node, BOOL)
+        if isinstance(container, DictType):
+            self.expect(container.key, element, node.lhs)
+            return self._record(node, BOOL)
+        if isinstance(container, TupleType):
+            if container.elements and not any(
+                is_assignable(candidate, element) for candidate in container.elements
+            ):
+                self._error(
+                    f"Operator '{node.op.text}' requires the element type to match "
+                    f"a Tuple element, got {describe_type(element)} for "
+                    f"{describe_type(container)}.",
+                    node.lhs.position,
+                )
+            return self._record(node, BOOL)
+        if container == STRING:
+            self.expect(STRING, element, node.lhs)
+            return self._record(node, BOOL)
+        self._error(
+            f"Operator '{node.op.text}' requires a List, Tuple, Set, Dict or String "
+            f"container, got {describe_type(container)}.",
+            node.rhs.position,
+        )
+        return self._record(node, UNKNOWN)
+
+    def _check_set_operator(self, node: nodes.BinaryExpr, left: Type, right: Type) -> Type:
+        if isinstance(left, UnknownType) or isinstance(right, UnknownType):
+            return self._record(node, UNKNOWN)
+        if not isinstance(left, SetType) or not isinstance(right, SetType):
+            self._error(
+                f"Operator '{node.op.text}' requires two Sets, got "
+                f"{describe_type(left)} and {describe_type(right)}.",
+                node.position,
+            )
+            return self._record(node, UNKNOWN)
+        if left.element != right.element:
+            self._error(
+                f"Operator '{node.op.text}' requires Sets with the same element type, "
+                f"got {describe_type(left)} and {describe_type(right)}.",
+                node.position,
+            )
+            return self._record(node, UNKNOWN)
+        return self._record(node, SetType(left.element))
+
+    def _check_subscript_assignment(self, node: nodes.Assignment) -> None:
+        target = node.lhs
+        assert isinstance(target, nodes.Subscript)
+        if isinstance(target.index, nodes.SliceLiteral):
+            self._error("Slice assignment is not supported in oort-core yet.", node.position)
+            node.rhs.accept(self)
+            return
+        container = target.value.accept(self)
+        if isinstance(container, UnknownType):
+            target.index.accept(self)
+            node.rhs.accept(self)
+            return
+        if isinstance(container, ListType):
+            self._check_expr(target.index, INT)
+            self._check_expr(node.rhs, container.element)
+            return
+        if isinstance(container, DictType):
+            self._check_expr(target.index, container.key)
+            self._check_expr(node.rhs, container.value)
+            return
+        self._error(
+            f"Only List and Dict elements can be assigned in oort-core, got "
+            f"{describe_type(container)}.",
+            target.position,
+        )
+        target.index.accept(self)
+        node.rhs.accept(self)
 
     def _check_arithmetic(self, node: nodes.BinaryExpr, left: Type, right: Type) -> Type:
         operator = node.op.text
@@ -2991,7 +3084,7 @@ class CoreTypeChecker(ASTVisitor[Type]):
 
     def visit_subscript(self, node: nodes.Subscript) -> Type:
         if isinstance(node.index, nodes.SliceLiteral):
-            return self._unsupported(node, "Slices are not supported in oort-core yet.")
+            return self._check_slice(node, node.value.accept(self))
 
         value_type = node.value.accept(self)
         if isinstance(value_type, UnknownType):
@@ -3042,7 +3135,62 @@ class CoreTypeChecker(ASTVisitor[Type]):
         return self._record(node, UNKNOWN)
 
     def visit_slice_literal(self, node: nodes.SliceLiteral) -> Type:
-        return self._unsupported(node, "Slices are not supported in oort-core yet.")
+        self._error("A Slice is only valid as a subscript index in oort-core.", node.position)
+        return self._record(node, UNKNOWN)
+
+    def _check_slice(self, node: nodes.Subscript, container: Type) -> Type:
+        index = node.index
+        assert isinstance(index, nodes.SliceLiteral)
+        if isinstance(container, UnknownType):
+            if index.start is not None:
+                index.start.accept(self)
+            if index.stop is not None:
+                index.stop.accept(self)
+            if index.step is not None:
+                index.step.accept(self)
+            return self._record(node, UNKNOWN)
+        if index.step is not None:
+            self._error("Slice steps are not supported in oort-core yet.", index.step.position)
+            if index.start is not None:
+                index.start.accept(self)
+            if index.stop is not None:
+                index.stop.accept(self)
+            return self._record(node, UNKNOWN)
+        if index.start is not None:
+            self._check_expr(index.start, INT)
+        if index.stop is not None:
+            self._check_expr(index.stop, INT)
+
+        if isinstance(container, ListType):
+            return self._record(node, ListType(container.element))
+        if container == STRING:
+            return self._record(node, STRING)
+        if isinstance(container, TupleType):
+            bounds: list[int | None] = []
+            for bound in (index.start, index.stop):
+                if bound is None:
+                    bounds.append(None)
+                elif isinstance(bound, nodes.IntConstant):
+                    value = bound.value
+                    if isinstance(value, bool) or not isinstance(value, int):
+                        self._error("Tuple slice bound is not an integer literal.", bound.position)
+                        return self._record(node, UNKNOWN)
+                    bounds.append(value)
+                else:
+                    self._error(
+                        "Tuple slice bounds must be integer literals in oort-core yet.",
+                        bound.position,
+                    )
+                    return self._record(node, UNKNOWN)
+            start, stop = bounds
+            begin, end, _ = slice(start, stop).indices(len(container.elements))
+            return self._record(node, TupleType(container.elements[begin:end]))
+        self._error(
+            f"Type {describe_type(container)} is not sliceable in oort-core; "
+            "only List, Tuple and String are supported.",
+            node.position,
+        )
+        return self._record(node, UNKNOWN)
 
     def visit_list_literal(self, node: nodes.ListLiteral) -> Type:
         return self._check_collection_literal(node, UNKNOWN)

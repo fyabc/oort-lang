@@ -363,11 +363,42 @@ print(total([1, 2, 3, 4]))
 print(tuple_total((5, 6, 7)))
 print(last_char("Oort"))
 """,
+    "typed_collection_surface": """#lang oort-core
+
+def adjust() -> Int {
+    var xs: List[Int] = [1, 2]
+    var alias: List[Int] = xs
+    xs[0] = 9
+    alias[0]
+}
+
+def mapping() -> Int {
+    var d: Dict[String, Int] = {: "a": 1 :}
+    d["b"] = 2
+    d["a"] + d["b"]
+}
+
+def snapshot() -> Int {
+    var xs: List[Int] = [1, 2]
+    var sum: Int = 0
+    for x in xs { xs[0] = 99; sum = sum + x }
+    sum
+}
+
+print(2 in [1, 2], 3 !in [1, 2], "bc" in "abcd", "a" in {: "a": 1 :})
+print(2 in {. 1, 2 .}, 2 in (1, 2))
+print(adjust(), mapping(), snapshot())
+print([1, 2, 3, 4][1:3], [1, 2, 3, 4][-2:], [1, 2, 3, 4][:2], [1, 2, 3, 4][3:1])
+print("abcd"[1:3], "abcd"[-2:])
+print((1, "a", true)[1:])
+print({. 1, 2 .} | {. 2, 3 .}, {. 1, 2 .} & {. 2, 3 .})
+print({. 1, 2 .} - {. 2 .}, {. 1, 2 .} ^ {. 2, 3 .})
+""",
 }
 
 
 # Multi-module typed cases: (dependency sources, root source). They exercise
-# v8 artifact linking (imported constructors, same-named ADTs) through kind=2.
+# v9 artifact linking (imported constructors, same-named ADTs) through kind=2.
 TYPED_MODULE_DIFF_PROGRAMS = {
     "typed_imported_ctors": (
         {
@@ -470,7 +501,7 @@ def compile_files_to_bundle(main_path: Path, out: Path):
 
 
 def compile_files_to_artifacts(main_path: Path, out_dir: Path):
-    """Write one v8 artifact per module; return (root_path, dependency_paths)."""
+    """Write one v9 artifact per module; return (root_path, dependency_paths)."""
 
     compiler, ast, _info = _frontend(main_path)
     resolve = compiler._make_typed_resolver(main_path.parent)

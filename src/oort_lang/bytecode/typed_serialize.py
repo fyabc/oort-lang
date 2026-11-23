@@ -2,7 +2,7 @@
 
 """Serialization of typed bytecode (``.obc`` kind=1, design 15).
 
-Version 6 stores a module-level ADT declaration table plus a per-proto type
+Version 7 stores a module-level ADT declaration table plus a per-proto type
 table: register/param/return types are type-table indices, composite types
 reference earlier entries, and ADT types reference module declarations. The
 table only describes static types; values remain runtime values.
@@ -28,7 +28,7 @@ from .serialize import MAGIC, ObcError, _read_constant, _Reader, _write_constant
 from .typed_compile import TypedProgram, TypedProto
 
 KIND_TYPED = 1
-VERSION = 6
+VERSION = 7
 
 _SCALAR_BY_TAG = {
     1: IrType.INT,

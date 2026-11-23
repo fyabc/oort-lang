@@ -96,6 +96,12 @@ class TypedOp(IntEnum):
     EQ_ADT = 78
     NE_ADT = 79
     TUPLE_ITEM = 80
+    CONTAINS = 81
+    SLICE = 82
+    SET_UNION = 83
+    SET_INTERSECT = 84
+    SET_DIFFERENCE = 85
+    SET_SYMMETRIC = 86
 
 
 # ABC: [op:8][A:8][B:8][C:8]

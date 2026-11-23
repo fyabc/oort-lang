@@ -459,7 +459,6 @@ class TestCoreRejections:
                 "val f = do: 1\n",
                 "Lambdas without an explicit parameter list are not supported",
             ),
-            ("print([1][0:1])\n", "Slices are not supported"),
             ("print([1].length)\n", "Attribute access is only supported on imported modules"),
         ],
     )

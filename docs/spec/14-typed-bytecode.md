@@ -12,14 +12,14 @@
   Rust `rust/oort-vm/src/typed.rs`；
 - 类型系统与 typed HIR 的研究背景见 [design 15](../design/15-typed-ir.md)；
 - kind=0、kind=1 与 kind=2 互斥：各自读者必须拒绝其他 kind；
-- kind=2 是 loader 链接后的 typed linked bundle（见 design 19 §3.1），
+- kind=2 是 loader 链接后的 typed linked bundle（v2，见 design 19 §3.1），
   只保存合并声明表、扁平构造器表与 proto，不含 import/export。
 
 ## 2. 文件头与布局
 
 ```text
-magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=6)
-# v6 单模块布局；v8 module artifact 的头部（module_id/export/import/
+magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=7)
+# v7 单模块布局；v9 module artifact 的头部（module_id/export/import/
 # constructor 表）见 design 19
 u32 adt_decl_count
 adt_decl[adt_decl_count]:
@@ -143,11 +143,15 @@ ABx: [op:8][A:8][Bx:16]
 | 70 | `NEW_DICT` | ABC | A=窗口基址, B=条目数, C=目标 | 构造 Dict；窗口为 `key,value` 交替的 `2*B` 个寄存器 |
 | 71/72 | `EQ_SET` / `NE_SET` | ABC | A=目标, B=左, C=右 | Set 深相等/不等（顺序无关）→ Bool |
 | 73/74 | `EQ_DICT` / `NE_DICT` | ABC | 同上 | Dict 深相等/不等（键查找 + 值比较）→ Bool |
-| 75 | `NEW_ADT` | ABC | A=payload 窗口基址, B=构造器 ID, C=目标 | 构造 ADT；v6 中 B 为声明表扁平 id，v8 artifact 中为构造器表下标（loader 回填为全局 id）；payload 数由声明 arity 决定 |
+| 75 | `NEW_ADT` | ABC | A=payload 窗口基址, B=构造器 ID, C=目标 | 构造 ADT；v7 中 B 为声明表扁平 id，v9 artifact 中为构造器表下标（loader 回填为全局 id）；payload 数由声明 arity 决定 |
 | 76 | `ADT_TAG` | ABC | A=目标 Int, B=ADT 值, C=0 | 返回构造器在声明内的索引 |
 | 77 | `ADT_FIELD` | ABC | A=目标, B=ADT 值, C=字段索引 | 读取 payload 字段 |
 | 78/79 | `EQ_ADT` / `NE_ADT` | ABC | A=目标, B=左, C=右 | ADT 名义 + 变体 + payload 深相等/不等 → Bool |
 | 80 | `TUPLE_ITEM` | ABC | A=目标, B=Tuple, C=索引 | 静态索引读取 Tuple 元素（支持异构 Tuple） |
+| 81 | `CONTAINS` | ABC | A=目标 Bool, B=容器, C=被查值 | List/Tuple 值相等、Set/Dict 键相等、String 子串 |
+| 82 | `SLICE` | ABC | A=三槽窗口基址 `[容器, start, stop]`, B=flags（1=有 start,2=有 stop）, C=目标 | 切片读；缺省槽为 Unit，步长不在指令中 |
+| 83/84 | `SET_UNION` / `SET_INTERSECT` | ABC | A=目标, B=左, C=右 | Set 并/交，键相等去重 → 新 Set |
+| 85/86 | `SET_DIFFERENCE` / `SET_SYMMETRIC` | ABC | 同上 | Set 差/对称差 → 新 Set |
 
 ### 3.2 调用约定
 
@@ -212,7 +216,7 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
 - 除零、类型守卫失败、未知全局/函数索引、未知操作码都必须显式报错，禁止静默
   执行；
 - `DEF_FUN` 的绑定可在主函数执行时发生；实现可以预绑定全部函数，语义等价；
-- v6 单模块文件不编码 import；v8 module artifact 用文件头的 import/export
+- v7 单模块文件不编码 import；v9 module artifact 用文件头的 import/export
   表与构造器表描述模块边，但函数体仍没有 import opcode——loader 在加载时完成链接；
 - kind=1 **没有全局存储**（无顶层变量、无 `STORE_G`），因此实现可以在加载时
   预解析 `LOAD_G` 并缓存；若未来版本加入全局存储，写入时必须使缓存失效
@@ -225,25 +229,27 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   直接调用、`if`/`while`/`for`/早返回、String 拼接/比较/`len`、List/Tuple/Set/
   Dict 字面量、List/Tuple/String/Dict 下标读取、`len`、深相等、
   List/Tuple（元素齐次）/Set/Dict/String 的 `for` 迭代；
+- 集合表面（OP 0031）：`in`/`!in`、List/Dict 下标写入、List/Tuple/String
+  切片读（步长拒绝）、Set `| & - ^`；
 - 支持单态与泛型 ADT（含 prelude `Option`）；类型参数进入类型表并在运行时
   作为 ADT 实例身份保留；match 支持 ADT/Int/Float/Bool/String/Tuple
   scrutinee，构造器/通配/变量/守卫/字面量/Tuple/或模式与嵌套组合；
-- 无集合原地修改（`SET_ITEM` 预留；核心检查器尚未允许 `xs[i] = v`）、`in`/
-  集合运算、类/接口/泛型/lambda、切片；typed 模块导入在 loader 中解析，
+- 无切片赋值/步长切片、Set 子集比较、列表拼接/排序；类/接口/泛型/
+  lambda 仍拒绝；typed 模块导入在 loader 中解析，
   函数体不进入 kind=1 字节码；
-- kind=1 有两个不再互读的版本：**v6** 为单模块程序，**v8** 为 module
-  artifact（module_id/export/import 表 + 构造器表；v7 为未发布的过渡格式）；
+- kind=1 有两个不再互读的版本：**v7** 为单模块程序，**v9** 为 module
+  artifact（module_id/export/import 表 + 构造器表；v6/v8 为历史格式）；
   ADT 模块声明表位于文件头；旧读者遇到未知 version/opcode/tag 必须报错
   而不是猜测；破坏既有布局的变更必须提升 version；
-- `-t tvm` 与 `-t tbc` 共享 v8 artifact + loader 的同一链接结果（tbc 只是
-  反汇编该程序）；`--cache-dir DIR`/`OORT_CACHE_DIR` 复用磁盘上的 v8 artifact，`--no-cache` 关闭，`--cache-max-size` 限制容量（缓存契约见
+- `-t tvm` 与 `-t tbc` 共享 v9 artifact + loader 的同一链接结果（tbc 只是
+  反汇编该程序）；`--cache-dir DIR`/`OORT_CACHE_DIR` 复用磁盘上的 v9 artifact，`--no-cache` 关闭，`--cache-max-size` 限制容量（缓存契约见
   [OP 0030](../proposals/0030-compilation-cache.md)）；`-t thir` 仍用
   P1a/P1b 的 HIR 拍平器，作为链接前的调试视图；
 - kind=1 本身不编码跨方言边界；`oort-object → oort-core` 由 B1
   边界（OP 0028）处理，反向仍拒绝；`box`/`unbox`/blame 的稳定 ABI
   尚未定义；
-- 单模块格式版本 `version=6`，module artifact 版本 `version=8`，
-  linked bundle `kind=2, version=1`；不兼容变更
+- 单模块格式版本 `version=7`，module artifact 版本 `version=9`，
+  linked bundle `kind=2, version=2`；不兼容变更
   必须提升 version，并保持 kind=1 的独立命名空间。
 
 ## 6. 参考实现入口
@@ -252,5 +258,5 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
 |---|---|
 | Python | `bytecode/typed_compile.py`、`typed_artifact.py`、`typed_vm.py`、`typed_serialize.py` |
 | CLI | `-t tbc`（反汇编）、`-t tvm`（执行） |
-| Rust | `rust/oort-vm/src/typed.rs`；`oort-vm <file.obc>` 按 kind 分派；`oort-vm --link <root.obc> <dep.obc>...` 原生链接 v8 artifact |
+| Rust | `rust/oort-vm/src/typed.rs`；`oort-vm <file.obc>` 按 kind 分派；`oort-vm --link <root.obc> <dep.obc>...` 原生链接 v9 artifact |
 | 差分 | `scripts/rust_vm_check.py --diff-only`（含 typed 程序） |
