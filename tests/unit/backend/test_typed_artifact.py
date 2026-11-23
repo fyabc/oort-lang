@@ -312,19 +312,57 @@ def test_artifact_cache_hits_and_rebuilds_dependents(tmp_path, monkeypatch):
 
     build_typed_program((lib, main), cache)
     assert set(calls) == {"lib", "main"}
-    assert len(list((tmp_path / "cache").glob("*.obc"))) == 2
+    assert len(list((tmp_path / "cache").rglob("*.obc"))) == 2
 
     calls.clear()
     build_typed_program((lib, main), cache)
     assert calls == []
 
-    changed_lib = _path_unit(
+    changed_impl = _path_unit(
+        tmp_path,
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { b + a }\n",
+        "lib",
+    )
+    build_typed_program((changed_impl, main), cache)
+    assert set(calls) == {"lib"}
+
+    calls.clear()
+    changed_api = _path_unit(
         tmp_path,
         "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\ndef extra() -> Int { 1 }\n",
         "lib",
     )
-    build_typed_program((changed_lib, main), cache)
+    build_typed_program((changed_api, main), cache)
     assert set(calls) == {"lib", "main"}
+
+
+def test_artifact_cache_layout_stats_clean_and_corruption(tmp_path):
+    lib = _path_unit(
+        tmp_path,
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",
+        "lib",
+    )
+    main = _path_unit(
+        tmp_path,
+        "#lang oort-core\nprint(1)\n",
+        "main",
+        imports=(TypedImportRef("lib", "module", "lib"),),
+    )
+    cache = TypedArtifactCache(tmp_path / "cache")
+    build_typed_program((lib, main), cache)
+
+    entries = sorted((tmp_path / "cache" / "v8" / "abi1").rglob("*.obc"))
+    assert len(entries) == 2
+    stats = cache.stats()
+    assert stats.entries == 2
+    assert stats.size_bytes > 0
+
+    entries[0].write_bytes(b"")
+    build_typed_program((lib, main), cache)
+    assert cache.stats().entries == 2
+
+    assert cache.clean() == 2
+    assert cache.stats().entries == 0
 
 
 def test_cli_cache_dir_produces_reusable_artifacts(tmp_path, capsys):
@@ -347,7 +385,7 @@ def test_cli_cache_dir_produces_reusable_artifacts(tmp_path, capsys):
         outputs.append(capsys.readouterr().out)
 
     assert outputs == ["5\n", "5\n"]
-    assert len(list(cache_dir.glob("*.obc"))) == 2
+    assert len(list(cache_dir.rglob("*.obc"))) == 2
 
 
 def test_build_typed_program_links_units_in_order():

@@ -72,8 +72,19 @@ def get_main_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help=(
             "Enable the typed artifact cache in DIR.\n"
-            "Entries are keyed by source, module id, compiler and ABI versions."
+            "Entries are keyed by source, module id, compiler, ABI versions\n"
+            "and direct dependency interface hashes."
         ),
+    )
+    parser.add_argument(
+        "--cache-clean",
+        action="store_true",
+        help="Remove cached typed artifacts for the current schema version (requires --cache-dir).",
+    )
+    parser.add_argument(
+        "--cache-stats",
+        action="store_true",
+        help="Print typed artifact cache entries and size to stderr (requires --cache-dir).",
     )
     parser.add_argument(
         "-I",

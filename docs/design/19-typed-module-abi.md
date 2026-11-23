@@ -159,13 +159,13 @@ Python loader/linker（`load_typed_units` + `build_typed_program`）：
 
 ### 5.1 编译缓存（P1c-3，契约见 [OP 0030](../proposals/0030-compilation-cache.md)）
 
-- `--cache-dir DIR` 开启缓存；每个模块 artifact 写成 `DIR/<sha256>.obc`；
-- key 包含源码字节、`module_id`、编译器版本、artifact/ABI 版本；任一变化
-  都会 miss；
-- 缓存命中仍需与当前依赖的导出哈希对齐：`build_typed_artifacts` 重新钉
-  import 哈希，发现过期就重建该模块（并继续向上传播）；
-- namespace import 也钉整个依赖模块的 `module_abi_hash`，因此任何一个导出
-  变化都会使依赖者失效；
+- `--cache-dir DIR` 开启缓存；布局为
+  `DIR/v8/abi<N>/<ab>/<cd>/<sha256>.obc`，版本化且内容寻址；
+- key 包含源码字节、`module_id`、编译器版本、artifact/ABI 版本、代码生成
+  选项以及直接依赖的接口哈希；依赖实现变化不会使依赖者 miss，接口变化会
+  直接 miss；
+- 命中后仍防御性校验 import 哈希；损坏/截断条目按 miss 处理并覆盖；
+- `--cache-stats` 输出条目数与大小，`--cache-clean` 清理当前版本目录；
 - 解析/类型检查仍每次执行；缓存只跳过 lowering 与字节码编译。
 
 B1 边界使用同一 loader：`build_typed_program_exports` 返回链接后的程序与

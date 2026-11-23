@@ -295,6 +295,33 @@ def test_vm_module_path_option(monkeypatch, capsys, tmp_path):
     assert capsys.readouterr().out == "11 6\n"
 
 
+def test_typed_cache_stats_and_clean(monkeypatch, capsys, tmp_path):
+    (tmp_path / "lib.ort").write_text(
+        "#lang oort-core\ndef add(a: Int, b: Int) -> Int { a + b }\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.ort"
+    main.write_text(
+        '#lang oort-core\nfrom "./lib" import add\nprint(add(2, 3))\n',
+        encoding="utf-8",
+    )
+    cache_dir = tmp_path / "cache"
+
+    assert _run_cli(monkeypatch, ["-t", "tvm", "--cache-dir", str(cache_dir), str(main)]) == 0
+    assert capsys.readouterr().out == "5\n"
+
+    assert _run_cli(monkeypatch, ["--cache-dir", str(cache_dir), "--cache-stats"]) == 0
+    assert "cache: 2 entries" in capsys.readouterr().err
+
+    assert _run_cli(monkeypatch, ["--cache-dir", str(cache_dir), "--cache-clean"]) == 0
+    assert "cache: removed 2 file(s)" in capsys.readouterr().err
+    assert not list(cache_dir.rglob("*.obc"))
+
+
+def test_cache_maintenance_requires_cache_dir(monkeypatch):
+    assert _run_cli(monkeypatch, ["--cache-stats"]) != 0
+
+
 def test_import_failure_exits_nonzero(monkeypatch, caplog, tmp_path):
     main = tmp_path / "main.ort"
     main.write_text('import "./missing"\n', encoding="utf-8")

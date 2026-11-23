@@ -14,6 +14,24 @@ def main():
 
     setup_logging(level=args.logging_level, rich_logging=not args.plain)
 
+    if args.cache_clean or args.cache_stats:
+        if not args.cache_dir:
+            parser.error("--cache-clean/--cache-stats require --cache-dir")
+        from ..bytecode.typed_cache import TypedArtifactCache
+
+        cache = TypedArtifactCache(args.cache_dir)
+        if args.cache_clean:
+            removed = cache.clean()
+            print(f"cache: removed {removed} file(s) from {cache.directory}", file=sys.stderr)
+        if args.cache_stats:
+            stats = cache.stats()
+            print(
+                f"cache: {stats.entries} entries, {stats.size_bytes} bytes in {stats.directory}",
+                file=sys.stderr,
+            )
+        if args.input_file is None and args.cmd is None:
+            sys.exit(0)
+
     compiler = Compiler(args)
 
     try:

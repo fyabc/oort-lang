@@ -599,42 +599,30 @@ def build_typed_artifacts(
     """Build all unit artifacts and pin import hashes; root artifact first."""
 
     origins = _origin_map(units)
-    units_by_id = {unit.module_id: unit for unit in units}
     modules: dict[str, TypedArtifact] = {}
-    dirty: set[str] = set()
     for unit in units:
-        artifact = cache.load(unit) if cache is not None else None
-        if artifact is None:
+        dependencies = {
+            ref.module_id: module_abi_hash(modules[ref.module_id])
+            for ref in unit.imports
+            if ref.module_id in modules
+        }
+        artifact = cache.load(unit, dependencies) if cache is not None else None
+        dirty = artifact is None
+        if artifact is not None:
+            artifact, stale = _pin_imports(artifact, modules)
+            dirty = stale
+        if artifact is None or dirty:
             artifact = build_typed_artifact(unit, origins)
-            dirty.add(unit.module_id)
+            artifact, _ = _pin_imports(artifact, modules)
+
         if artifact.module_id in modules:
             raise UnsupportedSyntax(
                 f"Duplicate typed module id '{artifact.module_id}'.",
                 _artifact_position(artifact),
             )
         modules[artifact.module_id] = artifact
-
-    for _ in range(len(units) + 1):
-        rebuilt = False
-        for module_id in list(modules):
-            artifact, stale = _pin_imports(modules[module_id], modules)
-            if stale:
-                modules[module_id] = build_typed_artifact(units_by_id[module_id], origins)
-                dirty.add(module_id)
-                rebuilt = True
-            else:
-                modules[module_id] = artifact
-        if not rebuilt:
-            break
-    else:
-        raise UnsupportedSyntax(
-            "Typed artifact cache did not converge while pinning ABI hashes.",
-            SourcePosition.from_location(1, 0, "", filename="<typed-cache>"),
-        )
-
-    if cache is not None:
-        for module_id in dirty:
-            cache.store(units_by_id[module_id], modules[module_id])
+        if cache is not None and dirty:
+            cache.store(unit, artifact, dependencies)
     return modules[units[-1].module_id], modules
 
 
