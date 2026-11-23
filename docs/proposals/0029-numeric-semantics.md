@@ -9,7 +9,8 @@
 
 统一 `oort-object` 与 `oort-core` 的数值契约：`Int` 任意精度，`Float`
 IEEE-754 binary64，混合比较按数学值精确，Float 显示以 Python `repr` 为
-canonical；Rust 的 i64 只是 spike 表示，不定义语言语义。
+canonical；Rust typed VM 使用任意精度整数，动态 spike 的 i64 不定义
+语言语义。
 
 ## 动机
 
@@ -17,7 +18,7 @@ canonical；Rust 的 i64 只是 spike 表示，不定义语言语义。
 
 - Python 前端/解释器/VM：任意精度；
 - `.obc` 常量池：i64；
-- Rust VM spike：i64，溢出报错；
+- Rust typed VM：任意精度（num-bigint）；Rust 动态 spike 仍为 i64，溢出报错；
 - typed 混合比较曾先转 Float，可能丢失精度。
 
 如果这些差异进入公开语义，会导致方言/后端不一致和跨边界错误。
@@ -51,13 +52,14 @@ canonical；Rust 的 i64 只是 spike 表示，不定义语言语义。
 - Rust VM 必须对齐，不能直接使用默认 `Display`；
 - 这保证差分测试和 REPL 输出一致。
 
-### D5：Rust spike 限制
+### D5：Rust 实现的分层限制
 
-- Rust typed VM 当前使用 i64；
-- 溢出显式报错；
-- 这是表示层限制，不是语言语义；
-- 差分测试避免溢出输入；
-- 正式 Rust VM 必须实现 D1。
+- Rust **typed VM** 已使用任意精度整数（`num-bigint`），溢出不是错误；
+- Rust **动态 VM spike**（kind=0）仍使用 i64，溢出显式报错；这是 spike 的
+  表示层限制，不是语言语义；
+- `.obc` 常量池仍以 i64 编码；超出 i64 的字面量需要未来格式扩展；
+- typed 主机返回值的动态 `Value` 投影仍受 i64 限制，但 `print` 路径任意精度；
+- 正式动态 Rust VM 必须实现 D1。
 
 ### D6：Int 与 Int<N>
 
@@ -85,7 +87,7 @@ canonical；Rust 的 i64 只是 spike 表示，不定义语言语义。
 ## 向后兼容
 
 - Python 实现大多已符合 D1–D4，主要是规范固化；
-- Rust spike 继续显式标注 i64 限制；
+- 动态 Rust spike 继续显式标注 i64 限制；typed Rust 已实现 D1；
 - `.obc` 常量 i64 是格式限制，未来需要大整数常量编码；
 - `Int<N>` 是新增静态能力，不改变 `Int`。
 
@@ -93,7 +95,7 @@ canonical；Rust 的 i64 只是 spike 表示，不定义语言语义。
 
 1. 把 D1–D6 写入 spec 11/13（或在 spec 中交叉引用本提案）。
 2. typed 字节码已实现 `*_MIXED`；保持。
-3. Rust VM v2 实现大整数阶梯、Float 显示和除零规则。
+3. typed Rust VM 已实现大整数；动态 Rust VM v2 仍需大整数阶梯。
 4. `Int<N>` 作为独立静态提案/切片。
 
 ## 未解决问题

@@ -15,7 +15,8 @@
 - **Python 前端/解释器/VM**：`Int` 是宿主 Python 整数——**任意精度**；
   `Float` 是 IEEE-754 binary64。
 - **`.obc` 常量池**：`Int` 目前编码为 **i64**（spike 限制）。
-- **Rust VM spike**：`Int` 是 **i64**，溢出报错；`Float` 是 f64。
+- **Rust typed VM**：`Int` 使用 `num-bigint` 任意精度；**动态 Rust spike**
+  （kind=0）仍是 i64，溢出报错；`Float` 是 f64。
 - **typed 字节码**：混合 `Int`/`Float` 运算先 `TO_FLOAT`，因此混合比较
   目前也按转换后的 float 比较。
 

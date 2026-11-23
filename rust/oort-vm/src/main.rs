@@ -33,8 +33,8 @@ fn link_mode(args: &[String]) -> Result<vm::Value, String> {
                 .map_err(|e| format!("typed artifact error: {e}"))?,
         );
     }
-    let module = typed::link_artifacts(root, dependencies)
-        .map_err(|e| format!("typed link error: {e}"))?;
+    let module =
+        typed::link_artifacts(root, dependencies).map_err(|e| format!("typed link error: {e}"))?;
     typed::TypedVm::new(module).run_main()
 }
 

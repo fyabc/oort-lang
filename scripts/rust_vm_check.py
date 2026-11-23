@@ -363,6 +363,22 @@ print(total([1, 2, 3, 4]))
 print(tuple_total((5, 6, 7)))
 print(last_char("Oort"))
 """,
+    "typed_big_int": """#lang oort-core
+
+def pow2(k: Int) -> Int {
+    var result: Int = 1
+    var i: Int = 0
+    while i < k { result = result * 2; i = i + 1 }
+    result
+}
+
+print(pow2(100))
+print(pow2(100) // 3, pow2(100) % 7)
+print((-pow2(100) - 1) // 3, (-pow2(100) - 1) % 3)
+print(pow2(100) > pow2(99), -pow2(100) < 0)
+print(pow2(53) + 1 == 9007199254740992.0)
+print(pow2(53) == 9007199254740992.0)
+""",
     "typed_collection_surface": """#lang oort-core
 
 def adjust() -> Int {

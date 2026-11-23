@@ -209,9 +209,9 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   `Rc<RefCell<{ values, index }>>`；只在 native `print`/`len` 与主结果边界转换；
 - Dict 的实现通常保持插入顺序，但**顺序不是语言保证**；Set 同样不保证。
   Rust 参考实现用有序 `Vec` + 线性键查找，不依赖 `std::HashMap`；
-- `Int` 在 Python 参考实现中使用宿主整数（任意精度）；Rust spike 使用
-  `i64`，溢出显式报错。这是 spike 的表示限制，不是语言语义；跨实现差分
-  测试避免溢出输入。完整数值语义见
+- `Int` 在 Python 参考实现中使用宿主整数（任意精度）；Rust typed VM
+  使用 `num-bigint` 任意精度，Rust 动态 spike（kind=0）仍是 i64 并显式报错。
+  `.obc` 常量池仍只有 i64 编码。完整数值语义见
   [design 16](../design/16-numeric-semantics.md)；
 - 除零、类型守卫失败、未知全局/函数索引、未知操作码都必须显式报错，禁止静默
   执行；

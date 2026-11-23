@@ -1,18 +1,24 @@
 //! Typed bytecode (`obc` kind=1) reader and unboxed VM (design 15 M4 U1).
 //!
-//! Scalar registers use `TypedValue` instead of boxed `vm::Value`: Int is i64,
-//! Float is f64, Bool is bool, Unit carries no payload. Conversions happen only
+//! Scalar registers use `TypedValue` instead of boxed `vm::Value`: Int is an
+//! arbitrary-precision BigInt, Float is f64, Bool is bool, Unit carries no
+//! payload. Conversions happen only
 //! at the native `print` boundary and when reporting the main result.
 //! Semantics mirror the Python typed VM; see docs/design/16-numeric-semantics.md
-//! for the Int/Float contract (i64 is a spike representation).
+//! for the Int/Float contract (the dynamic kind=0 VM is still an i64 spike).
 
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use num_bigint::BigInt;
+use num_integer::Integer;
+use num_rational::BigRational;
+use num_traits::{ToPrimitive, Zero};
+
 use crate::obc::{Constant, Reader};
-use crate::vm::{float_repr, floor_div, floor_mod, Value};
+use crate::vm::{float_repr, Value};
 
 type TResult<T> = Result<T, String>;
 
@@ -262,7 +268,9 @@ pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
     }
     let kind = data[3];
     if kind != 2 {
-        return Err(format!("expected linked typed bundle (kind=2), got kind={kind}"));
+        return Err(format!(
+            "expected linked typed bundle (kind=2), got kind={kind}"
+        ));
     }
     let version = data[4];
     if version != 2 {
@@ -271,7 +279,9 @@ pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
     let mut r = Reader::new(&data[5..]);
     let abi_version = r.u16()?;
     if abi_version != 1 {
-        return Err(format!("unsupported linked bundle ABI version {abi_version}"));
+        return Err(format!(
+            "unsupported linked bundle ABI version {abi_version}"
+        ));
     }
 
     let nadt = r.u32()?;
@@ -371,17 +381,23 @@ pub fn read_typed_artifact(data: &[u8]) -> TResult<TypedArtifact> {
     }
     let kind = data[3];
     if kind != 1 {
-        return Err(format!("expected typed module artifact (kind=1), got kind={kind}"));
+        return Err(format!(
+            "expected typed module artifact (kind=1), got kind={kind}"
+        ));
     }
     let version = data[4];
     if version != 9 {
-        return Err(format!("unsupported typed module artifact version {version}"));
+        return Err(format!(
+            "unsupported typed module artifact version {version}"
+        ));
     }
     let mut r = Reader::new(&data[5..]);
     let module_id = r.string()?;
     let abi_version = r.u16()?;
     if abi_version != 1 {
-        return Err(format!("unsupported typed module ABI version {abi_version}"));
+        return Err(format!(
+            "unsupported typed module ABI version {abi_version}"
+        ));
     }
 
     let nexports = r.u32()?;
@@ -584,7 +600,11 @@ fn visit_artifact(
     order: &mut Vec<String>,
 ) -> TResult<()> {
     match state.get(module_id).copied().unwrap_or(0) {
-        1 => return Err(format!("circular typed module import involving '{module_id}'")),
+        1 => {
+            return Err(format!(
+                "circular typed module import involving '{module_id}'"
+            ))
+        }
         2 => return Ok(()),
         _ => {}
     }
@@ -632,11 +652,17 @@ fn visit_artifact(
 }
 
 /// Link v8 module artifacts into one typed module for the Rust VM.
-pub fn link_artifacts(root: TypedArtifact, dependencies: Vec<TypedArtifact>) -> TResult<TypedModule> {
+pub fn link_artifacts(
+    root: TypedArtifact,
+    dependencies: Vec<TypedArtifact>,
+) -> TResult<TypedModule> {
     let root_id = root.module_id.clone();
     let mut modules: HashMap<String, TypedArtifact> = HashMap::new();
     for artifact in dependencies {
-        if modules.insert(artifact.module_id.clone(), artifact).is_some() {
+        if modules
+            .insert(artifact.module_id.clone(), artifact)
+            .is_some()
+        {
             return Err("duplicate typed module id".into());
         }
     }
@@ -770,7 +796,7 @@ pub fn link_artifacts(root: TypedArtifact, dependencies: Vec<TypedArtifact>) -> 
 enum TypedValue {
     Unit,
     Bool(bool),
-    Int(i64),
+    Int(BigInt),
     Float(f64),
     Str(Rc<str>),
     List(Rc<RefCell<Vec<TypedValue>>>),
@@ -873,7 +899,10 @@ fn typed_to_value(value: &TypedValue) -> TResult<Value> {
     Ok(match value {
         TypedValue::Unit => Value::Null,
         TypedValue::Bool(b) => Value::Bool(*b),
-        TypedValue::Int(i) => Value::Int(*i),
+        TypedValue::Int(i) => Value::Int(
+            i.to_i64()
+                .ok_or_else(|| "integer out of dynamic VM range".to_string())?,
+        ),
         TypedValue::Float(f) => Value::Float(*f),
         TypedValue::Str(s) => Value::Str(Rc::clone(s)),
         TypedValue::List(items) => {
@@ -921,8 +950,8 @@ fn typed_equal(lhs: &TypedValue, rhs: &TypedValue) -> TResult<bool> {
         (TypedValue::Bool(a), TypedValue::Bool(b)) => a == b,
         (TypedValue::Int(a), TypedValue::Int(b)) => a == b,
         (TypedValue::Float(a), TypedValue::Float(b)) => a == b,
-        (TypedValue::Int(a), TypedValue::Float(b)) => (*a as f64) == *b,
-        (TypedValue::Float(a), TypedValue::Int(b)) => *a == (*b as f64),
+        (TypedValue::Int(a), TypedValue::Float(b)) => cmp_int_f64(a, *b) == Some(Ordering::Equal),
+        (TypedValue::Float(a), TypedValue::Int(b)) => cmp_int_f64(b, *a) == Some(Ordering::Equal),
         (TypedValue::Str(a), TypedValue::Str(b)) => a == b,
         (TypedValue::List(a), TypedValue::List(b)) => {
             let left = a.borrow();
@@ -982,7 +1011,7 @@ fn constant_value(constant: &Constant) -> TResult<TypedValue> {
     Ok(match constant {
         Constant::Null => TypedValue::Unit,
         Constant::Bool(b) => TypedValue::Bool(*b),
-        Constant::Int(i) => TypedValue::Int(*i),
+        Constant::Int(i) => TypedValue::Int(BigInt::from(*i)),
         Constant::Float(f) => TypedValue::Float(*f),
         Constant::Str(s) => TypedValue::Str(Rc::clone(s)),
         _ => return Err("unsupported constant kind for typed LOAD_K".into()),
@@ -1042,11 +1071,11 @@ fn slice_bounds(
         value.clamp(0, n) as usize
     };
     let begin = match start {
-        Some(value) => normalize(as_int(value)?),
+        Some(value) => normalize(as_index(value)?),
         None => 0,
     };
     let end = match stop {
-        Some(value) => normalize(as_int(value)?),
+        Some(value) => normalize(as_index(value)?),
         None => len,
     };
     Ok((begin, end.max(begin)))
@@ -1149,11 +1178,17 @@ fn typed_set_op(op: u32, left: &TypedValue, right: &TypedValue) -> TResult<Typed
     Ok(TypedValue::Set(Rc::new(RefCell::new(result))))
 }
 
-fn as_int(value: &TypedValue) -> TResult<i64> {
+fn as_int(value: &TypedValue) -> TResult<&BigInt> {
     match value {
-        TypedValue::Int(i) => Ok(*i),
+        TypedValue::Int(i) => Ok(i),
         _ => Err("typed opcode expected Int".into()),
     }
+}
+
+fn as_index(value: &TypedValue) -> TResult<i64> {
+    as_int(value)?
+        .to_i64()
+        .ok_or_else(|| "integer index is too large".to_string())
 }
 
 fn as_float(value: &TypedValue) -> TResult<f64> {
@@ -1302,7 +1337,7 @@ fn get_item(container: &TypedValue, index: &TypedValue) -> TResult<TypedValue> {
             None => Err("key not found".into()),
         };
     }
-    let index = as_int(index)?;
+    let index = as_index(index)?;
     match container {
         TypedValue::List(items) => {
             let items = items.borrow();
@@ -1337,16 +1372,16 @@ fn mixed_cmp(lhs: &TypedValue, rhs: &TypedValue) -> TResult<Option<Ordering>> {
     match (lhs, rhs) {
         (TypedValue::Int(a), TypedValue::Int(b)) => Ok(Some(a.cmp(b))),
         (TypedValue::Float(a), TypedValue::Float(b)) => Ok(a.partial_cmp(b)),
-        (TypedValue::Int(a), TypedValue::Float(b)) => Ok(cmp_i64_f64(*a, *b)),
+        (TypedValue::Int(a), TypedValue::Float(b)) => Ok(cmp_int_f64(a, *b)),
         (TypedValue::Float(a), TypedValue::Int(b)) => {
-            Ok(cmp_i64_f64(*b, *a).map(|ordering| ordering.reverse()))
+            Ok(cmp_int_f64(b, *a).map(|ordering| ordering.reverse()))
         }
         _ => Err("typed mixed comparison expects Int or Float".into()),
     }
 }
 
 /// Exact comparison between i64 and f64 (no rounding of the integer).
-fn cmp_i64_f64(i: i64, f: f64) -> Option<Ordering> {
+fn cmp_int_f64(i: &BigInt, f: f64) -> Option<Ordering> {
     if f.is_nan() {
         return None;
     }
@@ -1356,28 +1391,8 @@ fn cmp_i64_f64(i: i64, f: f64) -> Option<Ordering> {
     if f == f64::NEG_INFINITY {
         return Some(Ordering::Greater);
     }
-    const TWO_POW_63: f64 = 9_223_372_036_854_775_808.0;
-    if f >= TWO_POW_63 {
-        return Some(Ordering::Less);
-    }
-    if f < -TWO_POW_63 {
-        return Some(Ordering::Greater);
-    }
-    let truncated = f.trunc();
-    let truncated_i128 = truncated as i128;
-    match (i as i128).cmp(&truncated_i128) {
-        Ordering::Equal => {
-            let frac = f - truncated;
-            if frac > 0.0 {
-                Some(Ordering::Less)
-            } else if frac < 0.0 {
-                Some(Ordering::Greater)
-            } else {
-                Some(Ordering::Equal)
-            }
-        }
-        ordering => Some(ordering),
-    }
+    let rational = BigRational::from_float(f)?;
+    Some(BigRational::from_integer(i.clone()).cmp(&rational))
 }
 
 // Typed opcodes (bytecode/typed_opcodes.py).
@@ -1683,28 +1698,20 @@ fn execute(
                 let left = as_int(&registers[b])?;
                 let right = as_int(&registers[c])?;
                 let result = match op {
-                    ADD_I => left.checked_add(right).ok_or("integer overflow")?,
-                    SUB_I => left.checked_sub(right).ok_or("integer overflow")?,
-                    MUL_I => left.checked_mul(right).ok_or("integer overflow")?,
+                    ADD_I => left + right,
+                    SUB_I => left - right,
+                    MUL_I => left * right,
                     FLOORDIV_I => {
-                        if right == 0 {
+                        if right.is_zero() {
                             return Err("division or modulo by zero".into());
                         }
-                        if right == -1 {
-                            left.checked_neg().ok_or("integer overflow")?
-                        } else {
-                            floor_div(left, right)
-                        }
+                        left.div_floor(right)
                     }
                     _ => {
-                        if right == 0 {
+                        if right.is_zero() {
                             return Err("division or modulo by zero".into());
                         }
-                        if right == -1 {
-                            0
-                        } else {
-                            floor_mod(left, right)
-                        }
+                        left.mod_floor(right)
                     }
                 };
                 registers[a] = TypedValue::Int(result);
@@ -1776,9 +1783,9 @@ fn execute(
             POS_I | NEG_I => {
                 let value = as_int(&registers[b])?;
                 registers[a] = TypedValue::Int(if op == NEG_I {
-                    value.checked_neg().ok_or("integer overflow")?
+                    -value.clone()
                 } else {
-                    value
+                    value.clone()
                 });
             }
             POS_F | NEG_F => {
@@ -1792,7 +1799,7 @@ fn execute(
             TO_FLOAT => {
                 let value = match &registers[b] {
                     TypedValue::Float(f) => *f,
-                    TypedValue::Int(i) => *i as f64,
+                    TypedValue::Int(i) => i.to_f64().ok_or("integer is too large for Float")?,
                     _ => return Err("TO_FLOAT expects a number".into()),
                 };
                 registers[a] = TypedValue::Float(value);
@@ -1842,7 +1849,7 @@ fn execute(
                 let TypedValue::Adt(value) = &registers[b] else {
                     return Err("typed ADT_TAG expects an ADT".into());
                 };
-                registers[a] = TypedValue::Int(value.variant as i64);
+                registers[a] = TypedValue::Int(BigInt::from(value.variant));
             }
             ADT_FIELD => {
                 let TypedValue::Adt(value) = &registers[b] else {
@@ -1892,7 +1899,7 @@ fn execute(
             }
             SET_ITEM => {
                 if let TypedValue::List(items) = &registers[a] {
-                    let index = as_int(&registers[b])?;
+                    let index = as_index(&registers[b])?;
                     let mut items = items.borrow_mut();
                     let position = normalize_index(index, items.len())?;
                     items[position] = registers[c].clone();
@@ -2023,11 +2030,13 @@ fn call(
                 return Err("len expects exactly one argument".into());
             }
             match &arguments[0] {
-                TypedValue::Str(s) => Ok(TypedValue::Int(s.chars().count() as i64)),
-                TypedValue::List(items) => Ok(TypedValue::Int(items.borrow().len() as i64)),
-                TypedValue::Tuple(items) => Ok(TypedValue::Int(items.len() as i64)),
-                TypedValue::Set(items) => Ok(TypedValue::Int(items.borrow().len() as i64)),
-                TypedValue::Dict(entries) => Ok(TypedValue::Int(entries.borrow().len() as i64)),
+                TypedValue::Str(s) => Ok(TypedValue::Int(BigInt::from(s.chars().count()))),
+                TypedValue::List(items) => Ok(TypedValue::Int(BigInt::from(items.borrow().len()))),
+                TypedValue::Tuple(items) => Ok(TypedValue::Int(BigInt::from(items.len()))),
+                TypedValue::Set(items) => Ok(TypedValue::Int(BigInt::from(items.borrow().len()))),
+                TypedValue::Dict(entries) => {
+                    Ok(TypedValue::Int(BigInt::from(entries.borrow().len())))
+                }
                 _ => Err("len expects a String, List or Tuple in the typed subset".into()),
             }
         }
@@ -2037,6 +2046,10 @@ fn call(
 
 #[cfg(test)]
 mod tests {
+    fn int(value: i64) -> TypedValue {
+        TypedValue::Int(BigInt::from(value))
+    }
+
     use super::*;
 
     #[test]
@@ -2119,7 +2132,7 @@ mod tests {
     fn frame_pool_reuses_and_resets_frames() {
         let mut pool = FramePool::new();
         let mut first = pool.acquire(4);
-        first[0] = TypedValue::Int(7);
+        first[0] = int(7);
         pool.release(first);
 
         let reused = pool.acquire(4);
@@ -2133,12 +2146,12 @@ mod tests {
     #[test]
     fn mixed_comparison_is_exact_at_2_pow_53() {
         // 2^53 + 1 cannot be represented as f64; the comparison must not round.
-        let big = TypedValue::Int(9_007_199_254_740_993);
+        let big = int(9_007_199_254_740_993);
         let as_float = TypedValue::Float(9_007_199_254_740_992.0);
         assert_eq!(mixed_cmp(&big, &as_float).unwrap(), Some(Ordering::Greater));
         assert_eq!(mixed_cmp(&as_float, &big).unwrap(), Some(Ordering::Less));
         assert_eq!(
-            mixed_cmp(&TypedValue::Int(9_007_199_254_740_992), &as_float).unwrap(),
+            mixed_cmp(&int(9_007_199_254_740_992), &as_float).unwrap(),
             Some(Ordering::Equal)
         );
     }
@@ -2146,21 +2159,17 @@ mod tests {
     #[test]
     fn mixed_comparison_handles_nan_and_infinity() {
         let nan = TypedValue::Float(f64::NAN);
-        assert_eq!(mixed_cmp(&nan, &TypedValue::Int(1)).unwrap(), None);
-        assert_eq!(mixed_cmp(&TypedValue::Int(1), &nan).unwrap(), None);
+        assert_eq!(mixed_cmp(&nan, &int(1)).unwrap(), None);
+        assert_eq!(mixed_cmp(&int(1), &nan).unwrap(), None);
         assert_eq!(
-            mixed_cmp(
-                &TypedValue::Float(f64::INFINITY),
-                &TypedValue::Int(i64::MAX)
-            )
-            .unwrap(),
+            mixed_cmp(&TypedValue::Float(f64::INFINITY), &int(i64::MAX)).unwrap(),
             Some(Ordering::Greater)
         );
     }
 
     #[test]
     fn guard_rejects_wrong_types() {
-        assert!(guard(&TypedType::Int, &TypedValue::Int(1)).is_ok());
+        assert!(guard(&TypedType::Int, &int(1)).is_ok());
         assert!(guard(&TypedType::Int, &TypedValue::Bool(true)).is_err());
         assert!(guard(&TypedType::Unit, &TypedValue::Unit).is_ok());
     }
@@ -2190,7 +2199,7 @@ mod tests {
 
     #[test]
     fn set_deduplicates_with_typed_equality() {
-        let value = set_value(&[TypedValue::Int(1), TypedValue::Int(2), TypedValue::Int(1)]);
+        let value = set_value(&[int(1), int(2), int(1)]);
         let TypedValue::Set(items) = &value else {
             panic!("expected a set");
         };
@@ -2201,9 +2210,9 @@ mod tests {
     #[test]
     fn dict_preserves_insertion_order_and_replaces_values() {
         let value = dict_value(&[
-            (TypedValue::Str(Rc::from("b")), TypedValue::Int(2)),
-            (TypedValue::Str(Rc::from("a")), TypedValue::Int(1)),
-            (TypedValue::Str(Rc::from("b")), TypedValue::Int(3)),
+            (TypedValue::Str(Rc::from("b")), int(2)),
+            (TypedValue::Str(Rc::from("a")), int(1)),
+            (TypedValue::Str(Rc::from("b")), int(3)),
         ]);
         let TypedValue::Dict(entries) = &value else {
             panic!("expected a dict");
@@ -2223,7 +2232,7 @@ mod tests {
                 type_: TypedType::Adt(0, vec![]),
                 variant: 0,
                 variant_name: Rc::from("Circle"),
-                payload: Box::new([TypedValue::Int(value)]),
+                payload: Box::new([TypedValue::Int(BigInt::from(value))]),
             }))
         };
         assert_eq!(display_typed(&make(2)), "Circle(2)");
@@ -2233,17 +2242,17 @@ mod tests {
 
     #[test]
     fn set_and_dict_equality_ignore_insertion_order() {
-        let left_set = set_value(&[TypedValue::Int(1), TypedValue::Int(2)]);
-        let right_set = set_value(&[TypedValue::Int(2), TypedValue::Int(1)]);
+        let left_set = set_value(&[int(1), int(2)]);
+        let right_set = set_value(&[int(2), int(1)]);
         assert!(typed_equal(&left_set, &right_set).unwrap());
 
         let left_dict = dict_value(&[
-            (TypedValue::Str(Rc::from("a")), TypedValue::Int(1)),
-            (TypedValue::Str(Rc::from("b")), TypedValue::Int(2)),
+            (TypedValue::Str(Rc::from("a")), int(1)),
+            (TypedValue::Str(Rc::from("b")), int(2)),
         ]);
         let right_dict = dict_value(&[
-            (TypedValue::Str(Rc::from("b")), TypedValue::Int(2)),
-            (TypedValue::Str(Rc::from("a")), TypedValue::Int(1)),
+            (TypedValue::Str(Rc::from("b")), int(2)),
+            (TypedValue::Str(Rc::from("a")), int(1)),
         ]);
         assert!(typed_equal(&left_dict, &right_dict).unwrap());
     }
