@@ -1,0 +1,12 @@
+#lang oort-core
+
+# 被 object 脚本导入的 core 库；它自己再导入 core 库。
+# 边界只把本模块的导出绑定到动态环境，boundary_math 的 add 不可见。
+
+from "./boundary_math" import add
+
+def total(values: List[Int]) -> Int {
+    var sum: Int = 0
+    for value in values { sum = add(sum, value) }
+    sum
+}

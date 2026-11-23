@@ -109,6 +109,7 @@ def test_typed_subset_example_is_accepted():
         "08_17_typed_sets_dicts.ort",
         "08_18_typed_adts.ort",
         "08_19_typed_generic_adts.ort",
+        "08_20_typed_modules.ort",
         "08_10_patterns.ort",
     ],
 )

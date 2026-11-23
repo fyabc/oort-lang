@@ -1,0 +1,9 @@
+#lang oort-core
+
+# 多模块 typed core 示例的模块 B：同名 Shape，不同构造器。
+
+enum Shape { Square(side: Int) }
+
+def square_area(shape: Shape) -> Int {
+    match shape { Square(side) => side * side }
+}

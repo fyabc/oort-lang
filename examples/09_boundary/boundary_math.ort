@@ -1,0 +1,5 @@
+#lang oort-core
+
+# B1 嵌套 core 导入示例的最底层模块。
+
+def add(a: Int, b: Int) -> Int { a + b }

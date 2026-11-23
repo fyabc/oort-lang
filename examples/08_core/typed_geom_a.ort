@@ -1,0 +1,10 @@
+#lang oort-core
+
+# 多模块 typed core 示例的模块 A：与模块 B 同名定义 Shape。
+# artifact 用 module_id 区分同名 ADT，因此两者不会互相匹配。
+
+enum Shape { Circle(radius: Int) }
+
+def circle_area(shape: Shape) -> Int {
+    match shape { Circle(radius) => radius * radius * 3 }
+}

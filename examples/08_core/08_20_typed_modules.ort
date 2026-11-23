@@ -1,0 +1,21 @@
+#lang oort-core
+
+# 多模块 typed core：两个库模块各自定义 enum Shape。
+# typed artifact 以 module_id 区分同名 ADT；导入的构造器 Circle/Square
+# 通过构造器表在链接时重定位，可直接在表达式和模式中使用。
+
+import "./typed_geom_a" as a
+import "./typed_geom_b" as b
+from "./typed_geom_a" import Circle
+from "./typed_geom_b" import Square
+
+def describe_a(shape: a.Shape) -> String {
+    match shape { Circle(_) => "circle" }
+}
+
+def describe_b(shape: b.Shape) -> String {
+    match shape { Square(_) => "square" }
+}
+
+print(a.circle_area(Circle(2)), b.square_area(Square(3)))
+print(describe_a(Circle(1)), describe_b(Square(1)))

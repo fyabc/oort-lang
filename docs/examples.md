@@ -69,6 +69,7 @@
 | [类型化 Set/Dict](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_17_typed_sets_dicts.ort) | typed Set/Dict 字面量、Dict 下标、`len`、深相等、`for` 迭代 |
 | [类型化 ADT](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_18_typed_adts.ort) | typed 单态 ADT、构造器、`match`、递归 ADT、相等/打印 |
 | [类型化泛型 ADT](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_19_typed_generic_adts.ort) | typed 泛型 enum、`Option`、构造器实参推断、匹配 |
+| [类型化模块](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_20_typed_modules.ort) | 多模块 typed core、导入构造器、同名 ADT 按 module_id 区分 |
 
 ```bash
 oort examples/08_core/08_01_core_functions.ort
@@ -79,12 +80,14 @@ oort examples/08_core/08_01_core_functions.ort
 | 示例 | 内容 |
 |---|---|
 | [object 调用 core](https://github.com/fyabc/oort-lang/blob/main/examples/09_boundary/09_00_object_calls_core.ort) | `oort-object` 导入 `oort-core` 库、参数守卫、容器复制 |
+| [object 调用嵌套 core](https://github.com/fyabc/oort-lang/blob/main/examples/09_boundary/09_01_object_calls_nested_core.ort) | core 库再导入 core；边界只绑定根模块导出 |
 
 ```bash
 oort examples/09_boundary/09_00_object_calls_core.ort
 ```
 
-`core_lib.ort` 是配套的 `#lang oort-core` 库，不作为独立入口运行。
+`core_lib.ort`、`boundary_stats.ort`、`boundary_math.ort` 是配套的
+`#lang oort-core` 库，不作为独立入口运行。
 
 ## Showcase
 

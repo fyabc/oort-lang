@@ -1,0 +1,8 @@
+#lang oort-object
+
+# object → core → core：被导入的 core 模块可以再依赖其他 core 模块。
+# 边界只暴露 boundary_stats 的导出（total）；boundary_math.add 不泄漏。
+
+from "./boundary_stats" import total
+
+print(total([1, 2, 3, 4]))
