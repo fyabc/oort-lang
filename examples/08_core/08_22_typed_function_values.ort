@@ -18,7 +18,7 @@ def local() -> Int {
 }
 
 def sum_apply(fs: List[(Int) -> Int], x: Int) -> Int {
-    var total: Int = 0
+    var total = 0
     for f in fs { total = total + f(x) }
     total
 }
@@ -26,13 +26,14 @@ def sum_apply(fs: List[(Int) -> Int], x: Int) -> Int {
 # Dict 作为函数分派表：函数类型嵌套在容器值位置。
 def dispatch(op: String, x: Int) -> Int {
     val table: Dict[String, (Int) -> Int] = {: "inc": inc, "dec": dec :}
-    val f: (Int) -> Int = table[op]
+    val f = table[op]
     f(x)
 }
 
 # 非捕获 lambda：运行时构造新函数（如这里的 double/triple）。
+# lambda 的返回类型由 val 标注的期望函数类型下推，可省略。
 def with_lambda() -> Int {
-    val double: (Int) -> Int = do(x: Int) -> Int { x * 2 }
+    val double: (Int) -> Int = do(x: Int) { x * 2 }
     double(21)
 }
 
