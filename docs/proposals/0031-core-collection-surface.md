@@ -79,8 +79,8 @@ print({. 1 .} | {. 2 .})    # Operator '|' is not supported in oort-core yet.
 - 两侧必须是同一元素类型的 `Set[T]`；结果为新 `Set[T]`；
 - 元素身份使用键相等（OP 0016）；
 - 不修改操作数；
-- 比较运算符（子集/超集 `< <= > >=`）留到后续，避免与 List 字典序比较
-  混淆。
+- 比较运算符（子集/超集 `< <= > >=`）由 C7 补齐：两侧必须是同一元素类型的
+  `Set[T]`，按集合包含关系返回 Bool（与动态方言一致）；
 
 ### D5：排序与列表拼接（后续）
 
@@ -157,14 +157,17 @@ print({. 1 .} | {. 2 .})    # Operator '|' is not supported in oort-core yet.
 | C2（已实现） | List/Dict 下标写入；负索引/越界；别名与迭代快照测试 | `xs[i] = v`、`d[k] = v` 与动态一致；Tuple/String/Set 拒绝 |
 | C3（已实现） | List/Tuple/String 切片读；Python 夹取；步长显式拒绝 | 差分覆盖空/负/越界切片 |
 | C4（已实现） | Set 并/交/差/对称差；类型一致；结果新集合 | 与动态差分一致；混合元素类型拒绝 |
+| C7（已实现） | Set 子集/超集比较 `< <= > >=`；同元素类型；返回 Bool | 与动态差分一致；混合元素类型拒绝 |
 
-C1–C4 一次性提升 kind=1 v7 / artifact v9 / linked bundle v2，并补 Python/Rust 差分；缓存按版本自然失效。
+C1–C4 一次性提升 kind=1 v7 / artifact v9 / linked bundle v2；C7 提升到
+kind=1 v9 / artifact v11 / linked bundle v4，并补 Python/Rust 差分；
+缓存按版本自然失效。
 
 ### 长期（C5+）
 
 - C5：排序（`sorted`、List 字典序、List `+`），依赖可排序契约/函数值；
 - C6：切片赋值与步长切片（若确有必要）；
-- C7：Set 子集/超集比较；
+- C7：Set 子集/超集比较（**已实现**，见上表）；
 - 性能：Set/Dict 的哈希表实现与切片复制优化在 Rust VM 阶段处理，不改变语义。
 
 ## 未解决问题

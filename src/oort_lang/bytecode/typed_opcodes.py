@@ -107,6 +107,10 @@ class TypedOp(IntEnum):
     LOAD_OUTER = 89
     STORE_OUTER = 90
     FRESH_CELL = 91
+    SET_SUBSET = 92
+    SET_PROPER_SUBSET = 93
+    SET_SUPERSET = 94
+    SET_PROPER_SUPERSET = 95
 
 
 # ABC: [op:8][A:8][B:8][C:8]

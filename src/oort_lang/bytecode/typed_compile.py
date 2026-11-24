@@ -99,6 +99,12 @@ _STRING_COMPARISONS = {
     ">=": TypedOp.GE_S,
 }
 _STRING_EQUALITY = {"==": TypedOp.EQ_S, "!=": TypedOp.NE_S}
+_SET_RELATIONS = {
+    "<=": TypedOp.SET_SUBSET,
+    "<": TypedOp.SET_PROPER_SUBSET,
+    ">=": TypedOp.SET_SUPERSET,
+    ">": TypedOp.SET_PROPER_SUPERSET,
+}
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -508,6 +514,16 @@ class _ProtoBuilder:
                     f"Typed bytecode set operator {op!r} requires two Sets.", position
                 )
             self._emit(encode_abc(set_ops[op], instruction.dst, lhs, rhs), position)
+            return
+
+        # Set subset/superset comparisons (OP 0031 C7): a partial order over
+        # set membership, like Python's `<`/`<=`/`>`/`>=` on sets.
+        if op in _SET_RELATIONS and (lhs_set or rhs_set):
+            if not (lhs_set and rhs_set):
+                raise UnsupportedSyntax(
+                    f"Typed bytecode set comparison {op!r} requires two Sets.", position
+                )
+            self._emit(encode_abc(_SET_RELATIONS[op], instruction.dst, lhs, rhs), position)
             return
 
         if (

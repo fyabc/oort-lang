@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-"""Core collection surface: membership, writes, slices and Set algebra (OP 0031)."""
+"""Core collection surface: membership, writes, slices, Set algebra and order."""
 
 import pytest
 
@@ -38,6 +38,11 @@ def snapshot() -> Int {
     sum
 }
 
+def relations() -> Unit {
+    print({. 1, 2 .} <= {. 1, 2, 3 .}, {. 1, 2 .} < {. 1, 2, 3 .})
+    print({. 1, 2 .} >= {. 1 .}, {. 1, 2 .} > {. 1 .}, {. 1 .} > {. 1 .})
+}
+
 print(2 in [1, 2], 3 !in [1, 2], "bc" in "abcd", "a" in {: "a": 1 :})
 print(2 in {. 1, 2 .}, 2 in (1, 2))
 print(adjust(), mapping(), snapshot())
@@ -46,6 +51,7 @@ print("abcd"[1:3], "abcd"[-2:])
 print((1, "a", true)[1:])
 print({. 1, 2 .} | {. 2, 3 .}, {. 1, 2 .} & {. 2, 3 .})
 print({. 1, 2 .} - {. 2 .}, {. 1, 2 .} ^ {. 2, 3 .})
+relations()
 """
 
 SURFACE_OUTPUT = (
@@ -57,6 +63,8 @@ SURFACE_OUTPUT = (
     "(a, true)\n"
     "{. 1, 2, 3 .} {. 2 .}\n"
     "{. 1 .} {. 1, 3 .}\n"
+    "true true\n"
+    "true true false\n"
 )
 
 
@@ -79,6 +87,10 @@ def test_collection_surface_uses_new_opcodes():
     assert TypedOp.SET_INTERSECT in ops
     assert TypedOp.SET_DIFFERENCE in ops
     assert TypedOp.SET_SYMMETRIC in ops
+    assert TypedOp.SET_SUBSET in ops
+    assert TypedOp.SET_PROPER_SUBSET in ops
+    assert TypedOp.SET_SUPERSET in ops
+    assert TypedOp.SET_PROPER_SUPERSET in ops
     assert TypedOp.SET_ITEM in ops
 
 
@@ -104,6 +116,10 @@ def test_collection_surface_serializes_and_runs(tmp_path, capsys):
         (
             'print({. 1 .} | {. "a" .})',
             "Operator '|' requires Sets with the same element type",
+        ),
+        (
+            "print({. 1 .} <= {. 1.0 .})",
+            "requires two numbers, two String operands, or two Sets of the same",
         ),
         (
             "print(1 in 2)",

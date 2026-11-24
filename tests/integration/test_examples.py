@@ -71,6 +71,7 @@ EXPECTED_OUTPUTS = {
     "08_core/08_21_typed_collection_surface.ort": (
         "true true true true\n9 3 ort\n[2, 3] (a, true)\n"
         "{. 1, 2, 3 .} {. 2 .}\n{. 1 .} {. 1, 3 .}\n"
+        "true true true\n"
     ),
     "08_core/08_22_typed_function_values.ort": (
         "2 0\n3 1\n11\n20\n7 5\n42 15 12\n15 63\n6 12 321\n"

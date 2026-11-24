@@ -385,7 +385,7 @@ class TestCoreRejections:
         check_error(
             caplog,
             "print(1 < true)\n",
-            "requires two numbers or two String operands",
+            "requires two numbers, two String operands",
         )
 
     def test_equality_requires_comparable_types(self, caplog):

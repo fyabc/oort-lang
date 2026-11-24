@@ -2287,9 +2287,18 @@ class CoreTypeChecker(ASTVisitor[Type]):
             return self._record(node, BOOL)
         if (_is_numeric(left) and _is_numeric(right)) or (left == STRING and right == STRING):
             return self._record(node, BOOL)
+        # Sets compare by subset/superset, like the dynamic dialect; they are
+        # only partly ordered, so `<`/`<=`/`>`/`>=` all return Bool.
+        if (
+            isinstance(left, SetType)
+            and isinstance(right, SetType)
+            and _is_same_container(left, right)
+        ):
+            return self._record(node, BOOL)
         self._error(
-            f"Operator '{node.op.text}' requires two numbers or two String operands, "
-            f"got {describe_type(left)} and {describe_type(right)}.",
+            f"Operator '{node.op.text}' requires two numbers, two String operands, "
+            f"or two Sets of the same element type, got {describe_type(left)} "
+            f"and {describe_type(right)}.",
             node.position,
         )
         return self._record(node, UNKNOWN)

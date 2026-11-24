@@ -538,11 +538,26 @@ print((1, "a", true)[1:])
 print({. 1, 2 .} | {. 2, 3 .}, {. 1, 2 .} & {. 2, 3 .})
 print({. 1, 2 .} - {. 2 .}, {. 1, 2 .} ^ {. 2, 3 .})
 """,
+    "typed_set_relations": """#lang oort-core
+
+def relations() -> Unit {
+    val a: Set[Int] = {. 1, 2 .}
+    val b: Set[Int] = {. 1, 2, 3 .}
+    val c: Set[Int] = {. 1, 2 .}
+    val empty: Set[Int] = {. .}
+    print(a <= b, a < b, b >= a, b > a)
+    print(a <= c, a < c, a >= c, a > c)
+    print({. 1 .} < a, {. 9 .} <= a, {. 9 .} < a)
+    print(empty <= a, empty < a, a >= empty, a > empty)
+}
+
+relations()
+""",
 }
 
 
 # Multi-module typed cases: (dependency sources, root source). They exercise
-# v10 artifact linking (imported constructors, same-named ADTs) through kind=2.
+# v11 artifact linking (imported constructors, same-named ADTs) through kind=2.
 TYPED_MODULE_DIFF_PROGRAMS = {
     "typed_imported_ctors": (
         {
@@ -658,7 +673,7 @@ def compile_files_to_bundle(main_path: Path, out: Path):
 
 
 def compile_files_to_artifacts(main_path: Path, out_dir: Path):
-    """Write one v10 artifact per module; return (root_path, dependency_paths)."""
+    """Write one v11 artifact per module; return (root_path, dependency_paths)."""
 
     compiler, ast, _info = _frontend(main_path)
     resolve = compiler._make_typed_resolver(main_path.parent)

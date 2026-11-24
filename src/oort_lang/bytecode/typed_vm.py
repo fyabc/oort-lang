@@ -385,6 +385,13 @@ class TypedCodeVM:
                 TypedOp.SET_SYMMETRIC,
             ):
                 registers[a] = self._set_operation(op, registers[b], registers[c], position)
+            elif op in (
+                TypedOp.SET_SUBSET,
+                TypedOp.SET_PROPER_SUBSET,
+                TypedOp.SET_SUPERSET,
+                TypedOp.SET_PROPER_SUPERSET,
+            ):
+                registers[a] = self._set_relation(op, registers[b], registers[c], position)
             elif op is TypedOp.JMP:
                 pc = bx
                 continue
@@ -737,6 +744,27 @@ class TypedCodeVM:
         else:
             values = lhs.value ^ rhs.value
         return OortSet(values)
+
+    def _set_relation(
+        self,
+        op: TypedOp,
+        lhs: Any,
+        rhs: Any,
+        position: SourcePosition,
+    ) -> OortBool:
+        if type(lhs) is not OortSet or type(rhs) is not OortSet:
+            raise OortTypeError("Typed set comparisons require two Sets.", position)
+        # OortSet wraps a host set whose elements follow the key protocol, so
+        # the host subset operators match dynamic-dialect semantics.
+        if op is TypedOp.SET_SUBSET:
+            result = lhs.value <= rhs.value
+        elif op is TypedOp.SET_PROPER_SUBSET:
+            result = lhs.value < rhs.value
+        elif op is TypedOp.SET_SUPERSET:
+            result = lhs.value >= rhs.value
+        else:
+            result = lhs.value > rhs.value
+        return OortBool.get_bool_value(result)
 
     def _get_item(self, container: Any, index: Any, position: SourcePosition) -> OortObject:
         if type(container) is OortDict:

@@ -6,8 +6,8 @@
 //! `Rc`/`RefCell`. Conversions happen only at the native `print` boundary and
 //! when reporting the main result. Semantics mirror the Python typed VM.
 //!
-//! Accepted file versions are exact, never inferred: kind=1 typed proto v8,
-//! kind=1 module artifact v10, kind=2 linked bundle v3. Malformed bytecode
+//! Accepted file versions are exact, never inferred: kind=1 typed proto v9,
+//! kind=1 module artifact v11, kind=2 linked bundle v4. Malformed bytecode
 //! (unknown opcode/tag/version, out-of-range index) is rejected explicitly;
 //! numeric semantics follow docs/design/16-numeric-semantics.md.
 //!
@@ -241,7 +241,7 @@ fn read_proto(r: &mut Reader<'_>, adt_decls: &[TypedAdtDecl]) -> TResult<TypedPr
     })
 }
 
-/// Read a single-module typed program (kind=1, proto version 8): ADT
+/// Read a single-module typed program (kind=1, proto version 9): ADT
 /// declarations, function protos, then main. Used for `-t tvm` artifacts that
 /// were never split into modules.
 pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
@@ -253,7 +253,7 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
         return Err(format!("expected typed bytecode (kind=1), got kind={kind}"));
     }
     let version = data[4];
-    if version != 8 {
+    if version != 9 {
         return Err(format!("unsupported typed bytecode version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -301,7 +301,7 @@ pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
         ));
     }
     let version = data[4];
-    if version != 3 {
+    if version != 4 {
         return Err(format!("unsupported linked bundle version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -365,7 +365,7 @@ pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
 }
 
 // ----------------------------------------------------------------------
-// v10 module artifacts and the native linker (P1c-3)
+// v11 module artifacts and the native linker (P1c-3)
 // ----------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -393,7 +393,7 @@ pub struct TypedConstructorRef {
     pub arity: u16,
 }
 
-/// One module compiled to its own artifact (kind=1, version 10).
+/// One module compiled to its own artifact (kind=1, version 11).
 ///
 /// Export/import tables describe module edges; `module.adt_decls` and
 /// `constructors` still use artifact-local ids that the linker remaps.
@@ -407,7 +407,7 @@ pub struct TypedArtifact {
     pub module: TypedModule,
 }
 
-/// Read a kind=1 module artifact (v10). Version 8 is the standalone
+/// Read a kind=1 module artifact (v11). Version 9 is the standalone
 /// single-module format and is not accepted here.
 pub fn read_typed_artifact(data: &[u8]) -> TResult<TypedArtifact> {
     if data.len() < 5 || &data[0..3] != b"OBC" {
@@ -420,7 +420,7 @@ pub fn read_typed_artifact(data: &[u8]) -> TResult<TypedArtifact> {
         ));
     }
     let version = data[4];
-    if version != 10 {
+    if version != 11 {
         return Err(format!(
             "unsupported typed module artifact version {version}"
         ));
@@ -689,7 +689,7 @@ fn visit_artifact(
     Ok(())
 }
 
-/// Link v10 module artifacts into one typed module for the Rust VM.
+/// Link v11 module artifacts into one typed module for the Rust VM.
 ///
 /// Phases:
 /// 1. index artifacts by `module_id` and DFS the import graph (cycles and
@@ -1271,6 +1271,52 @@ fn typed_set_op(op: u32, left: &TypedValue, right: &TypedValue) -> TResult<Typed
     Ok(TypedValue::Set(Rc::new(RefCell::new(result))))
 }
 
+/// Set subset/superset comparisons (OP 0031 C7).
+///
+/// Sets are deduplicated by construction, so a proper relation is the
+/// non-strict one plus a strict length comparison.
+fn typed_set_relation(op: u32, left: &TypedValue, right: &TypedValue) -> TResult<bool> {
+    let (TypedValue::Set(left), TypedValue::Set(right)) = (left, right) else {
+        return Err("typed set comparisons expect two Sets".into());
+    };
+    let left = left.borrow();
+    let right = right.borrow();
+    let contains = |items: &[TypedValue], value: &TypedValue| -> TResult<bool> {
+        for item in items {
+            if typed_equal(item, value)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    };
+    let subset = match op {
+        SET_SUBSET | SET_PROPER_SUBSET => {
+            for item in left.iter() {
+                if !contains(&right, item)? {
+                    return Ok(false);
+                }
+            }
+            true
+        }
+        _ => {
+            for item in right.iter() {
+                if !contains(&left, item)? {
+                    return Ok(false);
+                }
+            }
+            true
+        }
+    };
+    if !subset {
+        return Ok(false);
+    }
+    Ok(match op {
+        SET_PROPER_SUBSET => left.len() < right.len(),
+        SET_PROPER_SUPERSET => right.len() < left.len(),
+        _ => true,
+    })
+}
+
 /// Resolve one `LOAD_OUTER`/`STORE_OUTER` target.
 ///
 /// `depth` is 1-based from the executing closure: depth 1 is its own snapshot,
@@ -1614,6 +1660,10 @@ const MK_CLOSURE: u32 = 88;
 const LOAD_OUTER: u32 = 89;
 const STORE_OUTER: u32 = 90;
 const FRESH_CELL: u32 = 91;
+const SET_SUBSET: u32 = 92;
+const SET_PROPER_SUBSET: u32 = 93;
+const SET_SUPERSET: u32 = 94;
+const SET_PROPER_SUPERSET: u32 = 95;
 
 pub struct TypedVm {
     functions: Vec<ResolvedProto>,
@@ -2126,6 +2176,10 @@ fn execute(
             }
             SET_UNION | SET_INTERSECT | SET_DIFFERENCE | SET_SYMMETRIC => {
                 registers[a] = typed_set_op(op, &registers[b], &registers[c])?;
+            }
+            SET_SUBSET | SET_PROPER_SUBSET | SET_SUPERSET | SET_PROPER_SUPERSET => {
+                registers[a] =
+                    TypedValue::Bool(typed_set_relation(op, &registers[b], &registers[c])?);
             }
             EQ_LIST | NE_LIST | EQ_TUPLE | NE_TUPLE | EQ_SET | NE_SET | EQ_DICT | NE_DICT
             | EQ_ADT | NE_ADT => {

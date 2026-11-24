@@ -1247,6 +1247,18 @@ def _check_binop(function: TypedFunction, instruction: BinOp) -> None:
             if result is not IrType.BOOL:
                 _invalid(function, instruction, f"{op} result {result} != Bool")
             return
+        # Set subset/superset comparisons (C7): same element type, Bool result.
+        if (
+            isinstance(lhs, ContainerType)
+            and lhs.kind == "Set"
+            and isinstance(rhs, ContainerType)
+            and rhs.kind == "Set"
+        ):
+            if lhs != rhs:
+                _invalid(function, instruction, f"{op} Set element types differ: {lhs} vs {rhs}")
+            if result is not IrType.BOOL:
+                _invalid(function, instruction, f"{op} result {result} != Bool")
+            return
         if not (_is_numeric(lhs) and _is_numeric(rhs)):
             _invalid(function, instruction, f"non-numeric operands for {op}")
         if result is not IrType.BOOL:
