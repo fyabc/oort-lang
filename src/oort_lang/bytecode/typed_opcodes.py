@@ -102,6 +102,7 @@ class TypedOp(IntEnum):
     SET_INTERSECT = 84
     SET_DIFFERENCE = 85
     SET_SYMMETRIC = 86
+    MK_FUN = 87
 
 
 # ABC: [op:8][A:8][B:8][C:8]

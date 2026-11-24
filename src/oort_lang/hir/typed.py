@@ -34,7 +34,7 @@ from ..semantics.core.types import (
     substitute,
 )
 from .dump import format_instruction
-from .lower import HirLowerer
+from .lower import HirLowerer, lambda_function_name
 from .nodes import (
     AdtField,
     AdtTag,
@@ -60,6 +60,8 @@ from .nodes import (
     LoadConst,
     LoadGlobal,
     LoadLocal,
+    LoadOuter,
+    MakeClosure,
     Move,
     OpenIterator,
     Return,
@@ -67,6 +69,7 @@ from .nodes import (
     Slice,
     StoreGlobal,
     StoreLocal,
+    StoreOuter,
     TupleItem,
     UnOp,
     register_reads,
@@ -344,6 +347,18 @@ def _validate_enum(node: nodes.EnumDef) -> None:
     _ir_type_from(enum_type, node.position)
 
 
+def _validate_lambda(node: nodes.FunctionDef) -> None:
+    if node.type_params:
+        _reject(node, "generic lambdas")
+    signature = node.metadata.get("type_obj")
+    if not isinstance(signature, FunctionType):
+        _reject(node, "lambdas without a checked signature")
+    for param_type in signature.params:
+        _ir_type_from(param_type, node.position)
+    _ir_type_from(signature.ret, node.position)
+    _validate_statements(node.body.statements)
+
+
 def _validate_function(node: nodes.FunctionDef) -> None:
     if node.is_lambda:
         _reject(node, "lambdas")
@@ -375,6 +390,9 @@ def _validate_statements(statements: Iterable[nodes.ASTNode]) -> None:
         elif isinstance(stmt, nodes.ReturnExpr):
             if stmt.value is not None:
                 _validate_expr(stmt.value)
+        elif isinstance(stmt, nodes.FunctionDef) and stmt.is_lambda:
+            # A trailing lambda is the function body's expression statement.
+            _validate_lambda(stmt)
         elif isinstance(stmt, nodes.FunctionDef):
             _reject(stmt, "nested function definitions")
         elif isinstance(
@@ -565,7 +583,8 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
         _ir_type_for_node(node)
         return
     if isinstance(node, nodes.FunctionDef) and node.is_lambda:
-        _reject(node, "lambdas")
+        _validate_lambda(node)
+        return
     if isinstance(node, nodes.Subscript):
         _validate_expr(node.value)
         _validate_expr(node.index)
@@ -981,6 +1000,25 @@ class _TypedHirLowerer(HirLowerer):
         result = super()._lower_function(node, index)
         self.function_types[node.name] = signature
         return result
+
+    def _lower_lambda(self, node: nodes.FunctionDef) -> int:
+        signature = node.metadata.get("type_obj")
+        if not isinstance(signature, FunctionType):
+            raise UnsupportedSyntax(
+                "Typed HIR backend is missing the signature of a lambda.",
+                node.position,
+            )
+        # `super()._lower_lambda` reserves this index first, so the derived
+        # name matches the HirFunction it creates.
+        name = lambda_function_name(self._next_function_index)
+        saved_ret = self._current_ret
+        self._current_ret = _ir_type_from(signature.ret, node.position)
+        try:
+            dst = super()._lower_lambda(node)
+        finally:
+            self._current_ret = saved_ret
+        self.function_types[name] = signature
+        return dst
 
     def _lower_function_body(self, node: nodes.FunctionDef) -> int:
         last: int | None = None
@@ -1431,6 +1469,15 @@ def validate_typed_module(module: TypedModule) -> None:
             elif isinstance(instruction, LoadGlobal):
                 if function.register_types[instruction.dst] is not IrType.FUNCTION:
                     _invalid(function, instruction, "non-function global")
+            elif isinstance(instruction, MakeClosure):
+                if function.register_types[instruction.dst] is not IrType.FUNCTION:
+                    _invalid(function, instruction, "closure target is not a function")
+            elif isinstance(instruction, (LoadOuter, StoreOuter)):
+                _invalid(
+                    function,
+                    instruction,
+                    "closures capturing outer variables (only non-capturing lambdas are supported)",
+                )
             elif isinstance(instruction, StoreGlobal):
                 _invalid(function, instruction, "global stores")
             elif isinstance(instruction, (BuildList, BuildSet, BuildTuple)):

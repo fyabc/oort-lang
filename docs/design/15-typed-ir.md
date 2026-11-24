@@ -623,16 +623,22 @@ S1 的约束与实现：
   新增 `typed_sets_dicts`；Python typed 单测覆盖 OBC round-trip；Rust 单测
   覆盖去重、摘要顺序（实现特性）与无序相等。
 
-### B2 实现状态：命名函数值（2026-11-25）
+### B2 实现状态：函数值与 lambda（2026-11-25）
 
 - `FunctionType` 不再拒绝，统一擦除为 `IrType.FUNCTION`；函数类型可出现在
   参数、返回值、局部变量与容器元素中；
 - Python typed VM 的入口守卫接受 `TypedCodeFunction`/`OortNativeFunction`；
   Rust typed VM 接受 `Function`/`Native`；
 - 命名顶层函数可作为一等值传递、返回与调用；函数相等/打印仍显式拒绝；
-- lambda（`MakeClosure`）与捕获闭包尚未进入 typed 后端，继续显式拒绝；
+- **非捕获 lambda**（第二切片）：`MakeClosure` 编译为新 opcode `MK_FUN`
+  （87），lambda proto 以模块内唯一的 `<lambda:N>` 名进入函数表；HIR 层
+  校验 `LoadOuter`/`StoreOuter` 并拒绝捕获闭包；
+- artifact/linker：lambda 不导出、不参与接口哈希；跨模块链接时与其他函数
+  一起重定位 `MK_FUN`/`DEF_FUN` 索引（先建完整函数映射再重写）；缓存与
+  `.obc` round-trip 覆盖；
 - 验收：`examples/08_core/08_22_typed_function_values.ort`、typed differential
-  `typed_function_values`、eval/vm/tvm 三目标一致性测试。
+  `typed_function_values` 与 `typed_module_lambdas`（bundle + 原生链接）、
+  eval/vm/tvm 三目标一致性测试。
 
 ## 9. 风险与开放问题
 

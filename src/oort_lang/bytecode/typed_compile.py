@@ -38,6 +38,7 @@ from ..hir.nodes import (
     LoadConst,
     LoadGlobal,
     LoadLocal,
+    MakeClosure,
     Move,
     OpenIterator,
     Return,
@@ -246,6 +247,11 @@ class _ProtoBuilder:
         elif isinstance(instruction, LoadGlobal):
             index = self._constant(instruction.name, position)
             self._emit(encode_abx(TypedOp.LOAD_G, instruction.dst, index), position)
+        elif isinstance(instruction, MakeClosure):
+            self._emit(
+                encode_abx(TypedOp.MK_FUN, instruction.dst, instruction.function_index),
+                position,
+            )
         elif isinstance(instruction, DefineFunction):
             name_index = self._constant(instruction.name, position)
             if name_index >= 256:

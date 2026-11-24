@@ -141,6 +141,10 @@ class TypedCodeVM:
                 if not 0 <= bx < len(program.functions):
                     raise OortTypeError("Invalid typed function index.", position)
                 self.globals[name] = TypedCodeFunction(program.functions[bx])
+            elif op is TypedOp.MK_FUN:
+                if not 0 <= bx < len(program.functions):
+                    raise OortTypeError("Invalid typed function index.", position)
+                registers[a] = TypedCodeFunction(program.functions[bx])
             elif op is TypedOp.MOVE:
                 registers[a] = registers[b]
             elif op in (

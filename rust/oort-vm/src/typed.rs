@@ -579,7 +579,7 @@ fn remap_proto(
                 .get(&b)
                 .ok_or_else(|| "typed constructor symbol out of range".to_string())?;
             *word = (op << 24) | (a << 16) | ((mapped as u32) << 8) | c;
-        } else if op == DEF_FUN {
+        } else if op == DEF_FUN || op == MK_FUN {
             if let Some(function_map) = function_map {
                 let a = (*word >> 16) & 0xff;
                 let bx = (*word & 0xffff) as u16;
@@ -758,21 +758,26 @@ pub fn link_artifacts(
     for module_id in function_order {
         let artifact = &modules[module_id];
         let (decl_map, ctor_map) = &maps[module_id];
+        let protos = &artifact.module.functions;
+        // Assign every global slot first so MK_FUN inside any function can
+        // relocate against the complete map.
         let mut function_map: HashMap<u16, u16> = HashMap::new();
-        for (local, proto) in artifact.module.functions.iter().enumerate() {
-            if let Some(owner) = owners.insert(proto.name.clone(), module_id.clone()) {
-                return Err(format!(
-                    "typed function name collision: '{}' in '{owner}' and '{module_id}'",
-                    proto.name
-                ));
+        let base =
+            u16::try_from(functions.len()).map_err(|_| "too many typed functions".to_string())?;
+        for local in 0..protos.len() {
+            let local = u16::try_from(local).map_err(|_| "too many typed functions".to_string())?;
+            function_map.insert(local, base + local);
+        }
+        for (_local, proto) in protos.iter().enumerate() {
+            if !proto.name.starts_with("<lambda:") {
+                if let Some(owner) = owners.insert(proto.name.clone(), module_id.clone()) {
+                    return Err(format!(
+                        "typed function name collision: '{}' in '{owner}' and '{module_id}'",
+                        proto.name
+                    ));
+                }
             }
-            let global = u16::try_from(functions.len())
-                .map_err(|_| "too many typed functions".to_string())?;
-            function_map.insert(
-                u16::try_from(local).map_err(|_| "too many typed functions".to_string())?,
-                global,
-            );
-            functions.push(remap_proto(proto, decl_map, ctor_map, None)?);
+            functions.push(remap_proto(proto, decl_map, ctor_map, Some(&function_map))?);
         }
         function_maps.insert(module_id.clone(), function_map);
     }
@@ -1235,7 +1240,10 @@ fn guard(expected: &TypedType, value: &TypedValue) -> TResult<()> {
             | (TypedType::Dict(_, _), TypedValue::Dict(_))
             | (TypedType::Adt(_, _), TypedValue::Adt(_))
             | (TypedType::Iterator, TypedValue::Iterator(_))
-            | (TypedType::Function, TypedValue::Function(_) | TypedValue::Native(_))
+            | (
+                TypedType::Function,
+                TypedValue::Function(_) | TypedValue::Native(_)
+            )
     );
     if ok {
         Ok(())
@@ -1480,6 +1488,7 @@ const SET_UNION: u32 = 83;
 const SET_INTERSECT: u32 = 84;
 const SET_DIFFERENCE: u32 = 85;
 const SET_SYMMETRIC: u32 = 86;
+const MK_FUN: u32 = 87;
 
 pub struct TypedVm {
     functions: Vec<ResolvedProto>,
@@ -1692,6 +1701,13 @@ fn execute(
                 };
             }
             DEF_FUN => {}
+            MK_FUN => {
+                let index = bx as usize;
+                if index >= functions.len() {
+                    return Err("typed MK_FUN index out of range".into());
+                }
+                registers[a] = TypedValue::Function(index);
+            }
             MOVE => {
                 registers[a] = registers[b].clone();
             }

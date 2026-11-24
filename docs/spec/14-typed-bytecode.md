@@ -152,6 +152,7 @@ ABx: [op:8][A:8][Bx:16]
 | 82 | `SLICE` | ABC | A=三槽窗口基址 `[容器, start, stop]`, B=flags（1=有 start,2=有 stop）, C=目标 | 切片读；缺省槽为 Unit，步长不在指令中 |
 | 83/84 | `SET_UNION` / `SET_INTERSECT` | ABC | A=目标, B=左, C=右 | Set 并/交，键相等去重 → 新 Set |
 | 85/86 | `SET_DIFFERENCE` / `SET_SYMMETRIC` | ABC | 同上 | Set 差/对称差 → 新 Set |
+| 87 | `MK_FUN` | ABx | A=目标, Bx=函数索引 | 把函数（含非捕获 lambda）物化为一等函数值 |
 
 ### 3.2 调用约定
 
@@ -231,13 +232,14 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   List/Tuple（元素齐次）/Set/Dict/String 的 `for` 迭代；
 - 集合表面（OP 0031）：`in`/`!in`、List/Dict 下标写入、List/Tuple/String
   切片读（步长拒绝）、Set `| & - ^`；
-- 函数值（B2 第一切片）：命名函数可作参数/返回值/局部变量/容器元素；
-  函数类型擦除为 `FUNCTION`；lambda 与捕获闭包仍拒绝；
+- 函数值（B2）：命名函数与非捕获 lambda 可作参数/返回值/局部变量/容器元素；
+  函数类型擦除为 `FUNCTION`；lambda 经 `MK_FUN` 物化（lambda proto 不导出、
+  不进入接口哈希，跨模块重定位与命名函数一致）；捕获闭包仍拒绝；
 - 支持单态与泛型 ADT（含 prelude `Option`）；类型参数进入类型表并在运行时
   作为 ADT 实例身份保留；match 支持 ADT/Int/Float/Bool/String/Tuple
   scrutinee，构造器/通配/变量/守卫/字面量/Tuple/或模式与嵌套组合；
-- 无切片赋值/步长切片、Set 子集比较、列表拼接/排序；类/接口/泛型/
-  lambda 仍拒绝；函数值不可比较/打印；typed 模块导入在 loader 中解析，
+- 无切片赋值/步长切片、Set 子集比较、列表拼接/排序；类/接口/泛型仍拒绝；
+  捕获闭包与函数值比较/打印仍拒绝；typed 模块导入在 loader 中解析，
   函数体不进入 kind=1 字节码；
 - kind=1 有两个不再互读的版本：**v7** 为单模块程序，**v9** 为 module
   artifact（module_id/export/import 表 + 构造器表；v6/v8 为历史格式）；

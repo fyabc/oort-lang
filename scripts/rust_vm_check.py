@@ -400,11 +400,33 @@ def dispatch(op: String, x: Int) -> Int {
     f(x)
 }
 
+def with_lambda() -> Int {
+    val double: (Int) -> Int = do(x: Int) -> Int { x * 2 }
+    double(21)
+}
+
+def lambda_arg() -> Int {
+    apply(do(x: Int) -> Int { x + 10 }, 5)
+}
+
+def lambda_in_list() -> Int {
+    val fs: List[(Int) -> Int] = [do(x: Int) -> Int { x - 1 }, inc]
+    var total: Int = 0
+    for f in fs { total = total + f(10) }
+    total
+}
+
+def nested_lambda() -> Int {
+    val f: (Int) -> Int = do(x: Int) -> Int { apply(do(y: Int) -> Int { y * 3 }, x) }
+    f(4)
+}
+
 print(apply(inc, 1), apply(dec, 1))
 print(apply(pick(true), 2), apply(pick(false), 2))
 print(local())
 print(sum_apply([inc, dec], 10))
 print(dispatch("inc", 6), dispatch("dec", 6))
+print(with_lambda(), lambda_arg(), lambda_in_list(), nested_lambda())
 """,
     "typed_collection_surface": """#lang oort-core
 
@@ -474,6 +496,19 @@ def area_b(color: Color) -> Int { match color { Blue => 2 } }
 import "./a"
 import "./b"
 print(a.area_a(a.make_a()), b.area_b(b.make_b()))
+""",
+    ),
+    "typed_module_lambdas": (
+        {
+            "lib.ort": """#lang oort-core
+def twice(f: (Int) -> Int, x: Int) -> Int { f(f(x)) }
+def lib_lambda() -> Int { twice(do(v: Int) -> Int { v + 3 }, 4) }
+""",
+        },
+        """#lang oort-core
+from "./lib" import twice, lib_lambda
+def main_lambda() -> Int { twice(do(v: Int) -> Int { v * 2 }, 5) }
+print(lib_lambda(), main_lambda())
 """,
     ),
 }

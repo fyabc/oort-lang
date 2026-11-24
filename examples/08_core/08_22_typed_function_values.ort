@@ -1,7 +1,7 @@
 #lang oort-core
 
-# typed 函数值：命名函数作为一等值，支持高阶参数/返回与容器存储。
-# lambda 与捕获闭包仍显式拒绝（后续切片）。
+# typed 函数值：命名函数与 lambda 作为一等值，支持高阶参数/返回与容器存储。
+# 捕获外部变量的闭包仍显式拒绝（后续切片）。
 
 def inc(x: Int) -> Int { x + 1 }
 def dec(x: Int) -> Int { x - 1 }
@@ -24,11 +24,25 @@ def sum_apply(fs: List[(Int) -> Int], x: Int) -> Int {
 }
 
 # Dict 作为函数分派表：函数类型嵌套在容器值位置。
-# 没有 lambda 无法在运行时构造新函数（如 compose），只能分派已有命名函数。
 def dispatch(op: String, x: Int) -> Int {
     val table: Dict[String, (Int) -> Int] = {: "inc": inc, "dec": dec :}
     val f: (Int) -> Int = table[op]
     f(x)
+}
+
+# 非捕获 lambda：运行时构造新函数（如这里的 double/triple）。
+def with_lambda() -> Int {
+    val double: (Int) -> Int = do(x: Int) -> Int { x * 2 }
+    double(21)
+}
+
+def lambda_arg() -> Int {
+    apply(do(x: Int) -> Int { x + 10 }, 5)
+}
+
+def compose_style() -> Int {
+    val f: (Int) -> Int = do(x: Int) -> Int { apply(do(y: Int) -> Int { y * 3 }, x) }
+    f(4)
 }
 
 print(apply(inc, 1), apply(dec, 1))
@@ -36,3 +50,4 @@ print(apply(pick(true), 2), apply(pick(false), 2))
 print(local())
 print(sum_apply([inc, dec], 10))
 print(dispatch("inc", 6), dispatch("dec", 6))
+print(with_lambda(), lambda_arg(), compose_style())

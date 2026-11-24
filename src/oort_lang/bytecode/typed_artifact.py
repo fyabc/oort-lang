@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..diagnostics.syntax_errors import UnsupportedSyntax
+from ..hir.lower import is_lambda_function_name
 from ..hir.typed import (
     AdtConstructor,
     AdtDecl,
@@ -276,6 +277,10 @@ def build_typed_artifact(
 
     exports: list[TypedExport] = []
     for index, proto in enumerate(program.functions):
+        if is_lambda_function_name(proto.name):
+            # Lambdas are internal helpers; they have no importable name and
+            # must not collide across modules or affect interface hashes.
+            continue
         exports.append(TypedExport("function", proto.name, index, abi_hash=_function_abi(proto)))
     for decl_index, decl in enumerate(program.adt_decls):
         if decl.origin == unit.module_id:
@@ -405,6 +410,14 @@ def _rewrite_proto(
             if local not in function_map:
                 raise UnsupportedSyntax(
                     f"Typed bytecode defines unknown function id {local}.",
+                    proto.positions[0],
+                )
+            word = encode_abx(op, decode_a(word), function_map[local])
+        elif op is TypedOp.MK_FUN and function_map is not None:
+            local = decode_bx(word)
+            if local not in function_map:
+                raise UnsupportedSyntax(
+                    f"Typed bytecode references unknown function id {local}.",
                     proto.positions[0],
                 )
             word = encode_abx(op, decode_a(word), function_map[local])
@@ -545,17 +558,20 @@ def link_typed_artifacts(
     # Root functions first, matching the in-memory linker.
     for artifact in [order[-1], *order[:-1]]:
         mapping = constructor_maps[artifact.module_id]
-        function_map: dict[int, int] = {}
-        for index, proto in enumerate(artifact.program.functions):
-            if proto.name in owners:
-                raise UnsupportedSyntax(
-                    f"Typed function name collision: '{proto.name}' in "
-                    f"'{owners[proto.name]}' and '{artifact.module_id}'.",
-                    proto.positions[0],
-                )
-            owners[proto.name] = artifact.module_id
-            function_map[index] = len(functions)
-            functions.append(_rewrite_proto(proto, mapping))
+        protos = artifact.program.functions
+        # Assign every global slot first so MK_FUN inside any function can
+        # relocate against the complete map.
+        function_map = {index: len(functions) + index for index in range(len(protos))}
+        for proto in protos:
+            if not is_lambda_function_name(proto.name):
+                if proto.name in owners:
+                    raise UnsupportedSyntax(
+                        f"Typed function name collision: '{proto.name}' in "
+                        f"'{owners[proto.name]}' and '{artifact.module_id}'.",
+                        proto.positions[0],
+                    )
+                owners[proto.name] = artifact.module_id
+            functions.append(_rewrite_proto(proto, mapping, function_map))
         function_maps[artifact.module_id] = function_map
 
     root_artifact = order[-1]

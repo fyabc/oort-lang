@@ -592,7 +592,8 @@ class HirLowerer:
             self._reject(node, "generic lambdas")
         names, signature = self._lower_signature(node, anonymous=True, start_slot=0)
         index = self._reserve_function_index()
-        state = _FunctionState(name="<lambda>", code=[], scopes=[{}])
+        name = lambda_function_name(index)
+        state = _FunctionState(name=name, code=[], scopes=[{}])
         self._states.append(state)
         try:
             self._declare_signature_params(
@@ -603,7 +604,7 @@ class HirLowerer:
             )
             self._lower_function_body(node)
             result = HirFunction(
-                name="<lambda>",
+                name=name,
                 params=names,
                 local_count=state.max_reg,
                 code=tuple(state.code),
@@ -1238,6 +1239,20 @@ class HirLowerer:
 
 def _is_reserved_method_name(name: str) -> bool:
     return len(name) > 4 and name.startswith("__") and name.endswith("__")
+
+
+def lambda_function_name(index: int) -> str:
+    """Unique internal name for the lambda lowered at ``index``.
+
+    Unique per module so typed lowering can key signatures by name and the
+    artifact linker's duplicate-name check stays meaningful.
+    """
+
+    return f"<lambda:{index}>"
+
+
+def is_lambda_function_name(name: str) -> bool:
+    return name.startswith("<lambda:")
 
 
 def _simple_signature(names: tuple[str, ...]) -> SignatureSpec:
