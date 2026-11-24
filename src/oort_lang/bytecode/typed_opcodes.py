@@ -105,6 +105,8 @@ class TypedOp(IntEnum):
     MK_FUN = 87
     MK_CLOSURE = 88
     LOAD_OUTER = 89
+    STORE_OUTER = 90
+    FRESH_CELL = 91
 
 
 # ABC: [op:8][A:8][B:8][C:8]

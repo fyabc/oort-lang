@@ -66,7 +66,7 @@ def _dependency_key(dependencies: Mapping[str, int]) -> str:
 
 
 class TypedArtifactCache:
-    """A versioned, content-addressed directory of v8 artifacts."""
+    """A versioned, content-addressed directory of typed module artifacts."""
 
     def __init__(self, directory: str | Path, max_size: int | None = None):
         self.directory = Path(directory)

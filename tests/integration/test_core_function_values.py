@@ -71,16 +71,6 @@ def test_named_function_values_match_across_targets(capsys, target):
     ("source", "message"),
     [
         (
-            "def g() -> Int { var k = 1\n"
-            "val f: (Int) -> Int = do(x: Int) -> Int { x + k }\nk = 2\nf(10) }\nprint(g())",
-            "reassigning a variable after a closure captures it",
-        ),
-        (
-            "def g() -> Int { var k = 1\n"
-            "val f: (Int) -> Int = do(x: Int) -> Int { k = x; k }\nf(10) }\nprint(g())",
-            "writing captured variables from inside a closure",
-        ),
-        (
             "def g() -> Int { val f = do: 1\nf() }\nprint(g())",
             "Lambdas without an explicit parameter list are not supported",
         ),
@@ -141,10 +131,37 @@ def shadow() -> Int {
     f(7) + n
 }
 
+def counter() -> () -> Int {
+    var n = 0
+    do() -> Int { n = n + 1; n }
+}
+
+def use_counter() -> Int {
+    val c = counter()
+    c() + c() + c()
+}
+
+def reassign_after_capture() -> Int {
+    var k = 1
+    val f = do(x: Int) -> Int { x + k }
+    k = 2
+    f(10)
+}
+
+def make_acc() -> Int {
+    var sum = 0
+    val add = do(v: Int) -> Unit { sum = sum + v }
+    add(1)
+    add(20)
+    add(300)
+    sum
+}
+
 print(use_adder(), loop_capture(), use_nested(), shadow())
+print(use_counter(), reassign_after_capture(), make_acc())
 """
 
-CAPTURING_OUTPUT = "15 63 123 114\n"
+CAPTURING_OUTPUT = "15 63 123 114\n6 12 321\n"
 
 
 @pytest.mark.parametrize("target", ["eval", "vm", "tvm"])
@@ -152,6 +169,20 @@ def test_capturing_closures_match_across_targets(capsys, target):
     compiler = get_compiler(["NOT_EXIST", "-t", target])
     compiler.run_string(CAPTURING)
     assert capsys.readouterr().out == CAPTURING_OUTPUT
+
+
+@pytest.mark.parametrize("target", ["eval", "vm", "tvm"])
+def test_top_level_block_capture_shares_main_cell(capsys, target):
+    compiler = get_compiler(["NOT_EXIST", "-t", target])
+    compiler.run_string(
+        "#lang oort-core\n"
+        "{\n"
+        "    var n = 0\n"
+        "    val c = do() -> Int { n = n + 1; n }\n"
+        "    print(c(), c(), n)\n"
+        "}\n"
+    )
+    assert capsys.readouterr().out == "1 2 2\n"
 
 
 @pytest.mark.parametrize("target", ["eval", "vm", "tvm"])

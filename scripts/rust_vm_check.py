@@ -466,7 +466,34 @@ def shadow() -> Int {
     f(7) + n
 }
 
+def counter() -> () -> Int {
+    var n = 0
+    do() -> Int { n = n + 1; n }
+}
+
+def use_counter() -> Int {
+    val c = counter()
+    c() + c() + c()
+}
+
+def reassign_after_capture() -> Int {
+    var k = 1
+    val f = do(x: Int) -> Int { x + k }
+    k = 2
+    f(10)
+}
+
+def make_acc() -> Int {
+    var sum = 0
+    val add = do(v: Int) -> Unit { sum = sum + v }
+    add(1)
+    add(20)
+    add(300)
+    sum
+}
+
 print(use_adder(), loop_capture(), use_nested(), shadow())
+print(use_counter(), reassign_after_capture(), make_acc())
 """,
     "typed_collection_surface": """#lang oort-core
 
@@ -503,7 +530,7 @@ print({. 1, 2 .} - {. 2 .}, {. 1, 2 .} ^ {. 2, 3 .})
 
 
 # Multi-module typed cases: (dependency sources, root source). They exercise
-# v9 artifact linking (imported constructors, same-named ADTs) through kind=2.
+# v10 artifact linking (imported constructors, same-named ADTs) through kind=2.
 TYPED_MODULE_DIFF_PROGRAMS = {
     "typed_imported_ctors": (
         {
@@ -619,7 +646,7 @@ def compile_files_to_bundle(main_path: Path, out: Path):
 
 
 def compile_files_to_artifacts(main_path: Path, out_dir: Path):
-    """Write one v9 artifact per module; return (root_path, dependency_paths)."""
+    """Write one v10 artifact per module; return (root_path, dependency_paths)."""
 
     compiler, ast, _info = _frontend(main_path)
     resolve = compiler._make_typed_resolver(main_path.parent)

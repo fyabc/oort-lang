@@ -47,6 +47,7 @@ pub struct TypedProto {
     pub register_types: Vec<Option<u16>>,
     pub param_types: Vec<TypedType>,
     pub ret_type: TypedType,
+    pub cells: Vec<u16>,
     pub code: Vec<u32>,
     pub constants: Vec<Constant>,
 }
@@ -184,6 +185,16 @@ fn read_proto(r: &mut Reader<'_>, adt_decls: &[TypedAdtDecl]) -> TResult<TypedPr
         param_types.push(type_at(&types, r.u16()?, &name)?);
     }
     let ret_type = type_at(&types, r.u16()?, &name)?;
+    let mut cells = Vec::new();
+    for _ in 0..r.u16()? {
+        let slot = r.u16()?;
+        if slot >= register_count {
+            return Err(format!(
+                "typed proto '{name}' has an out-of-range cell slot"
+            ));
+        }
+        cells.push(slot);
+    }
     let ncode = r.u32()?;
     let mut code = Vec::with_capacity(ncode as usize);
     for _ in 0..ncode {
@@ -211,6 +222,7 @@ fn read_proto(r: &mut Reader<'_>, adt_decls: &[TypedAdtDecl]) -> TResult<TypedPr
         register_types,
         param_types,
         ret_type,
+        cells,
         code,
         constants,
     })
@@ -225,7 +237,7 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
         return Err(format!("expected typed bytecode (kind=1), got kind={kind}"));
     }
     let version = data[4];
-    if version != 6 && version != 7 {
+    if version != 8 {
         return Err(format!("unsupported typed bytecode version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -273,7 +285,7 @@ pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
         ));
     }
     let version = data[4];
-    if version != 2 {
+    if version != 3 {
         return Err(format!("unsupported linked bundle version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -337,7 +349,7 @@ pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
 }
 
 // ----------------------------------------------------------------------
-// v8 module artifacts and the native linker (P1c-3)
+// v10 module artifacts and the native linker (P1c-3)
 // ----------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -386,7 +398,7 @@ pub fn read_typed_artifact(data: &[u8]) -> TResult<TypedArtifact> {
         ));
     }
     let version = data[4];
-    if version != 9 {
+    if version != 10 {
         return Err(format!(
             "unsupported typed module artifact version {version}"
         ));
@@ -651,7 +663,7 @@ fn visit_artifact(
     Ok(())
 }
 
-/// Link v8 module artifacts into one typed module for the Rust VM.
+/// Link v10 module artifacts into one typed module for the Rust VM.
 pub fn link_artifacts(
     root: TypedArtifact,
     dependencies: Vec<TypedArtifact>,
@@ -812,6 +824,7 @@ enum TypedValue {
     Iterator(Rc<RefCell<TypedIterator>>),
     Function(usize),
     Closure(Rc<TypedClosure>),
+    Cell(Rc<RefCell<TypedValue>>),
     Native(TypedNative),
 }
 
@@ -854,7 +867,8 @@ enum TypedNative {
 }
 
 fn display_typed(value: &TypedValue) -> String {
-    match value {
+    let value = unwrap_cell(value);
+    match &*value {
         TypedValue::Unit => "null".into(),
         TypedValue::Bool(b) => if *b { "true" } else { "false" }.into(),
         TypedValue::Int(i) => i.to_string(),
@@ -902,9 +916,10 @@ fn display_typed(value: &TypedValue) -> String {
             }
         }
         TypedValue::Iterator(_) => "<iterator>".into(),
-        TypedValue::Function(_) | TypedValue::Closure(_) | TypedValue::Native(_) => {
-            "<function>".into()
-        }
+        TypedValue::Function(_)
+        | TypedValue::Closure(_)
+        | TypedValue::Cell(_)
+        | TypedValue::Native(_) => "<function>".into(),
     }
 }
 
@@ -964,6 +979,7 @@ fn typed_to_value(value: &TypedValue) -> TResult<Value> {
 fn typed_equal(lhs: &TypedValue, rhs: &TypedValue) -> TResult<bool> {
     Ok(match (lhs, rhs) {
         (TypedValue::Unit, TypedValue::Unit) => true,
+        (TypedValue::Cell(a), TypedValue::Cell(b)) => typed_equal(&a.borrow(), &b.borrow())?,
         (TypedValue::Function(_), _) | (TypedValue::Closure(_), _) => {
             return Err("functions cannot be compared".into())
         }
@@ -1196,6 +1212,34 @@ fn typed_set_op(op: u32, left: &TypedValue, right: &TypedValue) -> TResult<Typed
         }
     }
     Ok(TypedValue::Set(Rc::new(RefCell::new(result))))
+}
+
+fn closure_slot<'a>(
+    closure: Option<&'a Rc<TypedClosure>>,
+    depth: usize,
+    slot: usize,
+) -> TResult<&'a TypedValue> {
+    if depth < 1 {
+        return Err("invalid closure depth in typed bytecode".into());
+    }
+    let mut current = closure.ok_or("invalid closure depth in typed bytecode")?;
+    for _ in 0..(depth - 1) {
+        current = current
+            .parent
+            .as_ref()
+            .ok_or("invalid closure depth in typed bytecode")?;
+    }
+    current
+        .snapshot
+        .get(slot)
+        .ok_or_else(|| "invalid closure slot in typed bytecode".to_string())
+}
+
+fn unwrap_cell(value: &TypedValue) -> std::borrow::Cow<'_, TypedValue> {
+    match value {
+        TypedValue::Cell(cell) => std::borrow::Cow::Owned(cell.borrow().clone()),
+        other => std::borrow::Cow::Borrowed(other),
+    }
 }
 
 fn as_int(value: &TypedValue) -> TResult<&BigInt> {
@@ -1506,6 +1550,8 @@ const SET_SYMMETRIC: u32 = 86;
 const MK_FUN: u32 = 87;
 const MK_CLOSURE: u32 = 88;
 const LOAD_OUTER: u32 = 89;
+const STORE_OUTER: u32 = 90;
+const FRESH_CELL: u32 = 91;
 
 pub struct TypedVm {
     functions: Vec<ResolvedProto>,
@@ -1696,6 +1742,12 @@ fn execute(
     closure: Option<&Rc<TypedClosure>>,
 ) -> TResult<TypedValue> {
     let proto = &resolved.proto;
+    for &slot in &proto.cells {
+        let index = slot as usize;
+        if index < registers.len() {
+            registers[index] = TypedValue::Cell(Rc::new(RefCell::new(registers[index].clone())));
+        }
+    }
     let mut pc = 0usize;
     while pc < proto.code.len() {
         let word = proto.code[pc];
@@ -1709,8 +1761,15 @@ fn execute(
             LOAD_K => {
                 registers[a] = constant_value(&proto.constants[bx])?;
             }
-            LOAD_L | STORE_L => {
-                registers[a] = registers[b].clone();
+            LOAD_L => {
+                registers[a] = unwrap_cell(&registers[b]).into_owned();
+            }
+            STORE_L => {
+                if let TypedValue::Cell(cell) = &registers[a] {
+                    *cell.borrow_mut() = unwrap_cell(&registers[b]).into_owned();
+                } else {
+                    registers[a] = registers[b].clone();
+                }
             }
             LOAD_G => {
                 registers[a] = match resolve_global(resolved, globals, bx)? {
@@ -1738,24 +1797,17 @@ fn execute(
                 }));
             }
             LOAD_OUTER => {
-                if b < 1 {
-                    return Err("invalid closure depth in typed bytecode".into());
+                registers[a] = unwrap_cell(closure_slot(closure, b, c)?).into_owned();
+            }
+            STORE_OUTER => {
+                let target = closure_slot(closure, a, b)?;
+                match target {
+                    TypedValue::Cell(cell) => *cell.borrow_mut() = registers[c].clone(),
+                    _ => return Err("typed closure write target is not a shared cell".into()),
                 }
-                let mut current = closure
-                    .ok_or("invalid closure depth in typed bytecode")?
-                    .clone();
-                for _ in 0..(b - 1) {
-                    current = current
-                        .parent
-                        .clone()
-                        .ok_or("invalid closure depth in typed bytecode")?;
-                }
-                let value = current
-                    .snapshot
-                    .get(c)
-                    .ok_or("invalid closure slot in typed bytecode")?
-                    .clone();
-                registers[a] = value;
+            }
+            FRESH_CELL => {
+                registers[a] = TypedValue::Cell(Rc::new(RefCell::new(TypedValue::Unit)));
             }
             MOVE => {
                 registers[a] = registers[b].clone();
@@ -2156,6 +2208,7 @@ mod tests {
     #[test]
     fn resolves_globals_once_per_proto() {
         let proto = TypedProto {
+            cells: vec![],
             name: "test".into(),
             is_main: false,
             register_count: 0,
@@ -2193,6 +2246,7 @@ mod tests {
     #[test]
     fn cached_globals_refresh_after_version_bump() {
         let proto = TypedProto {
+            cells: vec![],
             name: "g".into(),
             is_main: false,
             register_count: 0,

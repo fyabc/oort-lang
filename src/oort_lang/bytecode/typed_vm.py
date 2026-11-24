@@ -46,12 +46,22 @@ class TypedCodeFunction:
     proto: TypedProto
 
 
+class TypedCell:
+    """A mutable local shared between a frame and its closures."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: Any):
+        self.value = value
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class TypedCodeClosure:
     """A capturing lambda: its proto plus a creation-time frame snapshot.
 
-    Captures are read-only snapshots (checked statically), so the parent
-    chain only forwards outer reads; no cells are needed.
+    The snapshot shares cells for captured slots (reference semantics);
+    non-captured slots are inert copies. The parent chain forwards outer
+    reads and writes.
     """
 
     proto: TypedProto
@@ -131,6 +141,8 @@ class TypedCodeVM:
         registers: list[Any],
         closure: TypedCodeClosure | None = None,
     ) -> OortObject:
+        for slot in proto.cells:
+            registers[slot] = TypedCell(registers[slot])
         code = proto.code
         pc = 0
         while pc < len(code):
@@ -144,8 +156,16 @@ class TypedCodeVM:
 
             if op is TypedOp.LOAD_K:
                 registers[a] = self._wrap_constant(proto.constants[bx])
-            elif op is TypedOp.LOAD_L or op is TypedOp.STORE_L:
-                registers[a] = registers[b]
+            elif op is TypedOp.LOAD_L:
+                value = registers[b]
+                registers[a] = value.value if isinstance(value, TypedCell) else value
+            elif op is TypedOp.STORE_L:
+                target = registers[a]
+                if isinstance(target, TypedCell):
+                    source = registers[b]
+                    target.value = source.value if isinstance(source, TypedCell) else source
+                else:
+                    registers[a] = registers[b]
             elif op is TypedOp.LOAD_G:
                 registers[a] = self._load_global(proto, bx, position)
             elif op is TypedOp.DEF_FUN:
@@ -164,17 +184,19 @@ class TypedCodeVM:
                     raise OortTypeError("Invalid typed function index.", position)
                 registers[a] = TypedCodeClosure(program.functions[bx], tuple(registers), closure)
             elif op is TypedOp.LOAD_OUTER:
-                if b < 1 or closure is None:
-                    raise OortTypeError("Invalid closure depth in typed bytecode.", position)
-                current = closure
-                for _ in range(b - 1):
-                    parent = current.parent
-                    if parent is None:
-                        raise OortTypeError("Invalid closure depth in typed bytecode.", position)
-                    current = parent
-                if not 0 <= c < len(current.snapshot):
-                    raise OortTypeError("Invalid closure slot in typed bytecode.", position)
-                registers[a] = current.snapshot[c]
+                target = self._closure_slot(closure, b, c, position)
+                registers[a] = target.value if isinstance(target, TypedCell) else target
+            elif op is TypedOp.STORE_OUTER:
+                target = self._closure_slot(closure, a, b, position)
+                if isinstance(target, TypedCell):
+                    target.value = registers[c]
+                else:
+                    raise OortTypeError(
+                        "Typed closure write target is not a shared cell.",
+                        position,
+                    )
+            elif op is TypedOp.FRESH_CELL:
+                registers[a] = TypedCell(self.runtime.null)
             elif op is TypedOp.MOVE:
                 registers[a] = registers[b]
             elif op in (
@@ -413,6 +435,25 @@ class TypedCodeVM:
         if entry is None:
             raise OortNameError(f"Unknown name '{name}'.", position)
         return entry.value
+
+    @staticmethod
+    def _closure_slot(
+        closure: TypedCodeClosure | None,
+        depth: int,
+        slot: int,
+        position: SourcePosition,
+    ) -> Any:
+        if depth < 1 or closure is None:
+            raise OortTypeError("Invalid closure depth in typed bytecode.", position)
+        current = closure
+        for _ in range(depth - 1):
+            parent = current.parent
+            if parent is None:
+                raise OortTypeError("Invalid closure depth in typed bytecode.", position)
+            current = parent
+        if not 0 <= slot < len(current.snapshot):
+            raise OortTypeError("Invalid closure slot in typed bytecode.", position)
+        return current.snapshot[slot]
 
     def _call(
         self,

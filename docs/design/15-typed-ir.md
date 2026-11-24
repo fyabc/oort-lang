@@ -556,12 +556,14 @@ wrapping、不引入 `unsafe` 或外部 crate。
 跨方言调用与 FFI 的设计见 [design 17](17-boundary-ffi.md)；ADT 的 typed
 方案见 [design 18](18-typed-adt.md)。
 
-**内存回收（S2/S3）**：List/Tuple/Set/Dict 在当前类型系统下是有限的——没有
-递归名义类型、没有 typed 闭包，结构容器无法引用自身；Rust typed VM 继续用
-`Rc`/`RefCell`，依靠引用计数释放，**不需要 GC**。当 S4（类/递归 ADT）或
-typed 闭包引入后，`Rc` 环会泄漏，必须在 Rust VM v2 / design 01 的值表示
-设计中一并决定 GC（tracing 或 cycle collector），不要在 S2/S3 临时引入。
-动态 kind=0 Rust VM 已存在环泄漏，属于 spike 限制。
+**内存回收（S2/S3/B2）**：List/Tuple/Set/Dict 在当前类型系统下是有限的——没有
+递归名义类型，结构容器无法引用自身；闭包链经快照单向引用父帧，常规场景不
+成环。Rust typed VM 继续用 `Rc`/`RefCell`，依靠引用计数释放，**常规闭包不
+需要 GC**。已知例外：经由可变槽的自引用闭包（`var f = do(){0}; f = do(){f()}`
+——单元格 → 闭包 → 快照 → 同一单元格）会形成 `Rc` 环而泄漏；这与
+S4（类/递归 ADT）的环问题一并留给 Rust VM v2 / design 01 的值表示设计
+（tracing 或 cycle collector），不要在当前阶段临时引入。动态 kind=0 Rust VM
+已存在同类泄漏，属于 spike 限制。
 
 S1 的约束与实现：
 
@@ -634,41 +636,38 @@ Rust typed VM 接受 `Function`/`Native`。函数相等/打印仍显式拒绝。
 proto 以模块内唯一的 `<lambda:N>` 名进入函数表（共享 helper 修复了字面量
 `"<lambda>"` 名导致的寄存器类型表/签名表按键冲突）。
 
-**切片 3：只读捕获闭包。** lambda 子树含 `LoadOuter` 时经 `MK_CLOSURE`
-（88）创建——快照创建帧寄存器、父链取当前执行闭包；`LOAD_OUTER`（89，
-1 基深度，沿父链走 depth-1 步后读快照槽）读取。嵌套捕获通过 creator 链
-（lambda → 创建它的函数）静态归属到正确的帧。`capturing` 判定传递：自身
-不读外部变量、只为嵌套读转发父链的中间 lambda 也以 `MK_CLOSURE` 创建
-（保守判定，保证父链完整）。
+**切片 3：捕获闭包（单元格 / 引用语义）。** lambda 子树含 `LoadOuter` 或
+`StoreOuter` 时经 `MK_CLOSURE`（88）创建：`MK_CLOSURE` 仍把创建帧寄存器拷入
+快照作为父链载体，但被捕获的槽在快照中保存的是**单元格**而不是值。
+编译器沿 creator 链（lambda → 创建它的函数；main 以 key `-1` 参与，顶层
+block 中创建的 lambda 同样归属 main 帧）静态求出每个函数“被任意 lambda
+子树读写”的局部/参数槽，写入 proto 的 `cell_slot` 表；帧入口把这些槽包成
+单元格。`LOAD_L`/`STORE_L` 对单元格透明，`LOAD_OUTER`/`STORE_OUTER`（89/90，
+1 基深度，沿父链走 depth-1 步）读写父帧单元格，`STORE_OUTER` 命中非单元格
+时报错。
 
-**快照模型的可靠性论证。** 动态方言（kind=0）用 cell 引用语义；typed 侧
-快照与之**可观察等价**，前提由两条编译期检查保证：
+于是 typed 侧与动态方言一致地采用**引用语义**：创建闭包后再赋值、闭包内写回
+外层变量，两侧都可见；不再需要“捕获后不得写”的静态检查。循环体入口的 HIR
+`FreshLocals` 降低为每个槽一条 `FRESH_CELL`（91），每轮新单元格，因此各轮
+闭包互不干扰——这与动态侧 FRESH cell 的行为一致，无需额外的 pc 顺序不变量。
 
-1. 捕获槽在最早创建 pc 之后不得 `StoreLocal`——否则引用语义会观察到新值
-   而快照不会（如 `val f = do(){x+k}; k = 2` 引用给 12、快照给 11），
-   显式拒绝；嵌套场景按 creator 链把深层读归属回正确的帧与创建点。
-2. `StoreOuter`（闭包内部写捕获变量）直接拒绝。
+`capturing` 判定仍保守传递：自身不读外部变量、只为嵌套读转发父链的中间
+lambda 也以 `MK_CLOSURE` 创建，保证父链完整。
 
-循环变量天然合法：每轮写入发生在闭包创建点**之前的固定 pc**，快照逐轮
-拷贝当前值，与动态侧 FRESH cell 的“每轮新 cell”语义一致。此论证依赖
-“HIR 中循环变量的写入 pc 固定且先于循环体内 MakeClosure”这一不变量——
-重构 lowering 时必须保持。
+**表示层。** Python 用 `TypedCell`（可变盒）包住帧槽；Rust 用
+`Rc<RefCell<TypedValue>>` 与 `TypedValue::Cell`，`LOAD_L`/`STORE_L` 透明解包。
+GC 仍未定：`Rc` 环（闭包 ↔ 单元格 ↔ 闭包）在引入类/引用类型后需要设计 01
+的值表示决策；当前闭包单元格不会成环，暂不泄漏。
 
 **artifact/linker。** lambda 不导出、不参与接口哈希（依赖者缓存不因模块
 加 lambda 失效）；跨模块链接时 `MK_FUN`/`MK_CLOSURE`/`DEF_FUN` 索引一起
 重定位（先建完整函数映射再重写）；缓存与 `.obc` round-trip 覆盖。
 
-**升级路径（cells 切片）。** 开放捕获变量写共享时：引入 cell 表示与
-`STORE_OUTER` opcode，放宽上述检查 1/2，`MK_CLOSURE` 对共享槽改为捕获
-cell 引用而非值拷贝；Rust 侧需要 `Rc<RefCell<..>>` 或等价物，并触发
-“闭包/类引入后再定 GC”的决策。快照→cell 是表示层替换，静态分析
-（creator 链、按槽归属）可全部复用。
-
-**验收。** `examples/08_core/08_22_typed_function_values.ort`；typed
-differential `typed_function_values`、`typed_capturing_closures` 与
-`typed_module_lambdas`（bundle + 原生链接）；eval/vm/tvm 三目标一致性
-测试；写后捕获与闭包内写的拒绝测试。`08_04`/`08_05` 因顶层 `val`
-（非闭包原因）仍不能进 tvm。
+**验收。** `examples/08_core/08_22_typed_function_values.ort`（含计数器、
+捕获后赋值、累加器）；typed differential `typed_function_values`、
+`typed_capturing_closures` 与 `typed_module_lambdas`（bundle + 原生链接）；
+eval/vm/tvm 三目标一致性测试，覆盖顶层 block 捕获 main 局部变量；
+`08_04`/`08_05` 因顶层 `val`（非闭包原因）仍不能进 tvm。
 
 ## 9. 风险与开放问题
 

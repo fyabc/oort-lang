@@ -47,6 +47,7 @@ from ..hir.nodes import (
     Slice,
     StoreGlobal,
     StoreLocal,
+    StoreOuter,
     TupleItem,
     UnOp,
 )
@@ -112,6 +113,7 @@ class TypedProto:
     param_types: tuple[int, ...]  # type-table indices
     ret_type: int  # type-table index
     is_main: bool = False
+    cells: tuple[int, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -140,9 +142,15 @@ class _ConstantPool:
 
 
 class _ProtoBuilder:
-    def __init__(self, function: TypedFunction, capturing: set[int] | None = None):
+    def __init__(
+        self,
+        function: TypedFunction,
+        capturing: set[int] | None = None,
+        cells: tuple[int, ...] = (),
+    ):
         self.function = function
         self.capturing = capturing if capturing is not None else set()
+        self.cells = cells
         self.code: list[int] = []
         self.positions: list[SourcePosition] = []
         self.constants = _ConstantPool()
@@ -185,6 +193,7 @@ class _ProtoBuilder:
             param_types=param_type_ids,
             ret_type=ret_type_id,
             is_main=self.function.hir.is_main,
+            cells=self.cells,
         )
 
     # ------------------------------------------------------------------
@@ -295,6 +304,13 @@ class _ProtoBuilder:
                 ),
                 position,
             )
+        elif isinstance(instruction, StoreOuter):
+            self._emit(
+                encode_abc(
+                    TypedOp.STORE_OUTER, instruction.depth, instruction.slot, instruction.src
+                ),
+                position,
+            )
         elif isinstance(instruction, Slice):
             self._emit_slice(instruction)
         elif isinstance(instruction, TupleItem):
@@ -357,9 +373,10 @@ class _ProtoBuilder:
         elif isinstance(instruction, JumpIfTrue):
             self._emit_fixup(TypedOp.JMP_TRUE, instruction.src, instruction.target, position)
         elif isinstance(instruction, FreshLocals):
-            # The scalar subset has no closures, so per-iteration cells are
-            # not observable; skip the erased-path cell refresh.
-            return
+            # Each loop iteration gets fresh cells so closures created in
+            # earlier iterations keep their own bindings.
+            for slot in instruction.slots:
+                self._emit(encode_abc(TypedOp.FRESH_CELL, slot, 0, 0), position)
         elif isinstance(instruction, Return):
             self._emit(encode_abc(TypedOp.RET, instruction.src, 0, 0), position)
         elif isinstance(instruction, Call):
@@ -669,25 +686,32 @@ class _ProtoBuilder:
 def compile_typed_module(module: TypedModule) -> TypedProgram:
     """Compile a typed HIR module to typed bytecode."""
 
+    # Main is the root frame; key it -1 so top-level lambdas resolve their
+    # creator chain the same way functions do.
+    bodies = {-1: module.main.hir.code}
+    bodies.update((index, function.hir.code) for index, function in enumerate(module.functions))
+
     capturing = {
         index
         for index, function in enumerate(module.functions)
-        if any(isinstance(instruction, LoadOuter) for instruction in function.hir.code)
+        if any(
+            isinstance(instruction, (LoadOuter, StoreOuter)) for instruction in function.hir.code
+        )
     }
     # A lambda whose subtree captures must itself be a closure: its snapshot
     # carries the parent chain nested reads walk through, even when the
     # lambda reads no outer slot directly. Named functions and main execute
     # without a closure context and need no marking.
-    created_by: dict[int, bool] = {}
-    for function in (*module.functions, module.main):
-        for instruction in function.hir.code:
+    enclosing: dict[int, int] = {}
+    for owner, code in bodies.items():
+        for instruction in code:
             if isinstance(instruction, MakeClosure):
-                created_by[instruction.function_index] = True
+                enclosing[instruction.function_index] = owner
     changed = True
     while changed:
         changed = False
         for index, function in enumerate(module.functions):
-            if index in capturing or not created_by.get(index):
+            if index in capturing or index not in enclosing:
                 continue
             if any(
                 isinstance(instruction, MakeClosure) and instruction.function_index in capturing
@@ -695,6 +719,34 @@ def compile_typed_module(module: TypedModule) -> TypedProgram:
             ):
                 capturing.add(index)
                 changed = True
-    functions = tuple(_ProtoBuilder(function, capturing).build() for function in module.functions)
-    main = _ProtoBuilder(module.main, capturing).build()
+
+    # Cell slots: locals of this function that any lambda subtree reads or
+    # writes, resolved through the creator chain (LoadOuter/StoreOuter depth
+    # is 1-based from the referencing function). Parameters keep their entry
+    # value; the VM wraps cell slots at frame setup.
+    def cell_slots(owner: int) -> tuple[int, ...]:
+        slots: set[int] = set()
+
+        def walk(lambda_index: int) -> None:
+            inner = module.functions[lambda_index]
+            for instruction in inner.hir.code:
+                if isinstance(instruction, (LoadOuter, StoreOuter)):
+                    target = lambda_index
+                    for _ in range(instruction.depth):
+                        target = enclosing.get(target, -1)
+                    if target == owner:
+                        slots.add(instruction.slot)
+                elif isinstance(instruction, MakeClosure):
+                    walk(instruction.function_index)
+
+        for instruction in bodies[owner]:
+            if isinstance(instruction, MakeClosure):
+                walk(instruction.function_index)
+        return tuple(sorted(slots))
+
+    functions = tuple(
+        _ProtoBuilder(function, capturing, cell_slots(index)).build()
+        for index, function in enumerate(module.functions)
+    )
+    main = _ProtoBuilder(module.main, capturing, cell_slots(-1)).build()
     return TypedProgram(main=main, functions=functions, adt_decls=module.adt_decls)

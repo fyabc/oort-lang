@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-"""Typed module artifacts (v9) and the link-time loader (design 19)."""
+"""Typed module artifacts (v10) and the link-time loader (design 19)."""
 
 import dataclasses
 import json
@@ -110,23 +110,23 @@ print(paint(Red))
         assert decl.origin in {"solo", "<core-prelude>"}
 
 
-def test_v9_and_v7_artifacts_do_not_cross_read(tmp_path):
+def test_v10_and_v8_artifacts_do_not_cross_read(tmp_path):
     unit = _unit("#lang oort-core\nprint(1)\n", "solo")
     artifact = build_typed_artifact(unit)
-    v9_path = tmp_path / "v9.obc"
-    write_typed_artifact(artifact, v9_path)
+    v10_path = tmp_path / "v10.obc"
+    write_typed_artifact(artifact, v10_path)
 
     dynamic_source = "#lang oort-core\ndef one() -> Int { 1 }\nprint(one())\n"
-    v7_path = tmp_path / "v7.obc"
+    v8_path = tmp_path / "v8.obc"
     write_typed_obc(
         compile_typed_module(lower_typed_module(_check(dynamic_source, "v6.ort"))),
-        v7_path,
+        v8_path,
     )
 
-    with pytest.raises(ObcError, match="unsupported typed module artifact version 7"):
-        read_typed_artifact(v7_path)
-    with pytest.raises(ObcError, match="unsupported typed bytecode version 9"):
-        read_typed_obc(v9_path)
+    with pytest.raises(ObcError, match="unsupported typed module artifact version 8"):
+        read_typed_artifact(v8_path)
+    with pytest.raises(ObcError, match="unsupported typed bytecode version 10"):
+        read_typed_obc(v10_path)
 
 
 def test_link_artifacts_remaps_same_named_adts(tmp_path, capsys):
@@ -371,7 +371,7 @@ def test_artifact_cache_layout_stats_clean_and_corruption(tmp_path):
     cache = TypedArtifactCache(tmp_path / "cache")
     build_typed_program((lib, main), cache)
 
-    entries = sorted((tmp_path / "cache" / "v9" / "abi1").rglob("*.obc"))
+    entries = sorted((tmp_path / "cache" / "v10" / "abi1").rglob("*.obc"))
     assert len(entries) == 2
     stats = cache.stats()
     assert stats.entries == 2
@@ -401,7 +401,7 @@ def test_cache_manifest_and_size_limit(tmp_path):
     build_typed_program((lib, main), cache)
 
     assert cache.stats().entries == 1
-    manifests = list((tmp_path / "cache" / "v9" / "abi1").rglob("*.json"))
+    manifests = list((tmp_path / "cache" / "v10" / "abi1").rglob("*.json"))
     assert len(manifests) == 1
     data = json.loads(manifests[0].read_text(encoding="utf-8"))
     assert data["schema"] == "oort-cache-v1"

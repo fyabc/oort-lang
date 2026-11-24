@@ -2,10 +2,11 @@
 
 """Serialization of typed bytecode (``.obc`` kind=1, design 15).
 
-Version 7 stores a module-level ADT declaration table plus a per-proto type
+Version 8 stores a module-level ADT declaration table plus a per-proto type
 table: register/param/return types are type-table indices, composite types
-reference earlier entries, and ADT types reference module declarations. The
-table only describes static types; values remain runtime values.
+reference earlier entries, and ADT types reference module declarations. Each
+proto also carries its cell-slot table for shared closure captures. The
+tables only describe static types; values remain runtime values.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from .serialize import MAGIC, ObcError, _read_constant, _Reader, _write_constant
 from .typed_compile import TypedProgram, TypedProto
 
 KIND_TYPED = 1
-VERSION = 7
+VERSION = 8
 
 _SCALAR_BY_TAG = {
     1: IrType.INT,
@@ -92,6 +93,9 @@ def _write_proto(
     for type_id in proto.param_types:
         _write_type_id(w, type_id)
     _write_type_id(w, proto.ret_type)
+    w.u16(len(proto.cells))
+    for slot in proto.cells:
+        w.u16(slot)
     w.u32(len(proto.code))
     for word in proto.code:
         w.u32(word)
@@ -183,6 +187,9 @@ def _read_proto(r: _Reader, adt_decls: tuple[AdtDecl, ...]) -> TypedProto:
     for _ in range(r.u8()):
         params.append(_read_type_id(r, types, name))
     ret_type = _read_type_id(r, types, name)
+    cells = tuple(r.u16() for _ in range(r.u16()))
+    if any(slot >= register_count for slot in cells):
+        raise ObcError(f"typed proto {name!r} has an out-of-range cell slot")
     code = tuple(r.u32() for _ in range(r.u32()))
     constants = tuple(_read_constant(r) for _ in range(r.u32()))
     positions: tuple[SourcePosition, ...] = ()
@@ -213,6 +220,7 @@ def _read_proto(r: _Reader, adt_decls: tuple[AdtDecl, ...]) -> TypedProto:
         register_types=register_types,
         param_types=tuple(params),
         ret_type=ret_type,
+        cells=cells,
         is_main=is_main,
     )
 

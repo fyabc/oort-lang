@@ -69,9 +69,10 @@ artifact 至少记录：
 
 ### 5. ABI 与版本
 
-- kind=1 提升到 v9（artifact 带 module/export/import、构造器表与集合指令）；
+- kind=1 提升到 v10（artifact 带 module/export/import、构造器表与集合指令）；
 - 模块记录 ABI/version；loader 校验；
-- 旧 v7/v8 文件不被 artifact reader 静默接受；
+- 旧 v7–v9 文件不被 artifact reader 静默接受（v8 为单模块程序、v9 为早期
+  artifact 布局，均已淘汰）；
 - 不承诺跨大版本二进制兼容；先做显式版本拒绝。
 
 ### 6. Loader / linker
@@ -110,7 +111,7 @@ artifact 至少记录：
 
 1. **P1c-1（已实现）**：module id/export/import 校验；artifact；Python
    loader/linker；linked program 接入 `-t tvm`；artifact 不含宿主路径。
-2. **P1c-2（已实现）**：导入构造器（v9 构造器表）、导出/导入 ABI hash、
+2. **P1c-2（已实现）**：导入构造器（artifact 构造器表）、导出/导入 ABI hash、
    B1 多模块链接、Rust kind=2 linked bundle；namespace 类型导入已可用，
    from-import 类型别名仍是独立语法决策。
 3. **P1c-3（已实现）**：`--cache-dir` 独立编译缓存、Rust `--link` 原生

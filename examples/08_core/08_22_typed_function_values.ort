@@ -1,7 +1,8 @@
 #lang oort-core
 
 # typed 函数值：命名函数与 lambda 作为一等值，支持高阶参数/返回、容器存储
-# 与只读捕获闭包；写入捕获变量（内部写或创建后再赋值）仍显式拒绝。
+# 与捕获闭包；被捕获的变量按引用共享（单元格），内部写入与创建后再赋值
+# 对闭包和创建者都可见。
 
 def inc(x: Int) -> Int { x + 1 }
 def dec(x: Int) -> Int { x - 1 }
@@ -46,8 +47,8 @@ def compose_style() -> Int {
     f(4)
 }
 
-# 捕获闭包：lambda 读取外层变量（创建时快照）。
-# 循环变量每轮写入发生在闭包创建之前，捕获各自的值。
+# 捕获闭包：lambda 读取外层变量，捕获的是变量单元格而非快照。
+# 循环体每轮为循环变量新建单元格，因此各闭包持有当轮的值。
 def make_adder(n: Int) -> (Int) -> Int {
     do(x: Int) -> Int { x + n }
 }
@@ -66,6 +67,35 @@ def use_adder() -> Int {
     add10(5)
 }
 
+# 共享写入：闭包释放后仍可反复推进计数器。
+def counter() -> () -> Int {
+    var n = 0
+    do() -> Int { n = n + 1; n }
+}
+
+def use_counter() -> Int {
+    val c = counter()
+    c() + c() + c()
+}
+
+# 创建闭包后再赋值：闭包看到的是最新的值，而不是快照。
+def reassign_after_capture() -> Int {
+    var k = 1
+    val f = do(x: Int) -> Int { x + k }
+    k = 2
+    f(10)
+}
+
+# 闭包内写回外层变量：创建者也能看到累计结果。
+def accumulator() -> Int {
+    var sum = 0
+    val add = do(v: Int) -> Unit { sum = sum + v }
+    add(1)
+    add(20)
+    add(300)
+    sum
+}
+
 print(apply(inc, 1), apply(dec, 1))
 print(apply(pick(true), 2), apply(pick(false), 2))
 print(local())
@@ -73,3 +103,4 @@ print(sum_apply([inc, dec], 10))
 print(dispatch("inc", 6), dispatch("dec", 6))
 print(with_lambda(), lambda_arg(), compose_style())
 print(use_adder(), loop_capture())
+print(use_counter(), reassign_after_capture(), accumulator())

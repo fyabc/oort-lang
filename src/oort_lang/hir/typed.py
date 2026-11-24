@@ -1419,95 +1419,8 @@ def _flat_constructors(module: TypedModule) -> list[AdtConstructor]:
     return result
 
 
-def _creator_map(module: TypedModule) -> dict[int, tuple[int, int]]:
-    """Map lambda function index -> (enclosing function index, make pc)."""
-
-    creators: dict[int, tuple[int, int]] = {}
-    for index, function in enumerate(module.functions):
-        for pc, instruction in enumerate(function.hir.code):
-            if isinstance(instruction, MakeClosure):
-                creators[instruction.function_index] = (index, pc)
-    return creators
-
-
-def _captured_slots(
-    module: TypedModule,
-    function_index: int,
-    creators: dict[int, tuple[int, int]],
-) -> dict[int, int]:
-    """Map captured slot -> earliest MakeClosure pc in this function.
-
-    A capture (transitively) reads a slot of *this* function; the recorded
-    pc is where the snapshot happens. Nested lambdas resolve through the
-    creator chain so intermediate frames only forward captures.
-    """
-
-    captured: dict[int, int] = {}
-
-    def record(slot: int, pc: int) -> None:
-        current = captured.get(slot)
-        if current is None or pc < current:
-            captured[slot] = pc
-
-    def walk(lambda_index: int, make_pc: int) -> None:
-        function = module.functions[lambda_index]
-        for instruction in function.hir.code:
-            if isinstance(instruction, LoadOuter):
-                # LoadOuter depth is 1-based from the referencing function,
-                # matching the runtime parent-chain walk exactly.
-                target = lambda_index
-                for _ in range(instruction.depth):
-                    entry = creators.get(target)
-                    if entry is None:
-                        _invalid(
-                            function,
-                            instruction,
-                            f"closure depth {instruction.depth} escapes the module",
-                        )
-                    target = entry[0]
-                if target == function_index:
-                    record(instruction.slot, make_pc)
-            elif isinstance(instruction, MakeClosure):
-                walk(instruction.function_index, make_pc)
-
-    function = module.functions[function_index]
-    for pc, instruction in enumerate(function.hir.code):
-        if isinstance(instruction, MakeClosure):
-            walk(instruction.function_index, pc)
-    return captured
-
-
-def _validate_capture_immutability(module: TypedModule) -> None:
-    """Captures are creation-time snapshots; later writes would diverge.
-
-    A store to a slot after a MakeClosure that (transitively) reads it would
-    be observed by reference semantics in the erased dialect but not by the
-    typed snapshot, so reject it. Loop iterators write at fixed program
-    counters before the closure creation point and stay valid.
-    """
-
-    creators = _creator_map(module)
-    for index, function in enumerate(module.functions):
-        captured = _captured_slots(module, index, creators)
-        if not captured:
-            continue
-        for pc, instruction in enumerate(function.hir.code):
-            if not isinstance(instruction, StoreLocal):
-                continue
-            slot_first = captured.get(instruction.slot)
-            if slot_first is not None and pc > slot_first:
-                raise UnsupportedSyntax(
-                    "Typed HIR backend does not support reassigning a variable "
-                    f"after a closure captures it (slot {instruction.slot}); "
-                    "captures are read-only snapshots.",
-                    instruction.position,
-                )
-
-
 def validate_typed_module(module: TypedModule) -> None:
     """Assert typed-HIR invariants; raise ``UnsupportedSyntax`` on violation."""
-
-    _validate_capture_immutability(module)
 
     for function in (module.main, *module.functions):
         hir = function.hir
@@ -1563,12 +1476,8 @@ def validate_typed_module(module: TypedModule) -> None:
                 if function.register_types[instruction.dst] is None:
                     _invalid(function, instruction, "outer read has no type")
             elif isinstance(instruction, StoreOuter):
-                _invalid(
-                    function,
-                    instruction,
-                    "writing captured variables from inside a closure (captures "
-                    "are read-only snapshots)",
-                )
+                if function.register_types[instruction.src] is None:
+                    _invalid(function, instruction, "outer write has no type")
             elif isinstance(instruction, StoreGlobal):
                 _invalid(function, instruction, "global stores")
             elif isinstance(instruction, (BuildList, BuildSet, BuildTuple)):

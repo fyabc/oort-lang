@@ -12,14 +12,14 @@
   Rust `rust/oort-vm/src/typed.rs`；
 - 类型系统与 typed HIR 的研究背景见 [design 15](../design/15-typed-ir.md)；
 - kind=0、kind=1 与 kind=2 互斥：各自读者必须拒绝其他 kind；
-- kind=2 是 loader 链接后的 typed linked bundle（v2，见 design 19 §3.1），
+- kind=2 是 loader 链接后的 typed linked bundle（v3，见 design 19 §3.1），
   只保存合并声明表、扁平构造器表与 proto，不含 import/export。
 
 ## 2. 文件头与布局
 
 ```text
-magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=7)
-# v7 单模块布局；v9 module artifact 的头部（module_id/export/import/
+magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=8)
+# v8 单模块布局；v10 module artifact 的头部（module_id/export/import/
 # constructor 表）见 design 19
 u32 adt_decl_count
 adt_decl[adt_decl_count]:
@@ -48,6 +48,8 @@ u16    register_type_id[register_count]   # 0 = 无类型，否则 type_id + 1
 u8     param_count
 u16    param_type_id[param_count]
 u16    ret_type_id
+u16    cell_count
+u16    cell_slot[cell_count]              # 帧入口包成单元格的寄存器
 u32    word_count
 u32    word[word_count]
 u32    constant_count
@@ -78,6 +80,9 @@ positions?:
 
 - 类型表按**后序**写入：容器类型只能引用已经出现的子类型（不允许前向引用）；
 - 寄存器类型 0 表示“无类型”；参数/返回不允许 0；
+- `cell_slot` 是本帧中被任意 lambda 子树读取或写入的局部/参数槽（编译期
+  沿创建者链静态求得）；读取方校验每个槽 `< register_count`。帧入口按该表
+  把槽值包成单元格，`LOAD_L`/`STORE_L` 对单元格透明读写；
 - 常量池复用 spec 13 的 tagged 编码；kind=1 只允许 `null`/`bool`/`int`/`float`/
   `string`，其他 tag 必须显式拒绝；
 - 位置表可省略；读取方缺少时使用 `<typed-bytecode>` 回退位置。
@@ -143,7 +148,7 @@ ABx: [op:8][A:8][Bx:16]
 | 70 | `NEW_DICT` | ABC | A=窗口基址, B=条目数, C=目标 | 构造 Dict；窗口为 `key,value` 交替的 `2*B` 个寄存器 |
 | 71/72 | `EQ_SET` / `NE_SET` | ABC | A=目标, B=左, C=右 | Set 深相等/不等（顺序无关）→ Bool |
 | 73/74 | `EQ_DICT` / `NE_DICT` | ABC | 同上 | Dict 深相等/不等（键查找 + 值比较）→ Bool |
-| 75 | `NEW_ADT` | ABC | A=payload 窗口基址, B=构造器 ID, C=目标 | 构造 ADT；v7 中 B 为声明表扁平 id，v9 artifact 中为构造器表下标（loader 回填为全局 id）；payload 数由声明 arity 决定 |
+| 75 | `NEW_ADT` | ABC | A=payload 窗口基址, B=构造器 ID, C=目标 | 构造 ADT；v8 中 B 为声明表扁平 id，v10 artifact 中为构造器表下标（loader 回填为全局 id）；payload 数由声明 arity 决定 |
 | 76 | `ADT_TAG` | ABC | A=目标 Int, B=ADT 值, C=0 | 返回构造器在声明内的索引 |
 | 77 | `ADT_FIELD` | ABC | A=目标, B=ADT 值, C=字段索引 | 读取 payload 字段 |
 | 78/79 | `EQ_ADT` / `NE_ADT` | ABC | A=目标, B=左, C=右 | ADT 名义 + 变体 + payload 深相等/不等 → Bool |
@@ -153,8 +158,10 @@ ABx: [op:8][A:8][Bx:16]
 | 83/84 | `SET_UNION` / `SET_INTERSECT` | ABC | A=目标, B=左, C=右 | Set 并/交，键相等去重 → 新 Set |
 | 85/86 | `SET_DIFFERENCE` / `SET_SYMMETRIC` | ABC | 同上 | Set 差/对称差 → 新 Set |
 | 87 | `MK_FUN` | ABx | A=目标, Bx=函数索引 | 把函数（含非捕获 lambda）物化为一等函数值 |
-| 88 | `MK_CLOSURE` | ABx | A=目标, Bx=函数索引 | 创建捕获闭包：快照当前寄存器，父链取当前执行闭包 |
-| 89 | `LOAD_OUTER` | ABC | A=目标, B=深度（1 基）, C=槽 | 沿闭包父链走 B-1 步后读快照槽 C |
+| 88 | `MK_CLOSURE` | ABx | A=目标, Bx=函数索引 | 创建捕获闭包：快照当前寄存器，父链取当前执行闭包；cell 槽的快照值为单元格本身 |
+| 89 | `LOAD_OUTER` | ABC | A=目标, B=深度（1 基）, C=槽 | 沿闭包父链走 B-1 步后读该帧槽 C（单元格自动解包） |
+| 90 | `STORE_OUTER` | ABC | A=源, B=深度（1 基）, C=槽 | 沿父链写该帧槽 C；目标必须是单元格，否则运行时报错 |
+| 91 | `FRESH_CELL` | ABC | A=槽, B=C=0 | 把本帧槽 A 重新包成新单元格（每轮迭代独立的捕获变量） |
 
 ### 3.2 调用约定
 
@@ -209,7 +216,8 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   Rust typed VM 标量使用未装箱表示，String 使用 `Rc<str>`，List/Set 使用
   `Rc<RefCell<Vec<TypedValue>>>`，Tuple 使用 `Rc<[TypedValue]>`，Dict 使用
   `Rc<RefCell<Vec<(TypedValue, TypedValue)>>>`，迭代器使用
-  `Rc<RefCell<{ values, index }>>`；只在 native `print`/`len` 与主结果边界转换；
+  `Rc<RefCell<{ values, index }>>`，被捕获变量使用
+  `Rc<RefCell<TypedValue>>`；只在 native `print`/`len` 与主结果边界转换；
 - Dict 的实现通常保持插入顺序，但**顺序不是语言保证**；Set 同样不保证。
   Rust 参考实现用有序 `Vec` + 线性键查找，不依赖 `std::HashMap`；
 - `Int` 在 Python 参考实现中使用宿主整数（任意精度）；Rust typed VM
@@ -219,12 +227,19 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
 - 除零、类型守卫失败、未知全局/函数索引、未知操作码都必须显式报错，禁止静默
   执行；
 - `DEF_FUN` 的绑定可在主函数执行时发生；实现可以预绑定全部函数，语义等价；
-- v7 单模块文件不编码 import；v9 module artifact 用文件头的 import/export
+- v8 单模块文件不编码 import；v10 module artifact 用文件头的 import/export
   表与构造器表描述模块边，但函数体仍没有 import opcode——loader 在加载时完成链接；
 - kind=1 **没有全局存储**（无顶层变量、无 `STORE_G`），因此实现可以在加载时
   预解析 `LOAD_G` 并缓存；若未来版本加入全局存储，写入时必须使缓存失效
   （实现采用全局版本号 + 惰性重解析）；动态 kind=0 仍走名字查找；
-- `FRESH_LOCALS` 在标量子集中不可观察（无闭包），kind=1 不编码该指令。
+- 被捕获的变量按**引用语义**共享：编译器把被任意 lambda 子树读写的寄存器列进
+  proto 的 `cell_slot`，帧入口把它们的值包成单元格；`LOAD_L`/`STORE_L` 透明
+  读写单元格，`MK_CLOSURE` 的快照在 cell 槽上保存单元格本身。于是创建后再
+  赋值、闭包内写回外层变量都对两侧可见。Python 与 Rust typed VM 的单元格
+  实现不同（`TypedCell` / `Rc<RefCell<..>>`），语义一致；
+- HIR `FreshLocals`（循环体入口）降低为对每个槽的 `FRESH_CELL`：每轮迭代
+  重新包单元格，因此早先迭代创建的闭包保留各自的绑定；
+- `FRESH_LOCALS` 本身不是 kind=1 操作码；无闭包时 `FRESH_CELL` 也不发出。
 
 ## 5. 当前边界
 
@@ -238,29 +253,29 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
   函数类型擦除为 `FUNCTION`；非捕获 lambda 经 `MK_FUN` 物化，捕获闭包经
   `MK_CLOSURE` 创建（lambda proto 不导出、不进入接口哈希，跨模块重定位与
   命名函数一致）；
-- 捕获闭包（B2 第二切片）：**只读捕获**。创建时快照定义帧寄存器，
-  `LOAD_OUTER` 沿父链读取；编译期静态检查保证与引用语义一致——捕获槽
-  在创建点之后不得再写（循环变量每轮写入发生在创建点之前的固定 pc，天然
-  合法），闭包内部写捕获变量（`StoreOuter`）显式拒绝；
+- 捕获闭包（B2 第二切片）：被捕获的变量按引用共享（单元格）。闭包内部既可
+  读也可写（`LOAD_OUTER`/`STORE_OUTER`），创建者在创建后继续赋值同样对闭包
+  可见；循环体每轮 `FRESH_CELL` 保证各轮闭包互不干扰；
 - 支持单态与泛型 ADT（含 prelude `Option`）；类型参数进入类型表并在运行时
   作为 ADT 实例身份保留；match 支持 ADT/Int/Float/Bool/String/Tuple
   scrutinee，构造器/通配/变量/守卫/字面量/Tuple/或模式与嵌套组合；
-- 无切片赋值/步长切片、Set 子集比较、列表拼接/排序；类/接口/泛型仍拒绝；
-  捕获变量的写入（内部写/创建后再赋值）与函数值比较/打印仍拒绝；typed 模块导入在 loader 中解析，
+- 无切片赋值/步长切片、Set 子集比较、列表拼接/排序；类/接口/泛型函数仍拒绝；
+  函数值比较/打印仍拒绝；typed 模块导入在 loader 中解析，
   函数体不进入 kind=1 字节码；
-- kind=1 有两个不再互读的版本：**v7** 为单模块程序，**v9** 为 module
-  artifact（module_id/export/import 表 + 构造器表；v6/v8 为历史格式）；
+- kind=1 有两个不再互读的版本：**v8** 为单模块程序（含 proto cell 表），
+  **v10** 为 module artifact（module_id/export/import 表 + 构造器表；
+  v6–v9 为历史格式）；
   ADT 模块声明表位于文件头；旧读者遇到未知 version/opcode/tag 必须报错
   而不是猜测；破坏既有布局的变更必须提升 version；
-- `-t tvm` 与 `-t tbc` 共享 v9 artifact + loader 的同一链接结果（tbc 只是
-  反汇编该程序）；`--cache-dir DIR`/`OORT_CACHE_DIR` 复用磁盘上的 v9 artifact，`--no-cache` 关闭，`--cache-max-size` 限制容量（缓存契约见
+- `-t tvm` 与 `-t tbc` 共享 v10 artifact + loader 的同一链接结果（tbc 只是
+  反汇编该程序）；`--cache-dir DIR`/`OORT_CACHE_DIR` 复用磁盘上的 v10 artifact，`--no-cache` 关闭，`--cache-max-size` 限制容量（缓存契约见
   [OP 0030](../proposals/0030-compilation-cache.md)）；`-t thir` 仍用
   P1a/P1b 的 HIR 拍平器，作为链接前的调试视图；
 - kind=1 本身不编码跨方言边界；`oort-object → oort-core` 由 B1
   边界（OP 0028）处理，反向仍拒绝；`box`/`unbox`/blame 的稳定 ABI
   尚未定义；
-- 单模块格式版本 `version=7`，module artifact 版本 `version=9`，
-  linked bundle `kind=2, version=2`；不兼容变更
+- 单模块格式版本 `version=8`，module artifact 版本 `version=10`，
+  linked bundle `kind=2, version=3`；不兼容变更
   必须提升 version，并保持 kind=1 的独立命名空间。
 
 ## 6. 参考实现入口
@@ -269,5 +284,5 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
 |---|---|
 | Python | `bytecode/typed_compile.py`、`typed_artifact.py`、`typed_vm.py`、`typed_serialize.py` |
 | CLI | `-t tbc`（反汇编）、`-t tvm`（执行） |
-| Rust | `rust/oort-vm/src/typed.rs`；`oort-vm <file.obc>` 按 kind 分派；`oort-vm --link <root.obc> <dep.obc>...` 原生链接 v9 artifact |
+| Rust | `rust/oort-vm/src/typed.rs`；`oort-vm <file.obc>` 按 kind 分派；`oort-vm --link <root.obc> <dep.obc>...` 原生链接 v10 artifact |
 | 差分 | `scripts/rust_vm_check.py --diff-only`（含 typed 程序） |
