@@ -553,11 +553,28 @@ def relations() -> Unit {
 
 relations()
 """,
+    "typed_ordering": """#lang oort-core
+
+def ordering() -> Unit {
+    val a: List[Int] = [3, 1, 2]
+    val b: List[Int] = [1, 2]
+    val c: List[Int] = [1, 2, 3]
+    val empty: List[Int] = []
+    print(sorted(a), a)
+    print(b + [3], b + empty)
+    print(b < c, b <= b, b > [1], b > b)
+    print(["b", "a"] < ["a"], empty < b, empty == empty)
+    print([1.5, 0.5] < [0.5, 2.0])
+    print(sorted(["b", "a", "c"]))
+}
+
+ordering()
+""",
 }
 
 
 # Multi-module typed cases: (dependency sources, root source). They exercise
-# v11 artifact linking (imported constructors, same-named ADTs) through kind=2.
+# v12 artifact linking (imported constructors, same-named ADTs) through kind=2.
 TYPED_MODULE_DIFF_PROGRAMS = {
     "typed_imported_ctors": (
         {
@@ -673,7 +690,7 @@ def compile_files_to_bundle(main_path: Path, out: Path):
 
 
 def compile_files_to_artifacts(main_path: Path, out_dir: Path):
-    """Write one v11 artifact per module; return (root_path, dependency_paths)."""
+    """Write one v12 artifact per module; return (root_path, dependency_paths)."""
 
     compiler, ast, _info = _frontend(main_path)
     resolve = compiler._make_typed_resolver(main_path.parent)

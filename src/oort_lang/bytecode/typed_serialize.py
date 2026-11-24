@@ -29,7 +29,7 @@ from .serialize import MAGIC, ObcError, _read_constant, _Reader, _write_constant
 from .typed_compile import TypedProgram, TypedProto
 
 KIND_TYPED = 1
-VERSION = 9
+VERSION = 10
 
 _SCALAR_BY_TAG = {
     1: IrType.INT,

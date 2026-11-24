@@ -16,7 +16,7 @@
 当前 `-t tvm`/`-t tbc` 每次运行都会重新 lowering 并编译所有可达 core 模块，
 即使源码完全没变。P1c-3 已有 `--cache-dir` 最小实现，S2 进一步固定了布局与键：
 
-- 每模块一个 typed module artifact（当前 v11），键包含源码、`module_id`、编译器/格式/ABI 版本、
+- 每模块一个 typed module artifact（当前 v12），键包含源码、`module_id`、编译器/格式/ABI 版本、
   代码生成选项与依赖接口哈希；
 - 版本化内容寻址布局，原子写入，artifact 不含宿主路径；
 - 命中后仍防御性校验 import ABI 哈希，损坏条目按 miss 处理。
@@ -29,7 +29,7 @@
 
 ### 1. 缓存单元与范围
 
-- 缓存单元：**一个模块的 typed module artifact**（kind=1，当前 v11）；
+- 缓存单元：**一个模块的 typed module artifact**（kind=1，当前 v12）；
 - kind=2 linked bundle 暂不缓存（长期 L2 再做）；
 - kind=0 动态字节码不在本提案范围；
 - 解析与类型检查仍每次执行；短期只缓存 lowering/typed 字节码编译；
@@ -60,12 +60,12 @@ H( "oort-cache-v1"
 S2：
 
 ```text
-<cache>/v11/abi1/<ab>/<cd>/<sha>.obc
+<cache>/v12/abi1/<ab>/<cd>/<sha>.obc
 <cache>/tmp/
 ```
 
-- `v11`/`abi1` 为版本目录；格式或 ABI 升级后整体切换，旧目录可被清理
-  （artifact 版本历史：v8 单模块、v9 早期 artifact、v10 typed cells、v11 现行 artifact）；
+- `v12`/`abi1` 为版本目录；格式或 ABI 升级后整体切换，旧目录可被清理
+  （artifact 版本历史：v8 单模块、v9 早期 artifact、v10 typed cells、v11 Set 比较、v12 现行 artifact）；
 - 文件名是键的 SHA-256，天然去重、不依赖源码路径；
 - 写入 `tmp/` 后原子 rename 到目标；
 - 每条目有 `<sha>.json` sidecar：`module_id`、依赖接口哈希、编译器/格式/ABI

@@ -508,6 +508,8 @@ class _ProtoBuilder:
         }
         lhs_set = isinstance(lhs_type, ContainerType) and lhs_type.kind == "Set"
         rhs_set = isinstance(rhs_type, ContainerType) and rhs_type.kind == "Set"
+        lhs_list = isinstance(lhs_type, ContainerType) and lhs_type.kind == "List"
+        rhs_list = isinstance(rhs_type, ContainerType) and rhs_type.kind == "List"
         if op in set_ops and (lhs_set or rhs_set):
             if not (lhs_set and rhs_set):
                 raise UnsupportedSyntax(
@@ -524,6 +526,32 @@ class _ProtoBuilder:
                     f"Typed bytecode set comparison {op!r} requires two Sets.", position
                 )
             self._emit(encode_abc(_SET_RELATIONS[op], instruction.dst, lhs, rhs), position)
+            return
+
+        # List concatenation and lexicographic ordering (OP 0032). The compare
+        # returns -1/0/1, so ordering reuses the Int comparison opcodes
+        # against a zero constant instead of adding four boolean opcodes.
+        if op == "+" and (lhs_list or rhs_list):
+            if not (lhs_list and rhs_list):
+                raise UnsupportedSyntax("Typed bytecode List '+' requires two Lists.", position)
+            self._emit(encode_abc(TypedOp.LIST_CONCAT, instruction.dst, lhs, rhs), position)
+            return
+        if op in _COMPARISONS and (lhs_list or rhs_list):
+            if not (lhs_list and rhs_list):
+                raise UnsupportedSyntax(
+                    f"Typed bytecode List comparison {op!r} requires two Lists.", position
+                )
+            order = self._alloc(IrType.INT, position)
+            self._emit(encode_abc(TypedOp.CMP_LIST, order, lhs, rhs), position)
+            zero = self._alloc(IrType.INT, position)
+            self._emit(
+                encode_abx(TypedOp.LOAD_K, zero, self._constant(0, position)),
+                position,
+            )
+            self._emit(
+                encode_abc(_COMPARISONS[op][0], instruction.dst, order, zero),
+                position,
+            )
             return
 
         if (

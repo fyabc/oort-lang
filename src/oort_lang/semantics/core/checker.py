@@ -80,6 +80,11 @@ def _is_numeric(type_: Type) -> bool:
     return type_ in (INT, FLOAT)
 
 
+def _is_orderable(type_: Type) -> bool:
+    """Built-in sortability contract (OP 0032): Int, Float and String only."""
+    return type_ in (INT, FLOAT, STRING)
+
+
 def _is_special_name(name: str) -> bool:
     return len(name) > 4 and name.startswith("__") and name.endswith("__")
 
@@ -1805,6 +1810,11 @@ class CoreTypeChecker(ASTVisitor[Type]):
                     "The built-in 'print' can only be called directly in oort-core.",
                     node.position,
                 )
+            elif node.id == "sorted":
+                self._error(
+                    "The built-in 'sorted' can only be called directly in oort-core.",
+                    node.position,
+                )
             elif node.id in self.interfaces:
                 self._error(
                     f"Interface '{node.id}' has no runtime value; use it only in type positions.",
@@ -1850,11 +1860,16 @@ class CoreTypeChecker(ASTVisitor[Type]):
             elif name == "len":
                 node.func.metadata["type_obj"] = FunctionType((), INT)
                 node.func.metadata["type"] = "() -> Int"
+            elif name == "sorted":
+                node.func.metadata["type_obj"] = FunctionType((), ListType(UNKNOWN))
+                node.func.metadata["type"] = "(List[?]) -> List[?]"
             if info is None:
                 if name == "print":
                     return self._check_print_call(node)
                 if name == "len":
                     return self._check_len_call(node)
+                if name == "sorted":
+                    return self._check_sorted_call(node)
                 if name in self.interfaces:
                     self._error(
                         f"Interface '{name}' cannot be instantiated.",
@@ -2125,6 +2140,39 @@ class CoreTypeChecker(ASTVisitor[Type]):
         )
         return self._record(node, INT)
 
+    def _check_sorted_call(self, node: nodes.Call) -> Type:
+        if len(node.args) != 1:
+            self._error(
+                f"The built-in 'sorted' expects 1 argument, got {len(node.args)}.",
+                node.position,
+            )
+            self._infer_arguments(node)
+            return self._record(node, ListType(UNKNOWN))
+        argument = node.args[0]
+        if argument.keyword is not None or argument.kind != nodes.ArgumentKind.DEFAULT:
+            self._unsupported(
+                argument,
+                "Keyword, variadic and block arguments are not supported in oort-core yet.",
+            )
+            return self._record(node, ListType(UNKNOWN))
+        argument_type = argument.value.accept(self) or UNKNOWN
+        if isinstance(argument_type, (UnknownType, NeverType)):
+            return self._record(node, ListType(UNKNOWN))
+        if not isinstance(argument_type, ListType):
+            self._error(
+                "The built-in 'sorted' only accepts a List in oort-core, "
+                f"got {describe_type(argument_type)}.",
+                argument.value.position,
+            )
+            return self._record(node, ListType(UNKNOWN))
+        if not _is_orderable(argument_type.element):
+            self._error(
+                "The built-in 'sorted' requires a List of orderable elements "
+                f"(Int, Float or String), got {describe_type(argument_type)}.",
+                argument.value.position,
+            )
+        return self._record(node, argument_type)
+
     def visit_unary_expr(self, node: nodes.UnaryExpr) -> Type:
         operand_type = node.operand.accept(self)
         if operand_type is None:
@@ -2265,6 +2313,19 @@ class CoreTypeChecker(ASTVisitor[Type]):
             return self._record(node, UNKNOWN)
         if operator == "+" and left == STRING and right == STRING:
             return self._record(node, STRING)
+        if operator == "+" and (isinstance(left, ListType) or isinstance(right, ListType)):
+            if (
+                isinstance(left, ListType)
+                and isinstance(right, ListType)
+                and _is_same_container(left, right)
+            ):
+                return self._record(node, left)
+            self._error(
+                "Operator '+' on Lists requires two Lists with the same element type, "
+                f"got {describe_type(left)} and {describe_type(right)}.",
+                node.position,
+            )
+            return self._record(node, UNKNOWN)
         if _is_numeric(left) and _is_numeric(right):
             if operator == "/" or FLOAT in (left, right):
                 return self._record(node, FLOAT)
@@ -2295,6 +2356,28 @@ class CoreTypeChecker(ASTVisitor[Type]):
             and _is_same_container(left, right)
         ):
             return self._record(node, BOOL)
+        # Lists order lexicographically over an orderable element type (OP 0032).
+        if isinstance(left, ListType) or isinstance(right, ListType):
+            if (
+                isinstance(left, ListType)
+                and isinstance(right, ListType)
+                and _is_same_container(left, right)
+            ):
+                if not _is_orderable(left.element):
+                    self._error(
+                        f"List element type {describe_type(left.element)} is not orderable "
+                        "in oort-core.",
+                        node.position,
+                    )
+                    return self._record(node, UNKNOWN)
+                return self._record(node, BOOL)
+            self._error(
+                f"Operator '{node.op.text}' on Lists requires two Lists of the same "
+                "orderable element type, got "
+                f"{describe_type(left)} and {describe_type(right)}.",
+                node.position,
+            )
+            return self._record(node, UNKNOWN)
         self._error(
             f"Operator '{node.op.text}' requires two numbers, two String operands, "
             f"or two Sets of the same element type, got {describe_type(left)} "

@@ -76,6 +76,9 @@ EXPECTED_OUTPUTS = {
     "08_core/08_22_typed_function_values.ort": (
         "2 0\n3 1\n11\n20\n7 5\n42 15 12\n15 63\n6 12 321\n"
     ),
+    "08_core/08_23_typed_list_ordering.ort": (
+        "[1, 2, 3] [3, 1, 2]\n[1, 2, 3]\ntrue true true\n[a, b, c]\nfalse\n"
+    ),
     "09_boundary/09_00_object_calls_core.ort": "10\n0.6\n4\n3\n(7, x)\n",
     "09_boundary/09_01_object_calls_nested_core.ort": "10\n",
 }

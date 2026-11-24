@@ -111,6 +111,8 @@ class TypedOp(IntEnum):
     SET_PROPER_SUBSET = 93
     SET_SUPERSET = 94
     SET_PROPER_SUPERSET = 95
+    CMP_LIST = 96
+    LIST_CONCAT = 97
 
 
 # ABC: [op:8][A:8][B:8][C:8]

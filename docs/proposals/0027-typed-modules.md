@@ -69,10 +69,10 @@ artifact 至少记录：
 
 ### 5. ABI 与版本
 
-- kind=1 提升到 v11（artifact 带 module/export/import、构造器表与集合指令）；
+- kind=1 提升到 v12（artifact 带 module/export/import、构造器表与集合指令）；
 - 模块记录 ABI/version；loader 校验；
-- 旧 v7–v10 文件不被 artifact reader 静默接受（v8 单模块、v9 早期 artifact、
-  v10 typed cells，均已淘汰）；
+- 旧 v7–v11 文件不被 artifact reader 静默接受（v8 单模块、v9 早期 artifact、
+  v10 typed cells、v11 Set 比较，均已淘汰）；
 - 不承诺跨大版本二进制兼容；先做显式版本拒绝。
 
 ### 6. Loader / linker

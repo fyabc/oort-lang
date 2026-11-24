@@ -1187,6 +1187,15 @@ def _is_numeric(ir_type: IrTypeLike | None) -> bool:
     return isinstance(ir_type, IrType) and ir_type in (IrType.INT, IrType.FLOAT)
 
 
+def _is_orderable_ir(ir_type: IrTypeLike | None) -> bool:
+    """Built-in sortability contract (OP 0032)."""
+    return isinstance(ir_type, IrType) and ir_type in (
+        IrType.INT,
+        IrType.FLOAT,
+        IrType.STRING,
+    )
+
+
 def _check_binop(function: TypedFunction, instruction: BinOp) -> None:
     table = function.register_types
     lhs = table[instruction.lhs]
@@ -1196,6 +1205,19 @@ def _check_binop(function: TypedFunction, instruction: BinOp) -> None:
     if op == "+" and lhs is IrType.STRING and rhs is IrType.STRING:
         if result is not IrType.STRING:
             _invalid(function, instruction, f"+ result {result} != String")
+        return
+    # List concatenation (OP 0032): element type is carried by both operands.
+    if (
+        op == "+"
+        and isinstance(lhs, ContainerType)
+        and lhs.kind == "List"
+        and isinstance(rhs, ContainerType)
+        and rhs.kind == "List"
+    ):
+        if lhs != rhs:
+            _invalid(function, instruction, f"+ List element types differ: {lhs} vs {rhs}")
+        if result != lhs:
+            _invalid(function, instruction, f"+ result {result} != {lhs}")
         return
     if op in ("in", "!in"):
         if result is not IrType.BOOL:
@@ -1256,6 +1278,22 @@ def _check_binop(function: TypedFunction, instruction: BinOp) -> None:
         ):
             if lhs != rhs:
                 _invalid(function, instruction, f"{op} Set element types differ: {lhs} vs {rhs}")
+            if result is not IrType.BOOL:
+                _invalid(function, instruction, f"{op} result {result} != Bool")
+            return
+        # List lexicographic ordering (OP 0032): orderable element type.
+        if (
+            isinstance(lhs, ContainerType)
+            and lhs.kind == "List"
+            and isinstance(rhs, ContainerType)
+            and rhs.kind == "List"
+        ):
+            if lhs != rhs:
+                _invalid(function, instruction, f"{op} List element types differ: {lhs} vs {rhs}")
+            if not _is_orderable_ir(lhs.args[0]):
+                _invalid(
+                    function, instruction, f"{op} List element type {lhs.args[0]} is not orderable"
+                )
             if result is not IrType.BOOL:
                 _invalid(function, instruction, f"{op} result {result} != Bool")
             return

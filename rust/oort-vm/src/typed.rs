@@ -6,8 +6,8 @@
 //! `Rc`/`RefCell`. Conversions happen only at the native `print` boundary and
 //! when reporting the main result. Semantics mirror the Python typed VM.
 //!
-//! Accepted file versions are exact, never inferred: kind=1 typed proto v9,
-//! kind=1 module artifact v11, kind=2 linked bundle v4. Malformed bytecode
+//! Accepted file versions are exact, never inferred: kind=1 typed proto v10,
+//! kind=1 module artifact v12, kind=2 linked bundle v5. Malformed bytecode
 //! (unknown opcode/tag/version, out-of-range index) is rejected explicitly;
 //! numeric semantics follow docs/design/16-numeric-semantics.md.
 //!
@@ -241,7 +241,7 @@ fn read_proto(r: &mut Reader<'_>, adt_decls: &[TypedAdtDecl]) -> TResult<TypedPr
     })
 }
 
-/// Read a single-module typed program (kind=1, proto version 9): ADT
+/// Read a single-module typed program (kind=1, proto version 10): ADT
 /// declarations, function protos, then main. Used for `-t tvm` artifacts that
 /// were never split into modules.
 pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
@@ -253,7 +253,7 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
         return Err(format!("expected typed bytecode (kind=1), got kind={kind}"));
     }
     let version = data[4];
-    if version != 9 {
+    if version != 10 {
         return Err(format!("unsupported typed bytecode version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -301,7 +301,7 @@ pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
         ));
     }
     let version = data[4];
-    if version != 4 {
+    if version != 5 {
         return Err(format!("unsupported linked bundle version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -365,7 +365,7 @@ pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
 }
 
 // ----------------------------------------------------------------------
-// v11 module artifacts and the native linker (P1c-3)
+// v12 module artifacts and the native linker (P1c-3)
 // ----------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -393,7 +393,7 @@ pub struct TypedConstructorRef {
     pub arity: u16,
 }
 
-/// One module compiled to its own artifact (kind=1, version 11).
+/// One module compiled to its own artifact (kind=1, version 12).
 ///
 /// Export/import tables describe module edges; `module.adt_decls` and
 /// `constructors` still use artifact-local ids that the linker remaps.
@@ -407,7 +407,7 @@ pub struct TypedArtifact {
     pub module: TypedModule,
 }
 
-/// Read a kind=1 module artifact (v11). Version 9 is the standalone
+/// Read a kind=1 module artifact (v12). Version 10 is the standalone
 /// single-module format and is not accepted here.
 pub fn read_typed_artifact(data: &[u8]) -> TResult<TypedArtifact> {
     if data.len() < 5 || &data[0..3] != b"OBC" {
@@ -420,7 +420,7 @@ pub fn read_typed_artifact(data: &[u8]) -> TResult<TypedArtifact> {
         ));
     }
     let version = data[4];
-    if version != 11 {
+    if version != 12 {
         return Err(format!(
             "unsupported typed module artifact version {version}"
         ));
@@ -689,7 +689,7 @@ fn visit_artifact(
     Ok(())
 }
 
-/// Link v11 module artifacts into one typed module for the Rust VM.
+/// Link v12 module artifacts into one typed module for the Rust VM.
 ///
 /// Phases:
 /// 1. index artifacts by `module_id` and DFS the import graph (cycles and
@@ -920,6 +920,7 @@ impl TypedIterator {
 enum TypedNative {
     Print,
     Len,
+    Sorted,
 }
 
 fn display_typed(value: &TypedValue) -> String {
@@ -1317,6 +1318,87 @@ fn typed_set_relation(op: u32, left: &TypedValue, right: &TypedValue) -> TResult
     })
 }
 
+/// Ordering of two scalar elements. Lists are homogeneous by typing, but mixed
+/// numerics are still compared exactly; an unordered pair (NaN) is an error,
+/// matching the dynamic dialect's lexicographic comparison.
+fn scalar_order(left: &TypedValue, right: &TypedValue) -> TResult<Ordering> {
+    match (left, right) {
+        (TypedValue::Int(a), TypedValue::Int(b)) => Ok(a.cmp(b)),
+        (TypedValue::Float(a), TypedValue::Float(b)) => a
+            .partial_cmp(b)
+            .ok_or_else(|| "List elements are not orderable".to_string()),
+        (TypedValue::Str(a), TypedValue::Str(b)) => Ok(a.cmp(b)),
+        (TypedValue::Int(_), TypedValue::Float(_)) | (TypedValue::Float(_), TypedValue::Int(_)) => {
+            mixed_cmp(left, right)?.ok_or_else(|| "List elements are not orderable".to_string())
+        }
+        _ => Err("List elements are not orderable".into()),
+    }
+}
+
+/// Lexicographic comparison of two lists: -1, 0 or 1.
+fn typed_list_cmp(left: &TypedValue, right: &TypedValue) -> TResult<i32> {
+    let (TypedValue::List(left), TypedValue::List(right)) = (left, right) else {
+        return Err("typed List comparison requires two Lists".into());
+    };
+    let left = left.borrow();
+    let right = right.borrow();
+    for (a, b) in left.iter().zip(right.iter()) {
+        if typed_equal(a, b)? {
+            continue;
+        }
+        return Ok(match scalar_order(a, b)? {
+            Ordering::Less => -1,
+            Ordering::Greater => 1,
+            Ordering::Equal => continue,
+        });
+    }
+    Ok(match left.len().cmp(&right.len()) {
+        Ordering::Less => -1,
+        Ordering::Greater => 1,
+        Ordering::Equal => 0,
+    })
+}
+
+fn typed_list_concat(left: &TypedValue, right: &TypedValue) -> TResult<TypedValue> {
+    let (TypedValue::List(left), TypedValue::List(right)) = (left, right) else {
+        return Err("typed List '+' requires two Lists".into());
+    };
+    let mut values = left.borrow().clone();
+    values.extend(right.borrow().iter().cloned());
+    Ok(TypedValue::List(Rc::new(RefCell::new(values))))
+}
+
+/// Stabilize scalar sorting like Python: NaN compares equal to everything, so
+/// it keeps its position relative to neighbors. Element types are validated
+/// before sorting, which keeps the comparator infallible.
+fn sort_order(left: &TypedValue, right: &TypedValue) -> Ordering {
+    match (left, right) {
+        (TypedValue::Int(a), TypedValue::Int(b)) => a.cmp(b),
+        (TypedValue::Float(a), TypedValue::Float(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+        (TypedValue::Str(a), TypedValue::Str(b)) => a.cmp(b),
+        (TypedValue::Int(_), TypedValue::Float(_)) | (TypedValue::Float(_), TypedValue::Int(_)) => {
+            mixed_cmp(left, right)
+                .ok()
+                .flatten()
+                .unwrap_or(Ordering::Equal)
+        }
+        _ => Ordering::Equal,
+    }
+}
+
+fn sort_typed_values(values: &mut [TypedValue]) -> TResult<()> {
+    for value in values.iter() {
+        if !matches!(
+            value,
+            TypedValue::Int(_) | TypedValue::Float(_) | TypedValue::Str(_)
+        ) {
+            return Err("sorted expects a List of Int, Float or String".into());
+        }
+    }
+    values.sort_by(sort_order);
+    Ok(())
+}
+
 /// Resolve one `LOAD_OUTER`/`STORE_OUTER` target.
 ///
 /// `depth` is 1-based from the executing closure: depth 1 is its own snapshot,
@@ -1664,6 +1746,8 @@ const SET_SUBSET: u32 = 92;
 const SET_PROPER_SUBSET: u32 = 93;
 const SET_SUPERSET: u32 = 94;
 const SET_PROPER_SUPERSET: u32 = 95;
+const CMP_LIST: u32 = 96;
+const LIST_CONCAT: u32 = 97;
 
 pub struct TypedVm {
     functions: Vec<ResolvedProto>,
@@ -1735,6 +1819,9 @@ impl GlobalTable {
         bindings
             .entry("len".to_string())
             .or_insert(TypedGlobal::Native(TypedNative::Len));
+        bindings
+            .entry("sorted".to_string())
+            .or_insert(TypedGlobal::Native(TypedNative::Sorted));
         GlobalTable {
             version: 0,
             bindings,
@@ -2181,6 +2268,13 @@ fn execute(
                 registers[a] =
                     TypedValue::Bool(typed_set_relation(op, &registers[b], &registers[c])?);
             }
+            CMP_LIST => {
+                registers[a] =
+                    TypedValue::Int(BigInt::from(typed_list_cmp(&registers[b], &registers[c])?));
+            }
+            LIST_CONCAT => {
+                registers[a] = typed_list_concat(&registers[b], &registers[c])?;
+            }
             EQ_LIST | NE_LIST | EQ_TUPLE | NE_TUPLE | EQ_SET | NE_SET | EQ_DICT | NE_DICT
             | EQ_ADT | NE_ADT => {
                 let mut equal = typed_equal(&registers[b], &registers[c])?;
@@ -2325,6 +2419,19 @@ fn call(
                     Ok(TypedValue::Int(BigInt::from(entries.borrow().len())))
                 }
                 _ => Err("len expects a String, List or Tuple in the typed subset".into()),
+            }
+        }
+        TypedValue::Native(TypedNative::Sorted) => {
+            if arguments.len() != 1 {
+                return Err("sorted expects exactly one argument".into());
+            }
+            match &arguments[0] {
+                TypedValue::List(items) => {
+                    let mut values = items.borrow().clone();
+                    sort_typed_values(&mut values)?;
+                    Ok(TypedValue::List(Rc::new(RefCell::new(values))))
+                }
+                _ => Err("sorted expects a List".into()),
             }
         }
         _ => Err("typed bytecode call target is not callable".into()),
@@ -2544,5 +2651,55 @@ mod tests {
             (TypedValue::Str(Rc::from("a")), int(1)),
         ]);
         assert!(typed_equal(&left_dict, &right_dict).unwrap());
+    }
+
+    fn list_value(values: Vec<TypedValue>) -> TypedValue {
+        TypedValue::List(Rc::new(RefCell::new(values)))
+    }
+
+    #[test]
+    fn list_compare_is_lexicographic() {
+        let cases = [
+            (vec![int(1), int(2)], vec![int(1), int(3)], -1),
+            (vec![int(1), int(2)], vec![int(1), int(2)], 0),
+            (vec![int(1)], vec![int(1), int(2)], -1),
+            (vec![], vec![int(1)], -1),
+            (vec![int(2)], vec![int(1), int(9)], 1),
+        ];
+        for (left, right, expected) in cases {
+            assert_eq!(
+                typed_list_cmp(&list_value(left), &list_value(right)).unwrap(),
+                expected
+            );
+        }
+        let a = list_value(vec![TypedValue::Str(Rc::from("a"))]);
+        let b = list_value(vec![TypedValue::Str(Rc::from("b"))]);
+        assert_eq!(typed_list_cmp(&a, &b).unwrap(), -1);
+    }
+
+    #[test]
+    fn list_concat_returns_a_new_list() {
+        let left = list_value(vec![int(1)]);
+        let right = list_value(vec![int(2)]);
+        let combined = typed_list_concat(&left, &right).unwrap();
+        assert_eq!(display_typed(&combined), "[1, 2]");
+        assert_eq!(display_typed(&left), "[1]");
+        assert_eq!(display_typed(&right), "[2]");
+    }
+
+    #[test]
+    fn sort_typed_values_orders_scalars() {
+        let mut values = vec![int(3), int(1), int(2)];
+        sort_typed_values(&mut values).unwrap();
+        let shown: Vec<String> = values.iter().map(display_typed).collect();
+        assert_eq!(shown, ["1", "2", "3"]);
+
+        let mut words = vec![
+            TypedValue::Str(Rc::from("b")),
+            TypedValue::Str(Rc::from("a")),
+        ];
+        sort_typed_values(&mut words).unwrap();
+        let shown: Vec<String> = words.iter().map(display_typed).collect();
+        assert_eq!(shown, ["a", "b"]);
     }
 }

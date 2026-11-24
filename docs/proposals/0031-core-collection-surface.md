@@ -82,13 +82,13 @@ print({. 1 .} | {. 2 .})    # Operator '|' is not supported in oort-core yet.
 - 比较运算符（子集/超集 `< <= > >=`）由 C7 补齐：两侧必须是同一元素类型的
   `Set[T]`，按集合包含关系返回 Bool（与动态方言一致）；
 
-### D5：排序与列表拼接（后续）
+### D5：排序与列表拼接（已由 OP 0032 实现）
 
-- `sorted`、List `+`、字典序 `<` 在动态方言已存在，但静态核心需要：
-  - `T` 的“可排序”契约（trait/bound 或内建可排序类型集合）；
-  - 比较函数/闭包支持（typed 函数值仍在 B2）；
-- 因此不在短期范围；等 OP 0005 的上界/接口或内建 `Ordered` 机制落地后，
-  作为 C5 单独提案。
+- `sorted`、List `+`、字典序 `<` 在动态方言已存在，静态核心需要“可排序”
+  契约；[OP 0032](0032-core-ordering-and-sorting.md) 选择**内建封闭集合**
+  （`Int`/`Float`/`String`）作为 C5 第一切片：
+  - List `+`、List 字典序 `< <= > >=`、`sorted(xs)`；
+  - `key`/`reverse`、自定义类型排序与 `Ord` bound 留给后续（依赖 B3/泛型）。
 
 ### 边界与限制
 
@@ -157,15 +157,17 @@ print({. 1 .} | {. 2 .})    # Operator '|' is not supported in oort-core yet.
 | C2（已实现） | List/Dict 下标写入；负索引/越界；别名与迭代快照测试 | `xs[i] = v`、`d[k] = v` 与动态一致；Tuple/String/Set 拒绝 |
 | C3（已实现） | List/Tuple/String 切片读；Python 夹取；步长显式拒绝 | 差分覆盖空/负/越界切片 |
 | C4（已实现） | Set 并/交/差/对称差；类型一致；结果新集合 | 与动态差分一致；混合元素类型拒绝 |
+| C5（已实现） | List `+`、List 字典序 `< <= > >=`、`sorted(xs)`；元素限 Int/Float/String | 与动态一致；非 List/非可排序元素拒绝 |
 | C7（已实现） | Set 子集/超集比较 `< <= > >=`；同元素类型；返回 Bool | 与动态差分一致；混合元素类型拒绝 |
 
 C1–C4 一次性提升 kind=1 v7 / artifact v9 / linked bundle v2；C7 提升到
-kind=1 v9 / artifact v11 / linked bundle v4，并补 Python/Rust 差分；
-缓存按版本自然失效。
+kind=1 v9 / artifact v11 / linked bundle v4；C5 提升到 kind=1 v10 /
+artifact v12 / linked bundle v5，均补 Python/Rust 差分；缓存按版本自然失效。
 
 ### 长期（C5+）
 
-- C5：排序（`sorted`、List 字典序、List `+`），依赖可排序契约/函数值；
+- C5：排序与列表拼接（**C5 第一切片已实现**；`key`/`reverse`、自定义类型
+  排序与 `Ord` 契约见 [OP 0032](0032-core-ordering-and-sorting.md)）；
 - C6：切片赋值与步长切片（若确有必要）；
 - C7：Set 子集/超集比较（**已实现**，见上表）；
 - 性能：Set/Dict 的哈希表实现与切片复制优化在 Rust VM 阶段处理，不改变语义。

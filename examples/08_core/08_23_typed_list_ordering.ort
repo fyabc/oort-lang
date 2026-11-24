@@ -1,0 +1,15 @@
+#lang oort-core
+
+# List 排序表面（OP 0032）：拼接、字典序比较与 `sorted`（稳定升序）。
+# 可排序元素类型为 Int、Float、String；元素类型不同的 List 在编译期拒绝。
+
+def show() -> Unit {
+    val xs: List[Int] = [3, 1, 2]
+    print(sorted(xs), xs)
+    print([1, 2] + [3])
+    print([1, 2] < [1, 3], [1, 2] < [1, 2, 0], [1, 2] <= [1, 2])
+    print(sorted(["b", "a", "c"]))
+    print([1.5, 0.5] < [0.5, 2.0])
+}
+
+show()

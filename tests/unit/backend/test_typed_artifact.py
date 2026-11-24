@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-"""Typed module artifacts (v11) and the link-time loader (design 19)."""
+"""Typed module artifacts (v12) and the link-time loader (design 19)."""
 
 import dataclasses
 import json
@@ -126,23 +126,23 @@ def test_artifact_round_trip_keeps_big_int_literals(tmp_path):
     assert 9223372036854775809 in constants
 
 
-def test_v11_and_v9_artifacts_do_not_cross_read(tmp_path):
+def test_v12_and_v10_artifacts_do_not_cross_read(tmp_path):
     unit = _unit("#lang oort-core\nprint(1)\n", "solo")
     artifact = build_typed_artifact(unit)
-    v11_path = tmp_path / "v11.obc"
-    write_typed_artifact(artifact, v11_path)
+    v12_path = tmp_path / "v12.obc"
+    write_typed_artifact(artifact, v12_path)
 
     dynamic_source = "#lang oort-core\ndef one() -> Int { 1 }\nprint(one())\n"
-    v9_path = tmp_path / "v9.obc"
+    v10_path = tmp_path / "v10.obc"
     write_typed_obc(
         compile_typed_module(lower_typed_module(_check(dynamic_source, "v6.ort"))),
-        v9_path,
+        v10_path,
     )
 
-    with pytest.raises(ObcError, match="unsupported typed module artifact version 9"):
-        read_typed_artifact(v9_path)
-    with pytest.raises(ObcError, match="unsupported typed bytecode version 11"):
-        read_typed_obc(v11_path)
+    with pytest.raises(ObcError, match="unsupported typed module artifact version 10"):
+        read_typed_artifact(v10_path)
+    with pytest.raises(ObcError, match="unsupported typed bytecode version 12"):
+        read_typed_obc(v12_path)
 
 
 def test_link_artifacts_remaps_same_named_adts(tmp_path, capsys):
@@ -387,7 +387,7 @@ def test_artifact_cache_layout_stats_clean_and_corruption(tmp_path):
     cache = TypedArtifactCache(tmp_path / "cache")
     build_typed_program((lib, main), cache)
 
-    entries = sorted((tmp_path / "cache" / "v11" / "abi1").rglob("*.obc"))
+    entries = sorted((tmp_path / "cache" / "v12" / "abi1").rglob("*.obc"))
     assert len(entries) == 2
     stats = cache.stats()
     assert stats.entries == 2
@@ -417,7 +417,7 @@ def test_cache_manifest_and_size_limit(tmp_path):
     build_typed_program((lib, main), cache)
 
     assert cache.stats().entries == 1
-    manifests = list((tmp_path / "cache" / "v11" / "abi1").rglob("*.json"))
+    manifests = list((tmp_path / "cache" / "v12" / "abi1").rglob("*.json"))
     assert len(manifests) == 1
     data = json.loads(manifests[0].read_text(encoding="utf-8"))
     assert data["schema"] == "oort-cache-v1"

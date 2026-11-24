@@ -392,6 +392,10 @@ class TypedCodeVM:
                 TypedOp.SET_PROPER_SUPERSET,
             ):
                 registers[a] = self._set_relation(op, registers[b], registers[c], position)
+            elif op is TypedOp.CMP_LIST:
+                registers[a] = OortInt(self._list_compare(registers[b], registers[c], position))
+            elif op is TypedOp.LIST_CONCAT:
+                registers[a] = self._list_concat(registers[b], registers[c], position)
             elif op is TypedOp.JMP:
                 pc = bx
                 continue
@@ -765,6 +769,30 @@ class TypedCodeVM:
         else:
             result = lhs.value > rhs.value
         return OortBool.get_bool_value(result)
+
+    def _list_compare(self, lhs: Any, rhs: Any, position: SourcePosition) -> int:
+        if type(lhs) is not OortList or type(rhs) is not OortList:
+            raise OortTypeError("Typed List comparison requires two Lists.", position)
+        for left, right in zip(lhs.value, rhs.value):
+            if self.interpreter.values_equal(left, right, position):
+                continue
+            # Element orderability is checked statically (OP 0032); reuse the
+            # runtime operators so scalar semantics match the dynamic dialect.
+            if self._bool(
+                self.interpreter.apply_binary("<", left, right, position), position
+            ).value:
+                return -1
+            if self._bool(
+                self.interpreter.apply_binary("<", right, left, position), position
+            ).value:
+                return 1
+            raise OortTypeError("Typed List elements are not orderable.", position)
+        return (len(lhs.value) > len(rhs.value)) - (len(lhs.value) < len(rhs.value))
+
+    def _list_concat(self, lhs: Any, rhs: Any, position: SourcePosition) -> OortList:
+        if type(lhs) is not OortList or type(rhs) is not OortList:
+            raise OortTypeError("Typed List '+' requires two Lists.", position)
+        return OortList(lhs.value + rhs.value)
 
     def _get_item(self, container: Any, index: Any, position: SourcePosition) -> OortObject:
         if type(container) is OortDict:

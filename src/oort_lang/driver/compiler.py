@@ -311,7 +311,7 @@ class Compiler:
         ast: nodes.ModuleNode,
         input_info: InputInfo,
     ) -> TypedProgram:
-        """Lower, compile and link typed modules through v11 module artifacts."""
+        """Lower, compile and link typed modules through v12 module artifacts."""
 
         from ..bytecode import build_typed_program
 
