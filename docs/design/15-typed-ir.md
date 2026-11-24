@@ -623,29 +623,52 @@ S1 的约束与实现：
   新增 `typed_sets_dicts`；Python typed 单测覆盖 OBC round-trip；Rust 单测
   覆盖去重、摘要顺序（实现特性）与无序相等。
 
-### B2 实现状态：函数值与 lambda（2026-11-25）
+### B2 实现状态：函数值、lambda 与捕获闭包（2026-11-25）
 
-- `FunctionType` 不再拒绝，统一擦除为 `IrType.FUNCTION`；函数类型可出现在
-  参数、返回值、局部变量与容器元素中；
-- Python typed VM 的入口守卫接受 `TypedCodeFunction`/`OortNativeFunction`；
-  Rust typed VM 接受 `Function`/`Native`；
-- 命名顶层函数可作为一等值传递、返回与调用；函数相等/打印仍显式拒绝；
-- **非捕获 lambda**（第二切片）：`MakeClosure` 编译为新 opcode `MK_FUN`
-  （87），lambda proto 以模块内唯一的 `<lambda:N>` 名进入函数表；
-- **只读捕获闭包**（第三切片）：lambda 子树含 `LoadOuter` 时经
-  `MK_CLOSURE`（88）创建——快照创建帧寄存器、父链取当前执行闭包；
-  `LOAD_OUTER`（89，1 基深度）沿父链读取。静态一致性检查：捕获槽在创建
-  pc 之后不得 `StoreLocal`（否则与动态方言的引用语义分歧），`StoreOuter`
-  仍拒绝。循环变量写入位于创建点之前的固定 pc，逐轮捕获语义与动态侧
-  FRESH cell 一致；嵌套 lambda 通过 creator 链把深层读归属到正确的帧；
-  纯转发外层读、自身不读外部变量的中间 lambda 也以 `MK_CLOSURE` 创建
-  （保守判定，保证父链完整）；
-- artifact/linker：lambda 不导出、不参与接口哈希；跨模块链接时与其他函数
-  一起重定位 `MK_FUN`/`DEF_FUN` 索引（先建完整函数映射再重写）；缓存与
-  `.obc` round-trip 覆盖；
-- 验收：`examples/08_core/08_22_typed_function_values.ort`、typed differential
-  `typed_function_values` 与 `typed_module_lambdas`（bundle + 原生链接）、
-  eval/vm/tvm 三目标一致性测试。
+**切片 1：命名函数值。** `FunctionType` 不再拒绝，统一擦除为
+`IrType.FUNCTION`；函数类型可出现在参数、返回值、局部变量与容器元素中。
+Python typed VM 的入口守卫接受 `TypedCodeFunction`/`OortNativeFunction`；
+Rust typed VM 接受 `Function`/`Native`。函数相等/打印仍显式拒绝。
+
+**切片 2：非捕获 lambda。** `MakeClosure` 编译为 `MK_FUN`（87）；lambda
+proto 以模块内唯一的 `<lambda:N>` 名进入函数表（共享 helper 修复了字面量
+`"<lambda>"` 名导致的寄存器类型表/签名表按键冲突）。
+
+**切片 3：只读捕获闭包。** lambda 子树含 `LoadOuter` 时经 `MK_CLOSURE`
+（88）创建——快照创建帧寄存器、父链取当前执行闭包；`LOAD_OUTER`（89，
+1 基深度，沿父链走 depth-1 步后读快照槽）读取。嵌套捕获通过 creator 链
+（lambda → 创建它的函数）静态归属到正确的帧。`capturing` 判定传递：自身
+不读外部变量、只为嵌套读转发父链的中间 lambda 也以 `MK_CLOSURE` 创建
+（保守判定，保证父链完整）。
+
+**快照模型的可靠性论证。** 动态方言（kind=0）用 cell 引用语义；typed 侧
+快照与之**可观察等价**，前提由两条编译期检查保证：
+
+1. 捕获槽在最早创建 pc 之后不得 `StoreLocal`——否则引用语义会观察到新值
+   而快照不会（如 `val f = do(){x+k}; k = 2` 引用给 12、快照给 11），
+   显式拒绝；嵌套场景按 creator 链把深层读归属回正确的帧与创建点。
+2. `StoreOuter`（闭包内部写捕获变量）直接拒绝。
+
+循环变量天然合法：每轮写入发生在闭包创建点**之前的固定 pc**，快照逐轮
+拷贝当前值，与动态侧 FRESH cell 的“每轮新 cell”语义一致。此论证依赖
+“HIR 中循环变量的写入 pc 固定且先于循环体内 MakeClosure”这一不变量——
+重构 lowering 时必须保持。
+
+**artifact/linker。** lambda 不导出、不参与接口哈希（依赖者缓存不因模块
+加 lambda 失效）；跨模块链接时 `MK_FUN`/`MK_CLOSURE`/`DEF_FUN` 索引一起
+重定位（先建完整函数映射再重写）；缓存与 `.obc` round-trip 覆盖。
+
+**升级路径（cells 切片）。** 开放捕获变量写共享时：引入 cell 表示与
+`STORE_OUTER` opcode，放宽上述检查 1/2，`MK_CLOSURE` 对共享槽改为捕获
+cell 引用而非值拷贝；Rust 侧需要 `Rc<RefCell<..>>` 或等价物，并触发
+“闭包/类引入后再定 GC”的决策。快照→cell 是表示层替换，静态分析
+（creator 链、按槽归属）可全部复用。
+
+**验收。** `examples/08_core/08_22_typed_function_values.ort`；typed
+differential `typed_function_values`、`typed_capturing_closures` 与
+`typed_module_lambdas`（bundle + 原生链接）；eval/vm/tvm 三目标一致性
+测试；写后捕获与闭包内写的拒绝测试。`08_04`/`08_05` 因顶层 `val`
+（非闭包原因）仍不能进 tvm。
 
 ## 9. 风险与开放问题
 
