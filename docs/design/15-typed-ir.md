@@ -631,8 +631,15 @@ S1 的约束与实现：
   Rust typed VM 接受 `Function`/`Native`；
 - 命名顶层函数可作为一等值传递、返回与调用；函数相等/打印仍显式拒绝；
 - **非捕获 lambda**（第二切片）：`MakeClosure` 编译为新 opcode `MK_FUN`
-  （87），lambda proto 以模块内唯一的 `<lambda:N>` 名进入函数表；HIR 层
-  校验 `LoadOuter`/`StoreOuter` 并拒绝捕获闭包；
+  （87），lambda proto 以模块内唯一的 `<lambda:N>` 名进入函数表；
+- **只读捕获闭包**（第三切片）：lambda 子树含 `LoadOuter` 时经
+  `MK_CLOSURE`（88）创建——快照创建帧寄存器、父链取当前执行闭包；
+  `LOAD_OUTER`（89，1 基深度）沿父链读取。静态一致性检查：捕获槽在创建
+  pc 之后不得 `StoreLocal`（否则与动态方言的引用语义分歧），`StoreOuter`
+  仍拒绝。循环变量写入位于创建点之前的固定 pc，逐轮捕获语义与动态侧
+  FRESH cell 一致；嵌套 lambda 通过 creator 链把深层读归属到正确的帧；
+  纯转发外层读、自身不读外部变量的中间 lambda 也以 `MK_CLOSURE` 创建
+  （保守判定，保证父链完整）；
 - artifact/linker：lambda 不导出、不参与接口哈希；跨模块链接时与其他函数
   一起重定位 `MK_FUN`/`DEF_FUN` 索引（先建完整函数映射再重写）；缓存与
   `.obc` round-trip 覆盖；

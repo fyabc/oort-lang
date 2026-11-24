@@ -428,6 +428,46 @@ print(sum_apply([inc, dec], 10))
 print(dispatch("inc", 6), dispatch("dec", 6))
 print(with_lambda(), lambda_arg(), lambda_in_list(), nested_lambda())
 """,
+    "typed_capturing_closures": """#lang oort-core
+
+def make_adder(n: Int) -> (Int) -> Int {
+    do(x: Int) -> Int { x + n }
+}
+
+def use_adder() -> Int {
+    val add10 = make_adder(10)
+    add10(5)
+}
+
+def loop_capture() -> Int {
+    var total = 0
+    for i in [10, 20, 30] {
+        val g = do(x: Int) -> Int { x + i }
+        total = total + g(1)
+    }
+    total
+}
+
+def nested(a: Int) -> (Int) -> (Int) -> Int {
+    do(b: Int) -> (Int) -> Int {
+        do(c: Int) -> Int { a + b + c }
+    }
+}
+
+def use_nested() -> Int {
+    val step = nested(100)
+    val partial = step(20)
+    partial(3)
+}
+
+def shadow() -> Int {
+    val n = 100
+    val f = do(n: Int) -> Int { n * 2 }
+    f(7) + n
+}
+
+print(use_adder(), loop_capture(), use_nested(), shadow())
+""",
     "typed_collection_surface": """#lang oort-core
 
 def adjust() -> Int {

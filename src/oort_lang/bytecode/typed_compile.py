@@ -38,6 +38,7 @@ from ..hir.nodes import (
     LoadConst,
     LoadGlobal,
     LoadLocal,
+    LoadOuter,
     MakeClosure,
     Move,
     OpenIterator,
@@ -139,8 +140,9 @@ class _ConstantPool:
 
 
 class _ProtoBuilder:
-    def __init__(self, function: TypedFunction):
+    def __init__(self, function: TypedFunction, capturing: set[int] | None = None):
         self.function = function
+        self.capturing = capturing if capturing is not None else set()
         self.code: list[int] = []
         self.positions: list[SourcePosition] = []
         self.constants = _ConstantPool()
@@ -248,10 +250,14 @@ class _ProtoBuilder:
             index = self._constant(instruction.name, position)
             self._emit(encode_abx(TypedOp.LOAD_G, instruction.dst, index), position)
         elif isinstance(instruction, MakeClosure):
-            self._emit(
-                encode_abx(TypedOp.MK_FUN, instruction.dst, instruction.function_index),
-                position,
+            # A capturing lambda snapshots the creating frame; a leaf lambda
+            # is just a function reference.
+            opcode = (
+                TypedOp.MK_CLOSURE
+                if instruction.function_index in self.capturing
+                else TypedOp.MK_FUN
             )
+            self._emit(encode_abx(opcode, instruction.dst, instruction.function_index), position)
         elif isinstance(instruction, DefineFunction):
             name_index = self._constant(instruction.name, position)
             if name_index >= 256:
@@ -279,6 +285,13 @@ class _ProtoBuilder:
             self._emit(
                 encode_abc(
                     TypedOp.ADT_FIELD, instruction.dst, instruction.value, instruction.index
+                ),
+                position,
+            )
+        elif isinstance(instruction, LoadOuter):
+            self._emit(
+                encode_abc(
+                    TypedOp.LOAD_OUTER, instruction.dst, instruction.depth, instruction.slot
                 ),
                 position,
             )
@@ -656,6 +669,32 @@ class _ProtoBuilder:
 def compile_typed_module(module: TypedModule) -> TypedProgram:
     """Compile a typed HIR module to typed bytecode."""
 
-    functions = tuple(_ProtoBuilder(function).build() for function in module.functions)
-    main = _ProtoBuilder(module.main).build()
+    capturing = {
+        index
+        for index, function in enumerate(module.functions)
+        if any(isinstance(instruction, LoadOuter) for instruction in function.hir.code)
+    }
+    # A lambda whose subtree captures must itself be a closure: its snapshot
+    # carries the parent chain nested reads walk through, even when the
+    # lambda reads no outer slot directly. Named functions and main execute
+    # without a closure context and need no marking.
+    created_by: dict[int, bool] = {}
+    for function in (*module.functions, module.main):
+        for instruction in function.hir.code:
+            if isinstance(instruction, MakeClosure):
+                created_by[instruction.function_index] = True
+    changed = True
+    while changed:
+        changed = False
+        for index, function in enumerate(module.functions):
+            if index in capturing or not created_by.get(index):
+                continue
+            if any(
+                isinstance(instruction, MakeClosure) and instruction.function_index in capturing
+                for instruction in function.hir.code
+            ):
+                capturing.add(index)
+                changed = True
+    functions = tuple(_ProtoBuilder(function, capturing).build() for function in module.functions)
+    main = _ProtoBuilder(module.main, capturing).build()
     return TypedProgram(main=main, functions=functions, adt_decls=module.adt_decls)

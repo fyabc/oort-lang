@@ -46,6 +46,19 @@ class TypedCodeFunction:
     proto: TypedProto
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class TypedCodeClosure:
+    """A capturing lambda: its proto plus a creation-time frame snapshot.
+
+    Captures are read-only snapshots (checked statically), so the parent
+    chain only forwards outer reads; no cells are needed.
+    """
+
+    proto: TypedProto
+    snapshot: tuple
+    parent: TypedCodeClosure | None
+
+
 class TypedCodeVM:
     def __init__(self, interpreter: ASTInterpreter):
         self.interpreter = interpreter
@@ -116,6 +129,7 @@ class TypedCodeVM:
         program: TypedProgram,
         proto: TypedProto,
         registers: list[Any],
+        closure: TypedCodeClosure | None = None,
     ) -> OortObject:
         code = proto.code
         pc = 0
@@ -145,6 +159,22 @@ class TypedCodeVM:
                 if not 0 <= bx < len(program.functions):
                     raise OortTypeError("Invalid typed function index.", position)
                 registers[a] = TypedCodeFunction(program.functions[bx])
+            elif op is TypedOp.MK_CLOSURE:
+                if not 0 <= bx < len(program.functions):
+                    raise OortTypeError("Invalid typed function index.", position)
+                registers[a] = TypedCodeClosure(program.functions[bx], tuple(registers), closure)
+            elif op is TypedOp.LOAD_OUTER:
+                if b < 1 or closure is None:
+                    raise OortTypeError("Invalid closure depth in typed bytecode.", position)
+                current = closure
+                for _ in range(b - 1):
+                    parent = current.parent
+                    if parent is None:
+                        raise OortTypeError("Invalid closure depth in typed bytecode.", position)
+                    current = parent
+                if not 0 <= c < len(current.snapshot):
+                    raise OortTypeError("Invalid closure slot in typed bytecode.", position)
+                registers[a] = current.snapshot[c]
             elif op is TypedOp.MOVE:
                 registers[a] = registers[b]
             elif op in (
@@ -391,6 +421,8 @@ class TypedCodeVM:
         arguments: list[Any],
         position: SourcePosition,
     ) -> OortObject:
+        if isinstance(callee, TypedCodeClosure):
+            return self._invoke(program, callee.proto, arguments, position, closure=callee)
         if isinstance(callee, TypedCodeFunction):
             return self._invoke(program, callee.proto, arguments, position)
         if isinstance(callee, OortNativeFunction):
@@ -403,6 +435,7 @@ class TypedCodeVM:
         proto: TypedProto,
         arguments: list[Any],
         position: SourcePosition,
+        closure: TypedCodeClosure | None = None,
     ) -> OortObject:
         if len(arguments) != len(proto.param_types):
             raise OortTypeError(
@@ -415,7 +448,7 @@ class TypedCodeVM:
             expected = proto.types[type_id]
             self._guard(expected, value, proto.name, index, position)
             registers[index] = value
-        return self._execute(program, proto, registers)
+        return self._execute(program, proto, registers, closure)
 
     @staticmethod
     def _guard(
@@ -443,7 +476,7 @@ class TypedCodeVM:
                 or (expected is IrType.UNIT and type(value) is OortNull)
                 or (
                     expected is IrType.FUNCTION
-                    and isinstance(value, (TypedCodeFunction, OortNativeFunction))
+                    and isinstance(value, (TypedCodeFunction, TypedCodeClosure, OortNativeFunction))
                 )
             )
         if not ok:

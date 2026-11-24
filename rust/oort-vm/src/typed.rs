@@ -579,7 +579,7 @@ fn remap_proto(
                 .get(&b)
                 .ok_or_else(|| "typed constructor symbol out of range".to_string())?;
             *word = (op << 24) | (a << 16) | ((mapped as u32) << 8) | c;
-        } else if op == DEF_FUN || op == MK_FUN {
+        } else if op == DEF_FUN || op == MK_FUN || op == MK_CLOSURE {
             if let Some(function_map) = function_map {
                 let a = (*word >> 16) & 0xff;
                 let bx = (*word & 0xffff) as u16;
@@ -811,7 +811,17 @@ enum TypedValue {
     Adt(Rc<TypedAdt>),
     Iterator(Rc<RefCell<TypedIterator>>),
     Function(usize),
+    Closure(Rc<TypedClosure>),
     Native(TypedNative),
+}
+
+/// A capturing lambda: its function index plus a creation-time frame
+/// snapshot. Captures are read-only snapshots (checked statically), so the
+/// parent chain only forwards outer reads.
+struct TypedClosure {
+    index: usize,
+    snapshot: Vec<TypedValue>,
+    parent: Option<Rc<TypedClosure>>,
 }
 
 struct TypedAdt {
@@ -892,7 +902,9 @@ fn display_typed(value: &TypedValue) -> String {
             }
         }
         TypedValue::Iterator(_) => "<iterator>".into(),
-        TypedValue::Function(_) | TypedValue::Native(_) => "<function>".into(),
+        TypedValue::Function(_) | TypedValue::Closure(_) | TypedValue::Native(_) => {
+            "<function>".into()
+        }
     }
 }
 
@@ -952,6 +964,9 @@ fn typed_to_value(value: &TypedValue) -> TResult<Value> {
 fn typed_equal(lhs: &TypedValue, rhs: &TypedValue) -> TResult<bool> {
     Ok(match (lhs, rhs) {
         (TypedValue::Unit, TypedValue::Unit) => true,
+        (TypedValue::Function(_), _) | (TypedValue::Closure(_), _) => {
+            return Err("functions cannot be compared".into())
+        }
         (TypedValue::Bool(a), TypedValue::Bool(b)) => a == b,
         (TypedValue::Int(a), TypedValue::Int(b)) => a == b,
         (TypedValue::Float(a), TypedValue::Float(b)) => a == b,
@@ -1489,6 +1504,8 @@ const SET_INTERSECT: u32 = 84;
 const SET_DIFFERENCE: u32 = 85;
 const SET_SYMMETRIC: u32 = 86;
 const MK_FUN: u32 = 87;
+const MK_CLOSURE: u32 = 88;
+const LOAD_OUTER: u32 = 89;
 
 pub struct TypedVm {
     functions: Vec<ResolvedProto>,
@@ -1663,7 +1680,7 @@ impl TypedVm {
         let adt_decls = &self.adt_decls;
         let pool = &mut self.pool;
         let mut frame = pool.acquire(main.proto.register_count as usize);
-        let result = execute(main, functions, globals, adt_decls, pool, &mut frame);
+        let result = execute(main, functions, globals, adt_decls, pool, &mut frame, None);
         pool.release(frame);
         result.and_then(to_value)
     }
@@ -1676,6 +1693,7 @@ fn execute(
     adt_decls: &[TypedAdtDecl],
     pool: &mut FramePool,
     registers: &mut [TypedValue],
+    closure: Option<&Rc<TypedClosure>>,
 ) -> TResult<TypedValue> {
     let proto = &resolved.proto;
     let mut pc = 0usize;
@@ -1707,6 +1725,37 @@ fn execute(
                     return Err("typed MK_FUN index out of range".into());
                 }
                 registers[a] = TypedValue::Function(index);
+            }
+            MK_CLOSURE => {
+                let index = bx as usize;
+                if index >= functions.len() {
+                    return Err("typed MK_CLOSURE index out of range".into());
+                }
+                registers[a] = TypedValue::Closure(Rc::new(TypedClosure {
+                    index,
+                    snapshot: registers.to_vec(),
+                    parent: closure.cloned(),
+                }));
+            }
+            LOAD_OUTER => {
+                if b < 1 {
+                    return Err("invalid closure depth in typed bytecode".into());
+                }
+                let mut current = closure
+                    .ok_or("invalid closure depth in typed bytecode")?
+                    .clone();
+                for _ in 0..(b - 1) {
+                    current = current
+                        .parent
+                        .clone()
+                        .ok_or("invalid closure depth in typed bytecode")?;
+                }
+                let value = current
+                    .snapshot
+                    .get(c)
+                    .ok_or("invalid closure slot in typed bytecode")?
+                    .clone();
+                registers[a] = value;
             }
             MOVE => {
                 registers[a] = registers[b].clone();
@@ -2014,6 +2063,39 @@ fn call(
     arguments: &[TypedValue],
 ) -> TResult<TypedValue> {
     match callee {
+        TypedValue::Closure(closure) => {
+            let resolved = functions
+                .get(closure.index)
+                .ok_or("invalid typed function index")?;
+            let proto = &resolved.proto;
+            if arguments.len() != proto.param_types.len() {
+                return Err(format!(
+                    "typed function '{}' expects {} arguments, got {}",
+                    proto.name,
+                    proto.param_types.len(),
+                    arguments.len()
+                ));
+            }
+            for (index, (expected, value)) in proto.param_types.iter().zip(arguments).enumerate() {
+                guard(expected, value)
+                    .map_err(|e| format!("argument {index} of '{}': {e}", proto.name))?;
+            }
+            let mut frame = pool.acquire(proto.register_count as usize);
+            for (slot, value) in frame.iter_mut().zip(arguments) {
+                *slot = value.clone();
+            }
+            let result = execute(
+                resolved,
+                functions,
+                globals,
+                adt_decls,
+                pool,
+                &mut frame,
+                Some(&closure),
+            );
+            pool.release(frame);
+            result
+        }
         TypedValue::Function(index) => {
             let resolved = functions.get(index).ok_or("invalid typed function index")?;
             let proto = &resolved.proto;
@@ -2033,7 +2115,9 @@ fn call(
             for (slot, value) in frame.iter_mut().zip(arguments) {
                 *slot = value.clone();
             }
-            let result = execute(resolved, functions, globals, adt_decls, pool, &mut frame);
+            let result = execute(
+                resolved, functions, globals, adt_decls, pool, &mut frame, None,
+            );
             pool.release(frame);
             result
         }
