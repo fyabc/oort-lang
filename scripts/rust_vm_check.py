@@ -81,6 +81,17 @@ DIFF_PROGRAMS = {
         "print(-7 // 2, -7 % 2, 7 // -2, 7 % -2)\n"
         "print(1 < 2, 2 <= 2, 3 > 4, 1 == 1.0)\n"
     ),
+    "big_int": (
+        "def pow2(k) { var r = 1\nvar i = 0\nwhile i < k { r = r * 2\ni = i + 1 }\nr }\n"
+        "var a = pow2(100)\n"
+        "print(a)\n"
+        "print(a // 3, a % 7)\n"
+        "print((-a - 1) // 3, (-a - 1) % 3)\n"
+        "print(a > pow2(99), -a < 0)\n"
+        "print(pow2(53) + 1 == 9007199254740992.0, pow2(53) == 9007199254740992.0)\n"
+        "var n = 9223372036854775808\nprint(n, n + n, ~n)\n"
+        "print(1 == 1.0, 1 < 1.5)\n"
+    ),
 }
 
 BENCH_PROGRAMS = {
@@ -378,6 +389,7 @@ print((-pow2(100) - 1) // 3, (-pow2(100) - 1) % 3)
 print(pow2(100) > pow2(99), -pow2(100) < 0)
 print(pow2(53) + 1 == 9007199254740992.0)
 print(pow2(53) == 9007199254740992.0)
+print(9223372036854775808, -9223372036854775809)
 """,
     "typed_function_values": """#lang oort-core
 

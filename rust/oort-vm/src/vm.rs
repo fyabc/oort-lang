@@ -1,12 +1,20 @@
 //! Spike register VM for type-erased Oort bytecode. Phase 0 subset: enough to
 //! run the fib/loop/methods benchmarks and a handful of differential cases.
 //! Semantics mirror `runtime/bytecode_vm.py` (frame layout, calling convention,
-//! numeric rules). Unsupported opcodes fail explicitly, never silently.
+//! numeric rules). Integers keep an i64 fast path and promote to `BigInt` on
+//! overflow, so big-int programs behave like Python. Unsupported opcodes fail
+//! explicitly, never silently.
 
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
+
+use num_bigint::BigInt;
+use num_integer::Integer;
+use num_rational::BigRational;
+use num_traits::{ToPrimitive, Zero};
 
 use crate::obc::{Constant, Module, Proto};
 
@@ -17,6 +25,9 @@ pub enum Value {
     Null,
     Bool(bool),
     Int(i64),
+    /// An integer outside `i64`. Arithmetic promotes to this on overflow and
+    /// never narrows back, mirroring Python's arbitrary-precision ints.
+    Big(Rc<BigInt>),
     Float(f64),
     Str(Rc<str>),
     List(Rc<RefCell<Vec<Value>>>),
@@ -138,6 +149,7 @@ fn truthy(v: &Value) -> bool {
         Value::Null => false,
         Value::Bool(b) => *b,
         Value::Int(i) => *i != 0,
+        Value::Big(b) => !b.is_zero(),
         Value::Float(f) => *f != 0.0,
         Value::Str(s) => !s.is_empty(),
         Value::List(l) => !l.borrow().is_empty(),
@@ -148,11 +160,66 @@ fn truthy(v: &Value) -> bool {
     }
 }
 
-fn as_f64(v: &Value) -> Option<f64> {
+fn is_number(v: &Value) -> bool {
+    matches!(v, Value::Int(_) | Value::Big(_) | Value::Float(_))
+}
+
+fn is_int(v: &Value) -> bool {
+    matches!(v, Value::Int(_) | Value::Big(_))
+}
+
+fn as_bigint(v: &Value) -> Option<BigInt> {
     match v {
-        Value::Int(i) => Some(*i as f64),
-        Value::Float(f) => Some(*f),
+        Value::Int(i) => Some(BigInt::from(*i)),
+        Value::Big(b) => Some((**b).clone()),
         _ => None,
+    }
+}
+
+/// Exact comparison between an arbitrary-precision int and f64 (no rounding).
+fn cmp_int_f64(i: &BigInt, f: f64) -> Option<Ordering> {
+    if f.is_nan() {
+        return None;
+    }
+    if f == f64::INFINITY {
+        return Some(Ordering::Less);
+    }
+    if f == f64::NEG_INFINITY {
+        return Some(Ordering::Greater);
+    }
+    let rational = BigRational::from_float(f)?;
+    Some(BigRational::from_integer(i.clone()).cmp(&rational))
+}
+
+/// Exact numeric ordering; `None` for NaN, where every comparison is false.
+fn numeric_cmp(lhs: &Value, rhs: &Value) -> Option<Ordering> {
+    match (lhs, rhs) {
+        (Value::Int(a), Value::Int(b)) => Some(a.cmp(b)),
+        (Value::Big(a), Value::Big(b)) => Some(a.cmp(b)),
+        (Value::Int(a), Value::Big(b)) => Some(BigInt::from(*a).cmp(b)),
+        (Value::Big(a), Value::Int(b)) => Some(a.as_ref().cmp(&BigInt::from(*b))),
+        (Value::Float(a), Value::Float(b)) => a.partial_cmp(b),
+        (Value::Int(a), Value::Float(b)) => cmp_int_f64(&BigInt::from(*a), *b),
+        (Value::Big(a), Value::Float(b)) => cmp_int_f64(a, *b),
+        (Value::Float(a), Value::Int(b)) => {
+            cmp_int_f64(&BigInt::from(*b), *a).map(Ordering::reverse)
+        }
+        (Value::Float(a), Value::Big(b)) => cmp_int_f64(b, *a).map(Ordering::reverse),
+        _ => None,
+    }
+}
+
+/// Mixed arithmetic converts ints to float; too-large ints are an explicit
+/// error, matching Python's `OverflowError`.
+fn numeric_to_f64(v: &Value) -> VResult<f64> {
+    match v {
+        Value::Int(i) => Ok(*i as f64),
+        Value::Big(b) => b
+            .to_f64()
+            .filter(|f| f.is_finite())
+            .ok_or_else(|| "integer too large to convert to float".to_string()),
+        Value::Float(f) => Ok(*f),
+        _ => Err(format!("Type '{}' is not numeric", type_name(v))),
     }
 }
 
@@ -160,7 +227,7 @@ fn type_name(v: &Value) -> &'static str {
     match v {
         Value::Null => "Null",
         Value::Bool(_) => "Bool",
-        Value::Int(_) => "Int",
+        Value::Int(_) | Value::Big(_) => "Int",
         Value::Float(_) => "Float",
         Value::Str(_) => "String",
         Value::List(_) => "List",
@@ -182,11 +249,9 @@ fn binary(op: u32, lhs: &Value, rhs: &Value) -> VResult<Value> {
             (Value::Null, Value::Null) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Str(a), Value::Str(b)) => a == b,
-            _ => match (as_f64(lhs), as_f64(rhs)) {
-                // Bool is not a number: as_f64 returns None for Bool.
-                (Some(a), Some(b)) => a == b,
-                _ => false,
-            },
+            // Bool is not a number: `is_number` excludes it.
+            _ if is_number(lhs) && is_number(rhs) => numeric_cmp(lhs, rhs) == Some(Ordering::Equal),
+            _ => false,
         };
         return Ok(Value::Bool(if op == EQ { eq } else { !eq }));
     }
@@ -194,56 +259,105 @@ fn binary(op: u32, lhs: &Value, rhs: &Value) -> VResult<Value> {
     // Ordering: numeric (Int/Float) or String.
     if matches!(op, LT | LE | GT | GE) {
         let ord = match (lhs, rhs) {
-            (Value::Str(a), Value::Str(b)) => a.cmp(b),
-            _ => match (as_f64(lhs), as_f64(rhs)) {
-                (Some(a), Some(b)) => a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal),
-                _ => {
-                    return Err(format!(
-                        "'{}' and '{}' are not orderable",
-                        type_name(lhs),
-                        type_name(rhs)
-                    ))
-                }
-            },
+            (Value::Str(a), Value::Str(b)) => Some(a.cmp(b)),
+            _ if is_number(lhs) && is_number(rhs) => numeric_cmp(lhs, rhs),
+            _ => {
+                return Err(format!(
+                    "'{}' and '{}' are not orderable",
+                    type_name(lhs),
+                    type_name(rhs)
+                ))
+            }
         };
-        let result = match op {
-            LT => ord == std::cmp::Ordering::Less,
-            LE => ord != std::cmp::Ordering::Greater,
-            GT => ord == std::cmp::Ordering::Greater,
-            _ => ord != std::cmp::Ordering::Less,
+        // NaN has no ordering: every comparison is false, as in Python.
+        let result = match ord {
+            None => false,
+            Some(ord) => match op {
+                LT => ord == Ordering::Less,
+                LE => ord != Ordering::Greater,
+                GT => ord == Ordering::Greater,
+                _ => ord != Ordering::Less,
+            },
         };
         return Ok(Value::Bool(result));
     }
 
-    // Arithmetic.
-    if let (Value::Int(a), Value::Int(b)) = (lhs, rhs) {
-        let (a, b) = (*a, *b);
+    // Integer arithmetic: stay on i64 while it fits, otherwise promote.
+    if is_int(lhs) && is_int(rhs) {
+        if let (Value::Int(a), Value::Int(b)) = (lhs, rhs) {
+            let (a, b) = (*a, *b);
+            return Ok(match op {
+                ADD => a
+                    .checked_add(b)
+                    .map(Value::Int)
+                    .unwrap_or_else(|| Value::Big(Rc::new(BigInt::from(a) + BigInt::from(b)))),
+                SUB => a
+                    .checked_sub(b)
+                    .map(Value::Int)
+                    .unwrap_or_else(|| Value::Big(Rc::new(BigInt::from(a) - BigInt::from(b)))),
+                MUL => a
+                    .checked_mul(b)
+                    .map(Value::Int)
+                    .unwrap_or_else(|| Value::Big(Rc::new(BigInt::from(a) * BigInt::from(b)))),
+                DIV => {
+                    if b == 0 {
+                        return Err("division by zero".into());
+                    }
+                    Value::Float(a as f64 / b as f64)
+                }
+                FLOORDIV => {
+                    if b == 0 {
+                        return Err("division or modulo by zero".into());
+                    }
+                    if a == i64::MIN && b == -1 {
+                        Value::Big(Rc::new(-BigInt::from(a)))
+                    } else {
+                        Value::Int(floor_div(a, b))
+                    }
+                }
+                MOD => {
+                    if b == 0 {
+                        return Err("modulo by zero".into());
+                    }
+                    if a == i64::MIN && b == -1 {
+                        Value::Int(0)
+                    } else {
+                        Value::Int(floor_mod(a, b))
+                    }
+                }
+                _ => return Err(format!("unsupported integer operator {op}")),
+            });
+        }
+        let a = as_bigint(lhs).expect("checked integer");
+        let b = as_bigint(rhs).expect("checked integer");
         return Ok(match op {
-            ADD => Value::Int(a.checked_add(b).ok_or("integer overflow")?),
-            SUB => Value::Int(a.checked_sub(b).ok_or("integer overflow")?),
-            MUL => Value::Int(a.checked_mul(b).ok_or("integer overflow")?),
+            ADD => Value::Big(Rc::new(a + b)),
+            SUB => Value::Big(Rc::new(a - b)),
+            MUL => Value::Big(Rc::new(a * b)),
             DIV => {
-                if b == 0 {
+                if b.is_zero() {
                     return Err("division by zero".into());
                 }
-                Value::Float(a as f64 / b as f64)
+                Value::Float(numeric_to_f64(lhs)? / numeric_to_f64(rhs)?)
             }
             FLOORDIV => {
-                if b == 0 {
+                if b.is_zero() {
                     return Err("division or modulo by zero".into());
                 }
-                Value::Int(floor_div(a, b))
+                Value::Big(Rc::new(a.div_floor(&b)))
             }
             MOD => {
-                if b == 0 {
+                if b.is_zero() {
                     return Err("modulo by zero".into());
                 }
-                Value::Int(floor_mod(a, b))
+                Value::Big(Rc::new(a.mod_floor(&b)))
             }
             _ => return Err(format!("unsupported integer operator {op}")),
         });
     }
-    if let (Some(a), Some(b)) = (as_f64(lhs), as_f64(rhs)) {
+    if is_number(lhs) && is_number(rhs) {
+        let a = numeric_to_f64(lhs)?;
+        let b = numeric_to_f64(rhs)?;
         return Ok(match op {
             ADD => Value::Float(a + b),
             SUB => Value::Float(a - b),
@@ -254,8 +368,18 @@ fn binary(op: u32, lhs: &Value, rhs: &Value) -> VResult<Value> {
                 }
                 Value::Float(a / b)
             }
-            FLOORDIV => Value::Float((a / b).floor()),
-            MOD => Value::Float(a - b * (a / b).floor()),
+            FLOORDIV => {
+                if b == 0.0 {
+                    return Err("division or modulo by zero".into());
+                }
+                Value::Float((a / b).floor())
+            }
+            MOD => {
+                if b == 0.0 {
+                    return Err("modulo by zero".into());
+                }
+                Value::Float(a - b * (a / b).floor())
+            }
             _ => return Err(format!("unsupported float operator {op}")),
         });
     }
@@ -294,7 +418,11 @@ fn unary(op: u32, v: &Value) -> VResult<Value> {
     match op {
         NOT => Ok(Value::Bool(!truthy(v))),
         NEG => match v {
-            Value::Int(i) => Ok(Value::Int(i.checked_neg().ok_or("integer overflow")?)),
+            Value::Int(i) => Ok(match i.checked_neg() {
+                Some(neg) => Value::Int(neg),
+                None => Value::Big(Rc::new(-BigInt::from(*i))),
+            }),
+            Value::Big(b) => Ok(Value::Big(Rc::new(-b.as_ref()))),
             Value::Float(f) => Ok(Value::Float(-f)),
             _ => Err(format!(
                 "Type '{}' does not support unary '-'",
@@ -302,7 +430,7 @@ fn unary(op: u32, v: &Value) -> VResult<Value> {
             )),
         },
         POS => match v {
-            Value::Int(_) | Value::Float(_) => Ok(v.clone()),
+            Value::Int(_) | Value::Big(_) | Value::Float(_) => Ok(v.clone()),
             _ => Err(format!(
                 "Type '{}' does not support unary '+'",
                 type_name(v)
@@ -310,6 +438,8 @@ fn unary(op: u32, v: &Value) -> VResult<Value> {
         },
         INVERT => match v {
             Value::Int(i) => Ok(Value::Int(!i)),
+            // Two's-complement invert on an unbounded integer: !x = -x - 1.
+            Value::Big(b) => Ok(Value::Big(Rc::new(-b.as_ref() - 1))),
             _ => Err(format!("Type '{}' does not support '~'", type_name(v))),
         },
         _ => Err(format!("unsupported unary operator {op}")),
@@ -349,6 +479,7 @@ pub fn display(v: &Value) -> String {
         Value::Null => "null".into(),
         Value::Bool(b) => if *b { "true" } else { "false" }.into(),
         Value::Int(i) => i.to_string(),
+        Value::Big(b) => b.to_string(),
         Value::Float(f) => float_repr(*f),
         Value::Str(s) => s.to_string(),
         Value::List(l) => {
@@ -404,6 +535,7 @@ pub(crate) fn constant_to_value(c: &Constant) -> VResult<Value> {
         Constant::Null => Value::Null,
         Constant::Bool(b) => Value::Bool(*b),
         Constant::Int(i) => Value::Int(*i),
+        Constant::BigInt(b) => Value::Big(Rc::clone(b)),
         Constant::Float(f) => Value::Float(*f),
         Constant::Str(s) => Value::Str(Rc::clone(s)),
         _ => return Err("unsupported constant kind for LOAD_K".into()),
@@ -442,6 +574,9 @@ fn call_native(f: NativeFn, args: &[Value], start: Instant) -> VResult<Value> {
 fn int_arg(v: &Value) -> VResult<i64> {
     match v {
         Value::Int(i) => Ok(*i),
+        Value::Big(b) => b
+            .to_i64()
+            .ok_or_else(|| "integer too large for range".to_string()),
         _ => Err("range arguments must be Int".into()),
     }
 }
@@ -771,5 +906,82 @@ mod tests {
         // Bool is not a number: true == 1 is false.
         let v = binary(EQ, &Value::Bool(true), &Value::Int(1)).unwrap();
         assert!(matches!(v, Value::Bool(false)));
+    }
+
+    fn big(text: &str) -> Value {
+        Value::Big(Rc::new(text.parse::<BigInt>().unwrap()))
+    }
+
+    #[test]
+    fn integer_overflow_promotes_to_big() {
+        let v = binary(ADD, &Value::Int(i64::MAX), &Value::Int(1)).unwrap();
+        assert_eq!(display(&v), "9223372036854775808");
+        let v = binary(MUL, &big("9223372036854775808"), &Value::Int(3)).unwrap();
+        assert_eq!(display(&v), "27670116110564327424");
+        let v = binary(SUB, &Value::Int(i64::MIN), &Value::Int(1)).unwrap();
+        assert_eq!(display(&v), "-9223372036854775809");
+    }
+
+    #[test]
+    fn big_floor_division_and_modulo() {
+        let a = big("1267650600228229401496703205376"); // 2**100
+        assert_eq!(
+            display(&binary(FLOORDIV, &a, &Value::Int(3)).unwrap()),
+            "422550200076076467165567735125"
+        );
+        assert_eq!(display(&binary(MOD, &a, &Value::Int(7)).unwrap()), "2");
+        let negative = big("-1267650600228229401496703205377");
+        assert_eq!(
+            display(&binary(FLOORDIV, &negative, &Value::Int(3)).unwrap()),
+            "-422550200076076467165567735126"
+        );
+        assert_eq!(
+            display(&binary(MOD, &negative, &Value::Int(3)).unwrap()),
+            "1"
+        );
+    }
+
+    #[test]
+    fn big_comparison_is_exact() {
+        let two_pow_53 = big("9007199254740993"); // 2**53 + 1
+        let as_float = Value::Float(9007199254740992.0);
+        assert!(matches!(
+            binary(EQ, &two_pow_53, &as_float).unwrap(),
+            Value::Bool(false)
+        ));
+        assert!(matches!(
+            binary(GT, &two_pow_53, &as_float).unwrap(),
+            Value::Bool(true)
+        ));
+        assert!(matches!(
+            binary(LT, &as_float, &two_pow_53).unwrap(),
+            Value::Bool(true)
+        ));
+    }
+
+    #[test]
+    fn nan_ordering_is_false() {
+        let nan = Value::Float(f64::NAN);
+        for op in [LT, LE, GT, GE] {
+            let v = binary(op, &nan, &Value::Int(1)).unwrap();
+            assert!(matches!(v, Value::Bool(false)));
+        }
+    }
+
+    #[test]
+    fn big_unary_operators() {
+        let v = unary(NEG, &big("9223372036854775808")).unwrap();
+        assert_eq!(display(&v), "-9223372036854775808");
+        // i64::MIN negates into a big int instead of erroring.
+        let v = unary(NEG, &Value::Int(i64::MIN)).unwrap();
+        assert_eq!(display(&v), "9223372036854775808");
+        let v = unary(INVERT, &big("9223372036854775808")).unwrap();
+        assert_eq!(display(&v), "-9223372036854775809");
+    }
+
+    #[test]
+    fn range_rejects_big_arguments() {
+        assert!(int_arg(&big("9223372036854775808")).is_err());
+        assert_eq!(int_arg(&Value::Int(3)).unwrap(), 3);
     }
 }

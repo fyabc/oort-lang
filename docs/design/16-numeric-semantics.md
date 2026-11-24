@@ -14,11 +14,11 @@
 
 - **Python 前端/解释器/VM**：`Int` 是宿主 Python 整数——**任意精度**；
   `Float` 是 IEEE-754 binary64。
-- **`.obc` 常量池**：`Int` 目前编码为 **i64**（spike 限制）。
-- **Rust typed VM**：`Int` 使用 `num-bigint` 任意精度；**动态 Rust spike**
-  （kind=0）仍是 i64，溢出报错；`Float` 是 f64。
-- **typed 字节码**：混合 `Int`/`Float` 运算先 `TO_FLOAT`，因此混合比较
-  目前也按转换后的 float 比较。
+- **`.obc` 常量池**：i64 用 tag 2，超出范围用 tag 6（十进制文本，任意精度）。
+- **Rust typed VM**：`Int` 使用 `num-bigint` 任意精度；**动态 Rust VM**
+  （kind=0）i64 快速路径、溢出提升 BigInt；`Float` 是 f64。
+- **typed 字节码**：混合 `Int`/`Float` 比较用 `*_MIXED` 精确比较；算术先将
+  `Int` 转 Float（`TO_FLOAT`）。
 
 于是产生三个必须回答的问题：
 
@@ -168,35 +168,33 @@
 |---|---|---|
 | Python 解释器/VM | 宿主任意精度整数 | 已符合语义 |
 | Python typed VM | 宿主整数（boxed） | 已符合语义 |
-| Rust typed VM（当前） | `i64` + 溢出报错 | **spike 限制，不完整** |
-| Rust typed VM（目标） | Smi → HeapInt64 → HeapBigInt | 未实现 |
+| Rust typed VM | `num-bigint` 任意精度 | 已符合语义 |
+| Rust 动态 VM | i64 快速路径，溢出提升 `Rc<BigInt>` | 已符合语义 |
+| Rust VM v2（目标） | Smi → HeapInt64 → HeapBigInt | 未实现 |
 
-Rust spike 的 i64 不得被当作最终语义：在实现整数阶梯前，typed differential
-必须避开溢出输入；遇到溢出应显式报错（而不是静默 wrap）。
+Rust 动态 VM 的“i64 + 溢出提升”是临时表示：正常路径不分配，但大整数会进入
+`Big` 变体且从不回退到小整数。后续值与 Rust VM v2 的整数阶梯合并评估；
+无论表示如何，差分测试以 Python 语义为 oracle。
 
 ### 4.3 typed 字节码的当前偏差
 
-`EQ_F`/`LT_F` 等混合比较目前由编译器插入 `TO_FLOAT` 后执行，因此对大整数
-不满足 §3.3 的精确比较。两种修正：
-
-- **M4-U1**：新增 `EQ_MIXED`/`CMP_MIXED`（或运行时 helper），按精确值比较；
-- 或暂时在 typed 子集中拒绝混合比较（但与 spec 11 冲突，不推荐）。
-
-本文建议前者，并在 U1 的验收中加入 `2^53` 边界测试。
+无。`EQ_MIXED`/`NE_MIXED`/`LT_MIXED`/`LE_MIXED`/`GT_MIXED`/`GE_MIXED`
+已在 Python 与 Rust typed VM 实现，按精确数学值比较（`2**53 + 1 == 2.0**53`
+为 false）；`typed_big_int` 差分覆盖 `2**100`、精确混合比较、负数 floor 除法
+与取模。
 
 ## 5. 测试与门禁
 
 新增数值语义差分套件（Python 语义为 oracle）：
 
 1. 大整数：`2**53`、`2**63`、`2**64` 附近的加减乘与显示；
-2. 溢出边界：Rust i64 路径必须显式报错，不能 wrap；Python 路径无溢出；
+2. 溢出边界：动态 Rust 的 i64 快速路径溢出后提升为 `Big`，不 wrap；
 3. 混合比较：`2**53 + 1 == 2.0**53`、大整数与 float 的 `<`/`>`；
 4. 除法/取模：正负组合、`-7 // 2`、`-7 % 2` 等；
 5. 浮点显示：`2.0`、`-0.0`、`0.06`、`1e20`、`1e-20`、`inf`、`-inf`、`nan`；
 6. 除零错误：Int 与 Float 都按当前运行时错误处理。
 
-门禁：eval / vm / typed-hir / typed-bc / Rust typed 五路输出一致（除已知
-Rust i64 限制外）。
+门禁：eval / vm / typed-hir / typed-bc / Rust typed / Rust 动态 各路输出一致。
 
 ## 6. 决策记录（2026-11-22）
 
@@ -206,16 +204,17 @@ Rust i64 限制外）。
 | D2 | 混合比较按数学值精确；新增 `EQ_MIXED`/`CMP_MIXED`，提升 kind=1 `version` | **已定** |
 | D3 | 允许 IEEE NaN/Inf；除零仍是运行时错误；显示按 §3.4 | **已定** |
 | D4 | Float 显示以 Python `repr(float)` 为 canonical，Rust 对齐 | **已定** |
-| D5 | Rust i64 spike 溢出显式报错；不宣称语义 parity | **已定** |
+| D5 | ~~Rust i64 spike 溢出显式报错~~ 已由 D1 落地取代：Rust typed 用 BigInt，动态 VM 溢出提升 | **已实现** |
 | D6 | `Int`（任意精度）与 `Int<N>`（固定宽度、显式、检查收窄）分离；`Int<N>` 仅静态方言 | **已定** |
 
 ## 7. 对 M4-U1 的影响
 
 - **U1 只做 Rust unboxed typed VM**；Python typed VM 保持 boxed，作为差分
   baseline（解装箱在 Python 上没有意义）；
-- Rust `TypedValue` 使用 `Int(i64)` 作为 spike 表示；溢出显式报错（D5）；
-- 混合比较精确化（D2）在 U1 一并做：新增 `EQ_MIXED`/`CMP_MIXED` 并提升
-  typed 字节码 `version`；Python typed VM 也需实现这两个 opcode（仍 boxed）；
+- Rust `TypedValue` 使用 `Int(BigInt)`（2026-11-25 状态；D1 落地取代了最初的
+  i64 spike 表示），溢出不再报错；
+- 混合比较精确化（D2）已完成：`*_MIXED` opcode 在两侧 VM 实现；
 - Float 显示与 Python `repr(float)` 对齐（D4），否则差分测试会暴露差异；
-- BigInt 表示、`.obc` 大整数常量、Rust 整数阶梯属于后续 ABI/性能工作；
+- `.obc` 大整数常量（tag 6）已实现；Rust 整数阶梯（Smi/HeapInt64/HeapBigInt）
+  属于 Rust VM v2 的性能工作；
 - `Int<N>` 的实现不在 U1：先定语义与 ABI，等类型系统支持固定宽度类型时再做。

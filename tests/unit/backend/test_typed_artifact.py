@@ -110,6 +110,22 @@ print(paint(Red))
         assert decl.origin in {"solo", "<core-prelude>"}
 
 
+def test_artifact_round_trip_keeps_big_int_literals(tmp_path):
+    unit = _unit(
+        "#lang oort-core\nprint(9223372036854775808, -9223372036854775809)\n",
+        "big",
+    )
+    path = tmp_path / "big.obc"
+    write_typed_artifact(build_typed_artifact(unit), path)
+
+    loaded = read_typed_artifact(path)
+
+    constants = [value for value in loaded.program.main.constants if isinstance(value, int)]
+    assert 9223372036854775808 in constants
+    # Negative literals lower to a positive constant plus NEG_I.
+    assert 9223372036854775809 in constants
+
+
 def test_v10_and_v8_artifacts_do_not_cross_read(tmp_path):
     unit = _unit("#lang oort-core\nprint(1)\n", "solo")
     artifact = build_typed_artifact(unit)

@@ -58,6 +58,7 @@ _PROGRAMS = [
         "}\n"
         "print(g((0, true)), g((5, false)))\n"
     ),
+    "print(9223372036854775808, -9223372036854775809, 9223372036854775808 * 2)\n",
 ]
 
 
@@ -119,9 +120,18 @@ def test_bad_magic_is_rejected(tmp_path):
         read_obc(path)
 
 
-def test_out_of_range_int_is_rejected(tmp_path):
+def test_big_int_constants_round_trip(tmp_path):
     program = _compile("print(1)\n")
-    huge = 1 << 70
-    object.__setattr__(program.main, "constants", (huge,))
-    with pytest.raises(ObcError):
-        write_obc(program, tmp_path / "huge.obc")
+    values = (1 << 70, -(1 << 70), -(1 << 63) - 1, (1 << 63) - 1)
+    object.__setattr__(program.main, "constants", values)
+    path = tmp_path / "big.obc"
+    write_obc(program, path)
+    restored = read_obc(path)
+    assert restored.main.constants == values
+
+
+def test_dynamic_big_int_arithmetic_after_round_trip(tmp_path):
+    program = _compile("print(9223372036854775808 // 3, ~9223372036854775808)\n")
+    path = tmp_path / "big.obc"
+    write_obc(program, path)
+    assert _run(read_obc(path))[0] == "3074457345618258602 -9223372036854775809\n"

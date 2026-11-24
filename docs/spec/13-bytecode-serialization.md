@@ -90,6 +90,7 @@ MatchArmSpec、ExtensionSpec、ParamSpec.default_index）一律索引 **function
 | 3 | Float | `f64` |
 | 4 | String | `string` |
 | 5 | SlotsTuple | `seq<u16>`（FRESH 的寄存器槽号） |
+| 6 | BigInt | `string`（十进制文本，用于超出 i64 的 Int） |
 | 10 | ClassSpec | 见下 |
 | 11 | CallSpec | `u16` positional_count + `seq<string>` keywords + `bool` has_block |
 | 12 | EnumSpec | `string` name + `seq<(string, u16)>` constructors（名, 元数） |
@@ -115,9 +116,9 @@ guard_index 自 version 2 起写出/读入；version 1 的 arm 没有该字段�
 
 ## 限制与校验
 
-- **Int 范围**：当前序列化器把整数常量限制在 **i64**；超范围在写出期拒绝
-  （`ObcError`）。语言语义是任意精度，BigInt 支持留待后续（与 Rust spike 的 i64
-  值表示一致）。
+- **Int 范围**：`Int` 常量按值大小选择 tag 2（i64）或 tag 6（十进制文本，
+  任意精度）。tag 6 只用于超出 i64 的值，因此旧文件布局不变；不认识 tag 6
+  的旧读者必须显式拒绝，不能截断。读入时校验文本为合法十进制整数。
 - **加载期校验**：magic/kind/version 匹配；函数索引 < len(functions)；
   register_count ≤ 256；常量池 ≤ 65536 项。
 - 常量池去重规则（区分 Bool/Int/Float）由编译期保证（spec 12），文件按编译产物

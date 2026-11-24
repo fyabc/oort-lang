@@ -931,10 +931,10 @@ fn typed_to_value(value: &TypedValue) -> TResult<Value> {
     Ok(match value {
         TypedValue::Unit => Value::Null,
         TypedValue::Bool(b) => Value::Bool(*b),
-        TypedValue::Int(i) => Value::Int(
-            i.to_i64()
-                .ok_or_else(|| "integer out of dynamic VM range".to_string())?,
-        ),
+        TypedValue::Int(i) => match i.to_i64() {
+            Some(small) => Value::Int(small),
+            None => Value::Big(Rc::new(i.clone())),
+        },
         TypedValue::Float(f) => Value::Float(*f),
         TypedValue::Str(s) => Value::Str(Rc::clone(s)),
         TypedValue::List(items) => {
@@ -1048,6 +1048,7 @@ fn constant_value(constant: &Constant) -> TResult<TypedValue> {
         Constant::Null => TypedValue::Unit,
         Constant::Bool(b) => TypedValue::Bool(*b),
         Constant::Int(i) => TypedValue::Int(BigInt::from(*i)),
+        Constant::BigInt(b) => TypedValue::Int((**b).clone()),
         Constant::Float(f) => TypedValue::Float(*f),
         Constant::Str(s) => TypedValue::Str(Rc::clone(s)),
         _ => return Err("unsupported constant kind for typed LOAD_K".into()),

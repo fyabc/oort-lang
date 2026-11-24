@@ -83,8 +83,8 @@ positions?:
 - `cell_slot` 是本帧中被任意 lambda 子树读取或写入的局部/参数槽（编译期
   沿创建者链静态求得）；读取方校验每个槽 `< register_count`。帧入口按该表
   把槽值包成单元格，`LOAD_L`/`STORE_L` 对单元格透明读写；
-- 常量池复用 spec 13 的 tagged 编码；kind=1 只允许 `null`/`bool`/`int`/`float`/
-  `string`，其他 tag 必须显式拒绝；
+- 常量池复用 spec 13 的 tagged 编码；kind=1 只允许 `null`/`bool`/`int`/
+  `bigint`（i64 之外的整数）/`float`/`string`，其他 tag 必须显式拒绝；
 - 位置表可省略；读取方缺少时使用 `<typed-bytecode>` 回退位置。
 
 ## 3. 指令编码
@@ -221,8 +221,9 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
 - Dict 的实现通常保持插入顺序，但**顺序不是语言保证**；Set 同样不保证。
   Rust 参考实现用有序 `Vec` + 线性键查找，不依赖 `std::HashMap`；
 - `Int` 在 Python 参考实现中使用宿主整数（任意精度）；Rust typed VM
-  使用 `num-bigint` 任意精度，Rust 动态 spike（kind=0）仍是 i64 并显式报错。
-  `.obc` 常量池仍只有 i64 编码。完整数值语义见
+  使用 `num-bigint` 任意精度，Rust 动态 VM 用 i64 快速路径并在溢出时提升为
+  `BigInt`。`.obc` 常量池对超出 i64 的整数使用 spec 13 的 tag 6（十进制文本），
+  因此大整数字面量可序列化与往返。完整数值语义见
   [design 16](../design/16-numeric-semantics.md)；
 - 除零、类型守卫失败、未知全局/函数索引、未知操作码都必须显式报错，禁止静默
   执行；

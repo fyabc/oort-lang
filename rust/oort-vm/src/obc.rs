@@ -3,11 +3,14 @@
 
 use std::rc::Rc;
 
+use num_bigint::BigInt;
+
 #[derive(Debug, Clone)]
 pub enum Constant {
     Null,
     Bool(bool),
     Int(i64),
+    BigInt(Rc<BigInt>),
     Float(f64),
     Str(Rc<str>),
     Slots(Vec<u16>),
@@ -215,6 +218,13 @@ impl<'a> Reader<'a> {
             0 => Constant::Null,
             1 => Constant::Bool(self.boolean()?),
             2 => Constant::Int(self.i64()?),
+            6 => {
+                let text = self.string()?;
+                let value: BigInt = text
+                    .parse()
+                    .map_err(|_| format!("invalid big integer constant: {text:?}"))?;
+                Constant::BigInt(Rc::new(value))
+            }
             3 => Constant::Float(self.f64()?),
             4 => Constant::Str(self.rc_str()?),
             5 => {

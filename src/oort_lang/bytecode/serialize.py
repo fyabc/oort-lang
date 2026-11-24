@@ -45,6 +45,7 @@ _TAG_INT = 2
 _TAG_FLOAT = 3
 _TAG_STR = 4
 _TAG_SLOTS = 5
+_TAG_BIGINT = 6
 _TAG_CLASS = 10
 _TAG_CALL = 11
 _TAG_ENUM = 12
@@ -193,10 +194,14 @@ def _write_constant(w: _Writer, value: object) -> None:
         w.u8(_TAG_BOOL)
         w.boolean(value)
     elif isinstance(value, int):
-        if not _I64_MIN <= value <= _I64_MAX:
-            raise ObcError(f"integer constant out of i64 range: {value}")
-        w.u8(_TAG_INT)
-        w.i64(value)
+        # Ints outside i64 use the big-int tag (decimal text); readers that do
+        # not know the tag reject the file explicitly instead of truncating.
+        if _I64_MIN <= value <= _I64_MAX:
+            w.u8(_TAG_INT)
+            w.i64(value)
+        else:
+            w.u8(_TAG_BIGINT)
+            w.string(str(value))
     elif isinstance(value, float):
         w.u8(_TAG_FLOAT)
         w.f64(value)
@@ -347,6 +352,12 @@ def _read_constant(r: _Reader) -> object:
         return r.boolean()
     if tag == _TAG_INT:
         return r.i64()
+    if tag == _TAG_BIGINT:
+        text = r.string()
+        digits = text[1:] if text.startswith("-") else text
+        if not digits.isdigit() or not text or text == "-":
+            raise ObcError(f"invalid big integer constant: {text!r}")
+        return int(text)
     if tag == _TAG_FLOAT:
         return r.f64()
     if tag == _TAG_STR:

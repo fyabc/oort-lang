@@ -418,9 +418,11 @@ TypedFunction
 
 ### M4 剩余设计：未装箱值（2026-11-22 草案）
 
+> 状态更新（2026-11-25）：U1 已落地，但整数表示取 `TypedValue::Int(BigInt)`
+> （OP 0029 D1），不是草案中的 i64；混合比较也已由 `*_MIXED` 精确化。
+> 下面的 i64 表述保留为当时草案，最终未装箱方案仍待 Rust VM v2 评估。
 > 数值语义（Int 精度/溢出、Float 与混合比较）见
-> [design 16](16-numeric-semantics.md)。U1 的 `i64` 只是 spike 表示，不是
-> 最终语言语义。
+> [design 16](16-numeric-semantics.md)。
 
 现状：typed 字节码已携带寄存器类型，但 Python/Rust typed VM 仍使用 boxed
 `OortObject`/`Value`。目标是让 Rust typed VM 的标量寄存器不再分配堆对象，
@@ -472,8 +474,8 @@ TypedFunction
 #### 风险与开放问题
 
 - `Float` 输出格式必须与 Python 完全一致（`2.0`、`-0.0`、指数形式）；
-- `i64` 溢出 vs Python 任意精度：spike 限制，差分测试避免溢出；正式 ABI 需
-  HeapInt/BigInt；
+- ~~`i64` 溢出 vs Python 任意精度~~：已由 `Int(BigInt)` 解决；未装箱性能方案
+  仍需在 Rust VM v2 中评估整数阶梯；
 - 未初始化寄存器用 `Unit` 可能掩盖 bug，可在验证/调试模式加断言；
 - 动态边界与 box/unbox 的 blame 语义留到 FFI 设计，不与 U1 混合；
 - 性能口径保持 exec_ms（wall 扣空程序启动），不把启动混入。
