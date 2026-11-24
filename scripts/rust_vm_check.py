@@ -394,10 +394,17 @@ def sum_apply(fs: List[(Int) -> Int], x: Int) -> Int {
     total
 }
 
+def dispatch(op: String, x: Int) -> Int {
+    val table: Dict[String, (Int) -> Int] = {: "inc": inc, "dec": dec :}
+    val f: (Int) -> Int = table[op]
+    f(x)
+}
+
 print(apply(inc, 1), apply(dec, 1))
 print(apply(pick(true), 2), apply(pick(false), 2))
 print(local())
 print(sum_apply([inc, dec], 10))
+print(dispatch("inc", 6), dispatch("dec", 6))
 """,
     "typed_collection_surface": """#lang oort-core
 

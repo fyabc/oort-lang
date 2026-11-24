@@ -23,7 +23,16 @@ def sum_apply(fs: List[(Int) -> Int], x: Int) -> Int {
     total
 }
 
+# Dict 作为函数分派表：函数类型嵌套在容器值位置。
+# 没有 lambda 无法在运行时构造新函数（如 compose），只能分派已有命名函数。
+def dispatch(op: String, x: Int) -> Int {
+    val table: Dict[String, (Int) -> Int] = {: "inc": inc, "dec": dec :}
+    val f: (Int) -> Int = table[op]
+    f(x)
+}
+
 print(apply(inc, 1), apply(dec, 1))
 print(apply(pick(true), 2), apply(pick(false), 2))
 print(local())
 print(sum_apply([inc, dec], 10))
+print(dispatch("inc", 6), dispatch("dec", 6))
