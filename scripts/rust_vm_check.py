@@ -379,6 +379,26 @@ print(pow2(100) > pow2(99), -pow2(100) < 0)
 print(pow2(53) + 1 == 9007199254740992.0)
 print(pow2(53) == 9007199254740992.0)
 """,
+    "typed_function_values": """#lang oort-core
+
+def inc(x: Int) -> Int { x + 1 }
+def dec(x: Int) -> Int { x - 1 }
+
+def apply(f: (Int) -> Int, x: Int) -> Int { f(x) }
+def pick(flag: Bool) -> (Int) -> Int { if flag { inc } else { dec } }
+def local() -> Int { val f: (Int) -> Int = inc; f(10) }
+
+def sum_apply(fs: List[(Int) -> Int], x: Int) -> Int {
+    var total: Int = 0
+    for f in fs { total = total + f(x) }
+    total
+}
+
+print(apply(inc, 1), apply(dec, 1))
+print(apply(pick(true), 2), apply(pick(false), 2))
+print(local())
+print(sum_apply([inc, dec], 10))
+""",
     "typed_collection_surface": """#lang oort-core
 
 def adjust() -> Int {

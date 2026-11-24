@@ -1235,6 +1235,7 @@ fn guard(expected: &TypedType, value: &TypedValue) -> TResult<()> {
             | (TypedType::Dict(_, _), TypedValue::Dict(_))
             | (TypedType::Adt(_, _), TypedValue::Adt(_))
             | (TypedType::Iterator, TypedValue::Iterator(_))
+            | (TypedType::Function, TypedValue::Function(_) | TypedValue::Native(_))
     );
     if ok {
         Ok(())

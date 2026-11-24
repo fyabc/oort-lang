@@ -617,11 +617,22 @@ S1 的约束与实现：
   规范化键与 NaN 规则；
 - **范围**：Set/Dict 字面量、Dict 下标读取、`len`、深相等、`for` 迭代（Set
   元素、Dict 键）、`print`；空字面量沿用检查器要求类型标注；
-- **未做**：`d[k] = v`/Set 增删（核心检查器仍禁止下标赋值）、`in`/集合交并差
-  （核心语言表面尚未支持）、ADT/类作为键（S4）、切片；
+- **未做**：ADT/类作为键（S4）；`d[k] = v`、`in`、Set 代数与切片读已由
+  OP 0031 补齐；切片赋值、步长切片与排序仍未做；
 - 验收样本 `examples/08_core/08_17_typed_sets_dicts.ort`；typed differential
   新增 `typed_sets_dicts`；Python typed 单测覆盖 OBC round-trip；Rust 单测
   覆盖去重、摘要顺序（实现特性）与无序相等。
+
+### B2 实现状态：命名函数值（2026-11-25）
+
+- `FunctionType` 不再拒绝，统一擦除为 `IrType.FUNCTION`；函数类型可出现在
+  参数、返回值、局部变量与容器元素中；
+- Python typed VM 的入口守卫接受 `TypedCodeFunction`/`OortNativeFunction`；
+  Rust typed VM 接受 `Function`/`Native`；
+- 命名顶层函数可作为一等值传递、返回与调用；函数相等/打印仍显式拒绝；
+- lambda（`MakeClosure`）与捕获闭包尚未进入 typed 后端，继续显式拒绝；
+- 验收：`examples/08_core/08_22_typed_function_values.ort`、typed differential
+  `typed_function_values`、eval/vm/tvm 三目标一致性测试。
 
 ## 9. 风险与开放问题
 

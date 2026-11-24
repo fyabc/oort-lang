@@ -111,6 +111,7 @@ def test_typed_subset_example_is_accepted():
         "08_19_typed_generic_adts.ort",
         "08_20_typed_modules.ort",
         "08_21_typed_collection_surface.ort",
+        "08_22_typed_function_values.ort",
         "08_10_patterns.ort",
     ],
 )

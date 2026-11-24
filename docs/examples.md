@@ -71,6 +71,7 @@
 | [类型化泛型 ADT](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_19_typed_generic_adts.ort) | typed 泛型 enum、`Option`、构造器实参推断、匹配 |
 | [类型化模块](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_20_typed_modules.ort) | 多模块 typed core、导入构造器、同名 ADT 按 module_id 区分 |
 | [类型化集合表面](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_21_typed_collection_surface.ort) | `in`/`!in`、List/Dict 下标写入、切片读、Set 代数 |
+| [类型化函数值](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_22_typed_function_values.ort) | 命名函数一等值、高阶参数/返回、函数容器 |
 
 ```bash
 oort examples/08_core/08_01_core_functions.ort

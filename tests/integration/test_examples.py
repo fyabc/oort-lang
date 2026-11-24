@@ -72,6 +72,7 @@ EXPECTED_OUTPUTS = {
         "true true true true\n9 3 ort\n[2, 3] (a, true)\n"
         "{. 1, 2, 3 .} {. 2 .}\n{. 1 .} {. 1, 3 .}\n"
     ),
+    "08_core/08_22_typed_function_values.ort": "2 0\n3 1\n11\n20\n",
     "09_boundary/09_00_object_calls_core.ort": "10\n0.6\n4\n3\n(7, x)\n",
     "09_boundary/09_01_object_calls_nested_core.ort": "10\n",
 }

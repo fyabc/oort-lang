@@ -1,0 +1,29 @@
+#lang oort-core
+
+# typed 函数值：命名函数作为一等值，支持高阶参数/返回与容器存储。
+# lambda 与捕获闭包仍显式拒绝（后续切片）。
+
+def inc(x: Int) -> Int { x + 1 }
+def dec(x: Int) -> Int { x - 1 }
+
+def apply(f: (Int) -> Int, x: Int) -> Int { f(x) }
+
+def pick(flag: Bool) -> (Int) -> Int {
+    if flag { inc } else { dec }
+}
+
+def local() -> Int {
+    val f: (Int) -> Int = inc
+    f(10)
+}
+
+def sum_apply(fs: List[(Int) -> Int], x: Int) -> Int {
+    var total: Int = 0
+    for f in fs { total = total + f(x) }
+    total
+}
+
+print(apply(inc, 1), apply(dec, 1))
+print(apply(pick(true), 2), apply(pick(false), 2))
+print(local())
+print(sum_apply([inc, dec], 10))

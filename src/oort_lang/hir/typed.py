@@ -285,13 +285,8 @@ def _ir_type_from(type_: Type, position, *, allow_function: bool = False) -> IrT
             type_.name,
             tuple(_ir_type_from(argument, position) for argument in type_.args),
         )
-    if isinstance(type_, FunctionType) and allow_function:
-        return IrType.FUNCTION
     if isinstance(type_, FunctionType):
-        raise UnsupportedSyntax(
-            "Typed HIR backend does not support first-class function values.",
-            position,
-        )
+        return IrType.FUNCTION
     if isinstance(type_, (UnknownType, NeverType)):
         raise UnsupportedSyntax(
             f"Typed HIR backend cannot carry type {describe_type(type_)}.",
@@ -501,9 +496,7 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
         _ir_type_for_node(node)
         return
     if isinstance(node, nodes.Name):
-        ir_type = _ir_type_for_node(node, allow_function=as_callee)
-        if ir_type is IrType.FUNCTION and not as_callee:
-            _reject(node, "first-class function values")
+        _ir_type_for_node(node, allow_function=as_callee)
         return
     if isinstance(node, nodes.UnaryExpr):
         if node.op.text not in _ALLOWED_UNARY_OPS:
@@ -540,9 +533,7 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
             if arg.kind != nodes.ArgumentKind.DEFAULT or arg.keyword is not None:
                 _reject(arg, "keyword, variadic or block arguments")
             _validate_expr(arg.value)
-        ir_type = _ir_type_for_node(node)
-        if ir_type is IrType.FUNCTION:
-            _reject(node, "calls returning first-class functions")
+        _ir_type_for_node(node)
         return
     if isinstance(node, nodes.IfExpr):
         _validate_expr(node.condition)
@@ -573,6 +564,8 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
             _validate_expr(value)
         _ir_type_for_node(node)
         return
+    if isinstance(node, nodes.FunctionDef) and node.is_lambda:
+        _reject(node, "lambdas")
     if isinstance(node, nodes.Subscript):
         _validate_expr(node.value)
         _validate_expr(node.index)
@@ -1433,10 +1426,8 @@ def validate_typed_module(module: TypedModule) -> None:
                 if instruction.keywords or instruction.block is not None:
                     _invalid(function, instruction, "keyword or block arguments")
                 for register in instruction.args:
-                    if function.register_types[register] is IrType.FUNCTION:
-                        _invalid(function, instruction, "function argument")
-                if function.register_types[instruction.dst] is IrType.FUNCTION:
-                    _invalid(function, instruction, "call returning a function")
+                    if function.register_types[register] is None:
+                        _invalid(function, instruction, "function argument has no type")
             elif isinstance(instruction, LoadGlobal):
                 if function.register_types[instruction.dst] is not IrType.FUNCTION:
                     _invalid(function, instruction, "non-function global")

@@ -437,6 +437,10 @@ class TypedCodeVM:
                 or (expected is IrType.BOOL and type(value) is OortBool)
                 or (expected is IrType.STRING and type(value) is OortString)
                 or (expected is IrType.UNIT and type(value) is OortNull)
+                or (
+                    expected is IrType.FUNCTION
+                    and isinstance(value, (TypedCodeFunction, OortNativeFunction))
+                )
             )
         if not ok:
             raise OortTypeError(
