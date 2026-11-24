@@ -1,11 +1,21 @@
-//! Typed bytecode (`obc` kind=1) reader and unboxed VM (design 15 M4 U1).
+//! Typed bytecode (`obc` kind=1) reader and register VM (design 15 M4 U1).
 //!
 //! Scalar registers use `TypedValue` instead of boxed `vm::Value`: Int is an
 //! arbitrary-precision BigInt, Float is f64, Bool is bool, Unit carries no
-//! payload. Conversions happen only
-//! at the native `print` boundary and when reporting the main result.
-//! Semantics mirror the Python typed VM; see docs/design/16-numeric-semantics.md
-//! for the Int/Float contract (the dynamic kind=0 VM is still an i64 spike).
+//! payload. Heap values (strings, containers, closures, cells) stay behind
+//! `Rc`/`RefCell`. Conversions happen only at the native `print` boundary and
+//! when reporting the main result. Semantics mirror the Python typed VM.
+//!
+//! Accepted file versions are exact, never inferred: kind=1 typed proto v8,
+//! kind=1 module artifact v10, kind=2 linked bundle v3. Malformed bytecode
+//! (unknown opcode/tag/version, out-of-range index) is rejected explicitly;
+//! numeric semantics follow docs/design/16-numeric-semantics.md.
+//!
+//! Layout:
+//! - proto / bundle / artifact decoding;
+//! - module artifact linker (import checks, ADT merge, id relocation);
+//! - runtime values and opcode helpers;
+//! - `execute` and the opcode dispatch loop.
 
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
@@ -47,6 +57,9 @@ pub struct TypedProto {
     pub register_types: Vec<Option<u16>>,
     pub param_types: Vec<TypedType>,
     pub ret_type: TypedType,
+    /// Registers wrapped into `Cell`s at frame entry: locals and parameters
+    /// that any lambda subtree reads or writes. The compiler resolves them
+    /// statically along the creator chain; readers reject slots >= register_count.
     pub cells: Vec<u16>,
     pub code: Vec<u32>,
     pub constants: Vec<Constant>,
@@ -228,6 +241,9 @@ fn read_proto(r: &mut Reader<'_>, adt_decls: &[TypedAdtDecl]) -> TResult<TypedPr
     })
 }
 
+/// Read a single-module typed program (kind=1, proto version 8): ADT
+/// declarations, function protos, then main. Used for `-t tvm` artifacts that
+/// were never split into modules.
 pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
     if data.len() < 5 || &data[0..3] != b"OBC" {
         return Err("not an Oort bytecode file (bad magic)".into());
@@ -377,6 +393,10 @@ pub struct TypedConstructorRef {
     pub arity: u16,
 }
 
+/// One module compiled to its own artifact (kind=1, version 10).
+///
+/// Export/import tables describe module edges; `module.adt_decls` and
+/// `constructors` still use artifact-local ids that the linker remaps.
 #[derive(Debug, Clone)]
 pub struct TypedArtifact {
     pub module_id: String,
@@ -387,6 +407,8 @@ pub struct TypedArtifact {
     pub module: TypedModule,
 }
 
+/// Read a kind=1 module artifact (v10). Version 8 is the standalone
+/// single-module format and is not accepted here.
 pub fn read_typed_artifact(data: &[u8]) -> TResult<TypedArtifact> {
     if data.len() < 5 || &data[0..3] != b"OBC" {
         return Err("not an Oort bytecode file (bad magic)".into());
@@ -605,6 +627,10 @@ fn remap_proto(
     Ok(Rc::new(copy))
 }
 
+/// Depth-first walk over the import graph. `state` is 0 = unvisited,
+/// 1 = on the stack (cycle if reached again), 2 = finished. Each import is
+/// resolved to its export and its pinned ABI hash (0 = unpinned) is checked.
+/// `order` receives dependencies before the modules that import them.
 fn visit_artifact(
     module_id: &str,
     modules: &HashMap<String, TypedArtifact>,
@@ -664,6 +690,17 @@ fn visit_artifact(
 }
 
 /// Link v10 module artifacts into one typed module for the Rust VM.
+///
+/// Phases:
+/// 1. index artifacts by `module_id` and DFS the import graph (cycles and
+///    missing modules are rejected; pinned ABI hashes are verified);
+/// 2. merge ADT declarations by `(origin, name)` — identical duplicates from
+///    different modules collapse, conflicting bodies are rejected — and give
+///    each declaration a base offset in the flat constructor table;
+/// 3. per module, map local ADT ids and constructor symbols to linked ids;
+/// 4. assign every function a global slot (root module first) and rewrite all
+///    protos; lambda names are exempt from the export-name collision check;
+/// 5. rewrite the root's main once every function slot exists.
 pub fn link_artifacts(
     root: TypedArtifact,
     dependencies: Vec<TypedArtifact>,
@@ -686,6 +723,9 @@ pub fn link_artifacts(
     let mut state: HashMap<String, u8> = HashMap::new();
     visit_artifact(&root_id, &modules, &mut state, &mut order)?;
 
+    // Phase 2: merge ADT declarations. Ids are nominal by (origin, name);
+    // constructor ids are flat positions across declarations, so each
+    // declaration records where its constructor run starts.
     let mut merged: Vec<TypedAdtDecl> = Vec::new();
     let mut decl_index: HashMap<(String, String), u16> = HashMap::new();
     let mut bases: HashMap<(String, String), u16> = HashMap::new();
@@ -717,6 +757,9 @@ pub fn link_artifacts(
         return Err("linked constructor table exceeds 255 entries".into());
     }
 
+    // Phase 3: per-module relocation maps. `NEW_ADT` operands index the
+    // artifact's constructor symbol table, so symbols are resolved to
+    // (declaration, position) and then to a flat global id.
     let mut maps: HashMap<String, (HashMap<u16, u16>, HashMap<u8, u16>)> = HashMap::new();
     for module_id in &order {
         let artifact = &modules[module_id];
@@ -758,6 +801,8 @@ pub fn link_artifacts(
         maps.insert(module_id.clone(), (decl_map, ctor_map));
     }
 
+    // Phase 4: function slots. The root comes first so `main` can call module
+    // functions directly; dependencies follow in topological order.
     let mut functions: Vec<Rc<TypedProto>> = Vec::new();
     let mut owners: HashMap<String, String> = HashMap::new();
     let mut function_maps: HashMap<String, HashMap<u16, u16>> = HashMap::new();
@@ -809,6 +854,13 @@ pub fn link_artifacts(
     })
 }
 
+/// A runtime value of the typed subset.
+///
+/// `Function` is a plain module function index; `Closure` carries a parent
+/// chain. `Cell` is an implementation detail: it lives only in frame registers
+/// and closure snapshots for slots shared with lambdas, and every read path
+/// (`LOAD_L`, `LOAD_OUTER`, display, equality) unwraps it, so user-visible
+/// values are never cells.
 #[derive(Clone)]
 enum TypedValue {
     Unit,
@@ -829,8 +881,12 @@ enum TypedValue {
 }
 
 /// A capturing lambda: its function index plus a creation-time frame
-/// snapshot. Captures are read-only snapshots (checked statically), so the
-/// parent chain only forwards outer reads.
+/// snapshot and the enclosing closure (if any).
+///
+/// Captured slots hold `Cell`s in the snapshot, so reads and writes through
+/// `LOAD_OUTER`/`STORE_OUTER` are shared with the creating frame (reference
+/// semantics). The parent chain exists only to reach frames further out;
+/// depth 1 refers to this closure's own snapshot.
 struct TypedClosure {
     index: usize,
     snapshot: Vec<TypedValue>,
@@ -1215,6 +1271,11 @@ fn typed_set_op(op: u32, left: &TypedValue, right: &TypedValue) -> TResult<Typed
     Ok(TypedValue::Set(Rc::new(RefCell::new(result))))
 }
 
+/// Resolve one `LOAD_OUTER`/`STORE_OUTER` target.
+///
+/// `depth` is 1-based from the executing closure: depth 1 is its own snapshot,
+/// depth 2 the creator's, and so on (so we hop `depth - 1` parents). Slot
+/// numbers index that snapshot's registers.
 fn closure_slot<'a>(
     closure: Option<&'a Rc<TypedClosure>>,
     depth: usize,
@@ -1733,6 +1794,13 @@ impl TypedVm {
     }
 }
 
+/// Run one typed proto to completion.
+///
+/// Register layout is fixed by the compiler: parameters and locals occupy
+/// their HIR slots, call arguments are moved into a contiguous window at the
+/// callee register, and the result lands in its own register. Jumps use
+/// absolute word indices. `closure` is the executing closure, if any; named
+/// functions and main pass `None`.
 fn execute(
     resolved: &ResolvedProto,
     functions: &[ResolvedProto],
@@ -1743,6 +1811,9 @@ fn execute(
     closure: Option<&Rc<TypedClosure>>,
 ) -> TResult<TypedValue> {
     let proto = &resolved.proto;
+    // Frame entry: share the slots captured by lambdas. Parameters already
+    // hold their argument values; wrapping keeps those values observable
+    // through the cell.
     for &slot in &proto.cells {
         let index = slot as usize;
         if index < registers.len() {
@@ -1763,9 +1834,12 @@ fn execute(
                 registers[a] = constant_value(&proto.constants[bx])?;
             }
             LOAD_L => {
+                // Cell slots read transparently; the value itself is copied.
                 registers[a] = unwrap_cell(&registers[b]).into_owned();
             }
             STORE_L => {
+                // Cell slots write through to the shared cell; plain slots
+                // are ordinary register writes.
                 if let TypedValue::Cell(cell) = &registers[a] {
                     *cell.borrow_mut() = unwrap_cell(&registers[b]).into_owned();
                 } else {
@@ -1791,6 +1865,8 @@ fn execute(
                 if index >= functions.len() {
                     return Err("typed MK_CLOSURE index out of range".into());
                 }
+                // Snapshot the whole frame: captured slots are already cells,
+                // so the snapshot shares them; other slots are inert copies.
                 registers[a] = TypedValue::Closure(Rc::new(TypedClosure {
                     index,
                     snapshot: registers.to_vec(),
@@ -1801,6 +1877,7 @@ fn execute(
                 registers[a] = unwrap_cell(closure_slot(closure, b, c)?).into_owned();
             }
             STORE_OUTER => {
+                // Operands: A=depth, B=slot, C=source register.
                 let target = closure_slot(closure, a, b)?;
                 match target {
                     TypedValue::Cell(cell) => *cell.borrow_mut() = registers[c].clone(),
@@ -1808,6 +1885,8 @@ fn execute(
                 }
             }
             FRESH_CELL => {
+                // Loop entry: give each iteration its own cell so closures
+                // created earlier keep the binding they captured.
                 registers[a] = TypedValue::Cell(Rc::new(RefCell::new(TypedValue::Unit)));
             }
             MOVE => {

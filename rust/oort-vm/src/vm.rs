@@ -20,13 +20,20 @@ use crate::obc::{Constant, Module, Proto};
 
 pub type Globals = HashMap<String, Value>;
 
+/// A dynamic (kind=0) runtime value.
+///
+/// Register moves clone values; heap values therefore live behind `Rc` (and
+/// `RefCell` where the language allows mutation). `Int` stays an inline i64
+/// on the hot path; `Big` is the arbitrary-precision fallback. `Adt` is
+/// (runtime name, payload), kept as it is in the Python VM.
 #[derive(Clone)]
 pub enum Value {
     Null,
     Bool(bool),
     Int(i64),
-    /// An integer outside `i64`. Arithmetic promotes to this on overflow and
-    /// never narrows back, mirroring Python's arbitrary-precision ints.
+    /// An integer that overflowed `i64` (or arrived via a big constant).
+    /// Arithmetic promotes to this on overflow and never narrows back,
+    /// mirroring Python's arbitrary-precision ints.
     Big(Rc<BigInt>),
     Float(f64),
     Str(Rc<str>),
@@ -282,7 +289,9 @@ fn binary(op: u32, lhs: &Value, rhs: &Value) -> VResult<Value> {
         return Ok(Value::Bool(result));
     }
 
-    // Integer arithmetic: stay on i64 while it fits, otherwise promote.
+    // Integer arithmetic: stay on i64 while it fits, otherwise promote to
+    // arbitrary precision. Both operands must be ints; mixed int/float goes
+    // through the float path below.
     if is_int(lhs) && is_int(rhs) {
         if let (Value::Int(a), Value::Int(b)) = (lhs, rhs) {
             let (a, b) = (*a, *b);
@@ -641,6 +650,13 @@ fn invoke_with_this(
     }
 }
 
+/// Run one proto on a fresh frame.
+///
+/// Frame layout matches the erased compiler: slot 0 holds `this` for methods,
+/// positional parameters sit at their declared slots, and the remaining
+/// registers are scratch. `CALL` expects the callee and arguments to be
+/// contiguous (`R[A]` = callee, `R[A+1..A+1+C]` = arguments) and stores the
+/// result at `R[A]`.
 fn execute(
     module: &Module,
     globals: &mut Globals,
@@ -681,6 +697,8 @@ fn execute(
     let consts = &proto.constants;
     let mut pc: usize = 0;
     while pc < code.len() {
+        // ABC fields are unsigned bytes; Bx is the low 16 bits and sBx is the
+        // same bits biased by 0x8000 (signed jump offsets are relative).
         let word = code[pc];
         let op = word >> 24;
         let a = ((word >> 16) & 0xFF) as usize;

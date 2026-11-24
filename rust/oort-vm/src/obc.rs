@@ -10,6 +10,8 @@ pub enum Constant {
     Null,
     Bool(bool),
     Int(i64),
+    /// Tag 6: an integer outside i64, stored as decimal text in the file.
+    /// Shared via `Rc` so `LOAD_K` inside loops does not deep-copy limbs.
     BigInt(Rc<BigInt>),
     Float(f64),
     Str(Rc<str>),
