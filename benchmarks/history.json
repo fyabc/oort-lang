@@ -52,5 +52,14 @@
     "loop_ms": 67.42,
     "loop_speedup": 2.16,
     "note": "语义收口：泛型 ADT/模式匹配/相等/跨模块类型/单继承/静态接口；VM 未改动"
+  },
+  {
+    "date": "2026-11-25",
+    "status": "0.6.0",
+    "fib_ms": 29.43,
+    "fib_speedup": 3.12,
+    "loop_ms": 67.59,
+    "loop_speedup": 2.11,
+    "note": "typed 后端与模块 artifact/缓存、集合表面、闭包、大整数、诊断输出；Python VM 未做微优化"
   }
 ]
