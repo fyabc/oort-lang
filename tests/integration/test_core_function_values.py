@@ -203,6 +203,6 @@ def test_lambda_survives_module_linking(capsys, target, tmp_path):
         encoding="utf-8",
     )
 
-    compiler = get_compiler(["NOT_EXIST", "-t", target, str(main)])
+    compiler = get_compiler(["-t", target, "NOT_EXIST", str(main)])
     compiler.run_file(main)
     assert capsys.readouterr().out == "10 20\n"
