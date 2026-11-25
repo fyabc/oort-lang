@@ -1,22 +1,14 @@
 #! /usr/bin/env python
 
 import logging
-from typing import Any
 
 
-def setup_logging(level=logging.INFO, rich_logging: bool = True):
-    kwargs: dict[str, Any] = {}
+def setup_logging(level=logging.INFO):
+    """Configure the standard logging sink.
 
-    if rich_logging:
-        try:
-            from rich.logging import RichHandler
-            from rich.traceback import install
+    Diagnostics are rendered by `oort_lang.diagnostics.render` and already
+    carry their own layout, so the log format is just the message: no
+    timestamps, logger names or level prefixes in CLI output.
+    """
 
-            install()
-        except ImportError:
-            pass
-        else:
-            kwargs["format"] = "%(message)s"
-            kwargs["handlers"] = [RichHandler()]
-
-    logging.basicConfig(datefmt="%m/%d %H:%M:%S", level=level, **kwargs)
+    logging.basicConfig(datefmt="%m/%d %H:%M:%S", level=level, format="%(message)s")

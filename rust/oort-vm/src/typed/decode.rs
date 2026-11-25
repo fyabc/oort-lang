@@ -140,15 +140,8 @@ fn read_proto(r: &mut Reader<'_>, adt_decls: &[TypedAdtDecl]) -> TResult<TypedPr
     for _ in 0..nconst {
         constants.push(r.constant()?);
     }
-    // Positions are diagnostic-only; skip them.
-    if r.boolean()? {
-        let _filename = r.string()?;
-        let npos = r.u32()?;
-        for _ in 0..npos {
-            let _line = r.u32()?;
-            let _column = r.i32()?;
-        }
-    }
+    // Diagnostic table; kept so runtime errors can point at source lines.
+    let (filename, positions) = r.source_positions()?;
     Ok(TypedProto {
         name,
         is_main,
@@ -160,6 +153,8 @@ fn read_proto(r: &mut Reader<'_>, adt_decls: &[TypedAdtDecl]) -> TResult<TypedPr
         cells,
         code,
         constants,
+        positions,
+        filename,
     })
 }
 

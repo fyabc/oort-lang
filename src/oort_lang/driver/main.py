@@ -2,6 +2,7 @@
 
 import sys
 
+from ..diagnostics.render import resolve_color
 from .arguments import get_main_parser, parse_main_args, resolve_cache_dir
 from .compiler import Compiler, CompilerError
 from .logging_utils import setup_logging
@@ -12,7 +13,8 @@ def main():
     parser = get_main_parser()
     args = parse_main_args(parser)
 
-    setup_logging(level=args.logging_level, rich_logging=not args.plain)
+    setup_logging(level=args.logging_level)
+    args.color_enabled = False if args.plain else resolve_color(args.color, sys.stderr)
 
     if args.cache_clean or args.cache_stats:
         if args.no_cache:

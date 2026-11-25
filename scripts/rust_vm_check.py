@@ -37,6 +37,7 @@ from oort_lang.bytecode import (
 from oort_lang.bytecode.serialize import write_obc
 from oort_lang.bytecode.typed_vm import TypedCodeVM
 from oort_lang.diagnostics.error_handler import CompilerErrorHandler
+from oort_lang.diagnostics.runtime_errors import OortRuntimeError
 from oort_lang.hir import lower_module, lower_typed_module
 from oort_lang.hir.typed_link import TypedUnit, load_typed_units
 from oort_lang.runtime.bytecode_vm import BytecodeVM
@@ -575,6 +576,31 @@ ordering()
 
 # Multi-module typed cases: (dependency sources, root source). They exercise
 # v12 artifact linking (imported constructors, same-named ADTs) through kind=2.
+# Programs that fail at runtime. Both VMs must fail, and the innermost Rust
+# frame must point at the same source line as the Python exception position.
+# Messages are not compared: Python surfaces host exception text.
+DYNAMIC_ERROR_PROGRAMS = {
+    "div_zero": (
+        "def bad(x) { 10 // x }\nprint(bad(0))\n",
+        "bad",
+        1,
+    ),
+}
+
+TYPED_ERROR_PROGRAMS = {
+    "typed_div_zero": (
+        "#lang oort-core\n"
+        "\n"
+        "def bad(x: Int) -> Int { 10 // x }\n"
+        "\n"
+        "def run() -> Int { bad(0) }\n"
+        "\n"
+        "print(run())\n",
+        "bad",
+        3,
+    ),
+}
+
 TYPED_MODULE_DIFF_PROGRAMS = {
     "typed_imported_ctors": (
         {
@@ -808,6 +834,80 @@ def typed_differential(rust_bin: Path) -> bool:
     return ok
 
 
+def rust_result(rust_bin: Path, obc: Path) -> subprocess.CompletedProcess:
+    """Run the Rust VM and keep stdout/stderr/exit code for assertions."""
+
+    return subprocess.run(
+        [str(rust_bin), str(obc)],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def python_error(source: str, *, typed: bool):
+    """Run a program that is expected to fail; return the Oort exception."""
+
+    interpreter = ASTInterpreter(CompilerErrorHandler())
+    if typed:
+        program = compile_typed_module(lower_typed_module(build_ast(source)))
+        vm = TypedCodeVM(interpreter)
+    else:
+        program = compile_module(lower_module(build_ast(source)))
+        vm = BytecodeVM(interpreter)
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), interpreter.runtime.activate():
+            vm.run(program)
+    except OortRuntimeError as exc:
+        return exc
+    return None
+
+
+def error_differential(rust_bin: Path) -> bool:
+    print("\n== error path (both VMs fail; innermost frame agrees on line) ==")
+    ok = True
+    with tempfile.TemporaryDirectory() as tmp:
+        cases = [
+            ("dynamic", DYNAMIC_ERROR_PROGRAMS, compile_to_obc, False),
+            ("typed", TYPED_ERROR_PROGRAMS, compile_to_linked_bundle, True),
+        ]
+        for _label, programs, compile_fn, typed in cases:
+            for name, (source, _proto, line) in programs.items():
+                obc = Path(tmp) / f"{name}.obc"
+                compile_fn(source, obc)
+                py_error = python_error(source, typed=typed)
+                proc = rust_result(rust_bin, obc)
+                problems: list[str] = []
+                if py_error is None:
+                    problems.append("python did not raise")
+                elif py_error.position.start_line != line:
+                    problems.append(f"python line {py_error.position.start_line} != {line}")
+                if proc.returncode != 1:
+                    problems.append(f"rust exit {proc.returncode}")
+                header = next(
+                    (
+                        text.strip()
+                        for text in proc.stderr.splitlines()
+                        if ": error: " in text or text.startswith("error: ")
+                    ),
+                    None,
+                )
+                if header is None:
+                    problems.append("rust error has no standard header")
+                elif f":{line}:" not in header and not header.startswith(f"{line}:"):
+                    problems.append(f"line {line} missing in header {header!r}")
+                if "note: called from " not in proc.stderr:
+                    problems.append("rust error has no caller frame")
+                if problems:
+                    ok = False
+                    print(f"  {name:20s} FAIL ({'; '.join(problems)})")
+                    print(f"    rust stderr={proc.stderr.strip()!r}")
+                else:
+                    print(f"  {name:20s} OK")
+    return ok
+
+
 def benchmark(rust_bin: Path, repeat: int) -> None:
     print(f"\n== benchmark (Rust VM, median of {repeat}, program-internal ms/rep) ==")
     with tempfile.TemporaryDirectory() as tmp:
@@ -846,6 +946,7 @@ def main() -> int:
     if not options.bench_only:
         ok = differential(rust_bin)
         ok = typed_differential(rust_bin) and ok
+        ok = error_differential(rust_bin) and ok
     if not options.diff_only:
         benchmark(rust_bin, options.repeat)
     return 0 if ok else 1

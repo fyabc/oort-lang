@@ -68,10 +68,16 @@ ANTLR 默认错误信息不够详细。`OortErrorListener` 把词法/语法错�
 `CompilerErrorHandler`，后者利用 `SourcePosition` 输出：
 
 ```
-<string>:1:7: OortSyntaxError: Invalid syntax
+<string>:1:7: error[OortSyntaxError]: Invalid syntax
 print(
       ^^^^^
 ```
+
+输出遵循 GCC/Clang 风格：首行是 `file:line:col: severity[Kind]: message`，
+随后是源码行与 caret。`diagnostics/render.py` 负责渲染，颜色只在显式开启时
+添加（`--color=always`，或 auto 模式下的终端；`NO_COLOR`/`FORCE_COLOR`
+生效），因此管道、CI 与测试拿到的始终是无 ANSI 的稳定文本。rich 只用于 REPL
+的交互式输出，不参与诊断。
 
 语义分析、AST 构建与运行期错误共用同一个处理器；`UnsupportedSyntax` 也走这条路径。
 `ASTBuilder.parse` 会捕获构建期的 `OortException`，避免以 Python traceback 结束。

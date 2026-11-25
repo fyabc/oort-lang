@@ -33,7 +33,7 @@ pub use vm::TypedVm;
 
 use std::rc::Rc;
 
-use crate::obc::Constant;
+use crate::obc::{Constant, SourcePos};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypedType {
@@ -66,6 +66,10 @@ pub struct TypedProto {
     pub cells: Vec<u16>,
     pub code: Vec<u32>,
     pub constants: Vec<Constant>,
+    /// Diagnostic table (one entry per code word, empty when absent) and the
+    /// source name it belongs to; used to locate runtime errors.
+    pub positions: Vec<SourcePos>,
+    pub filename: String,
 }
 
 #[derive(Debug, Clone)]

@@ -95,7 +95,7 @@ class Compiler:
         # Compiler options. TODO: Replace raw args with better option class.
         self.args = args
 
-        self.error_handler = CompilerErrorHandler()
+        self.error_handler = CompilerErrorHandler(color=getattr(args, "color_enabled", False))
         self.module_paths = tuple(Path(path) for path in (getattr(args, "module_path", None) or []))
         self._entry_dir: Path | None = None
         self._entry_path: Path | None = None

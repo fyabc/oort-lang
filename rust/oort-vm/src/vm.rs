@@ -16,7 +16,7 @@ use num_integer::Integer;
 use num_rational::BigRational;
 use num_traits::{ToPrimitive, Zero};
 
-use crate::obc::{Constant, Module, Proto};
+use crate::obc::{annotate_error, Constant, Module, Proto};
 
 pub type Globals = HashMap<String, Value>;
 
@@ -650,6 +650,15 @@ fn invoke_with_this(
     }
 }
 
+/// Outcome of one instruction. Jumps and returns carry their target/value so
+/// the dispatch loop can handle control flow outside the per-instruction body,
+/// where `?` can attach the current source position to any error.
+enum Flow {
+    Next,
+    Jump(usize),
+    Return(Value),
+}
+
 /// Run one proto on a fresh frame.
 ///
 /// Frame layout matches the erased compiler: slot 0 holds `this` for methods,
@@ -657,6 +666,9 @@ fn invoke_with_this(
 /// registers are scratch. `CALL` expects the callee and arguments to be
 /// contiguous (`R[A]` = callee, `R[A+1..A+1+C]` = arguments) and stores the
 /// result at `R[A]`.
+///
+/// Errors raised while executing a word are annotated with that word's source
+/// position; the trace grows as the error unwinds through callers.
 fn execute(
     module: &Module,
     globals: &mut Globals,
@@ -666,9 +678,11 @@ fn execute(
     start: Instant,
 ) -> VResult<Value> {
     if proto.uses_cells {
-        return Err(format!(
-            "closure cells not supported in spike ({})",
-            proto.name
+        return Err(annotate_error(
+            &proto.name,
+            &proto.filename,
+            None,
+            format!("closure cells not supported in spike ({})", proto.name),
         ));
     }
     let mut regs: Vec<Value> = vec![Value::Null; proto.register_count as usize];
@@ -681,15 +695,22 @@ fn execute(
     }
     for param in &proto.signature.params {
         if param.has_default || param.kind >= 2 {
-            return Err(format!(
-                "unsupported parameter kind in spike ({})",
-                proto.name
+            return Err(annotate_error(
+                &proto.name,
+                &proto.filename,
+                None,
+                format!("unsupported parameter kind in spike ({})", proto.name),
             ));
         }
         if let Some(v) = arg_iter.next() {
             regs[param.slot as usize] = v;
         } else {
-            return Err(format!("missing required argument '{}'", param.name));
+            return Err(annotate_error(
+                &proto.name,
+                &proto.filename,
+                None,
+                format!("missing required argument '{}'", param.name),
+            ));
         }
     }
 
@@ -707,121 +728,135 @@ fn execute(
         let bx = (word & 0xFFFF) as usize;
         let sbx = (word & 0xFFFF) as i32 - 0x8000;
 
-        match op {
-            LOAD_K => regs[a] = constant_to_value(&consts[bx])?,
-            LOAD_L => regs[a] = regs[b].clone(),
-            STORE_L => regs[a] = regs[b].clone(),
-            MOVE => regs[a] = regs[b].clone(),
-            LOAD_G => {
-                let name = const_str(&consts[bx])?;
-                regs[a] = globals
-                    .get(name)
-                    .cloned()
-                    .ok_or_else(|| format!("Name '{name}' is not defined"))?;
-            }
-            STORE_G => {
-                let name = const_str(&consts[bx])?;
-                globals.insert(name.to_string(), regs[a].clone());
-            }
-            DEF_FUN => {
-                let fproto = &module.functions[bx];
-                let closure = Value::Closure(Rc::new(Closure {
-                    proto_index: bx,
-                    defining_type: None,
-                }));
-                globals.insert(fproto.name.clone(), closure);
-            }
-            ADD | SUB | MUL | DIV | FLOORDIV | MOD | EQ | NE | LT | LE | GT | GE => {
-                regs[a] = binary(op, &regs[b], &regs[c])?;
-            }
-            NEG | POS | INVERT | NOT => regs[a] = unary(op, &regs[b])?,
-            JUMP => {
-                pc = (pc as i64 + 1 + sbx as i64) as usize;
-                continue;
-            }
-            JUMP_FALSE => {
-                if !truthy(&regs[a]) {
-                    pc = (pc as i64 + 1 + sbx as i64) as usize;
-                    continue;
+        let step = (|| -> VResult<Flow> {
+            match op {
+                LOAD_K => regs[a] = constant_to_value(&consts[bx])?,
+                LOAD_L => regs[a] = regs[b].clone(),
+                STORE_L => regs[a] = regs[b].clone(),
+                MOVE => regs[a] = regs[b].clone(),
+                LOAD_G => {
+                    let name = const_str(&consts[bx])?;
+                    regs[a] = globals
+                        .get(name)
+                        .cloned()
+                        .ok_or_else(|| format!("Name '{name}' is not defined"))?;
                 }
-            }
-            JUMP_TRUE => {
-                if truthy(&regs[a]) {
-                    pc = (pc as i64 + 1 + sbx as i64) as usize;
-                    continue;
+                STORE_G => {
+                    let name = const_str(&consts[bx])?;
+                    globals.insert(name.to_string(), regs[a].clone());
                 }
-            }
-            CALL => {
-                let callee = regs[a].clone();
-                let call_args: Vec<Value> = regs[a + 1..a + 1 + c].to_vec();
-                regs[a] = invoke(module, globals, &callee, call_args, start)?;
-            }
-            RET => return Ok(regs[a].clone()),
-            OPEN_ITER => {
-                let values = match &regs[b] {
-                    Value::List(l) => l.borrow().clone(),
-                    Value::Str(s) => s
-                        .chars()
-                        .map(|ch| Value::Str(Rc::from(ch.to_string().as_str())))
-                        .collect(),
-                    _ => return Err(format!("'{}' is not iterable", type_name(&regs[b]))),
-                };
-                regs[a] = Value::Iterator(Rc::new(RefCell::new(IterState { values, index: 0 })));
-            }
-            ITER_NEXT => {
-                let iter = match &regs[b] {
-                    Value::Iterator(it) => Rc::clone(it),
-                    _ => return Err("iterator expected".into()),
-                };
-                let mut state = iter.borrow_mut();
-                if state.index < state.values.len() {
-                    regs[a] = state.values[state.index].clone();
-                    state.index += 1;
-                    regs[c] = Value::Bool(true);
-                } else {
-                    regs[a] = Value::Null;
-                    regs[c] = Value::Bool(false);
-                }
-            }
-            BUILD_CLASS => {
-                let spec = match &consts[bx] {
-                    Constant::Class(s) => s,
-                    _ => return Err("Invalid class descriptor".into()),
-                };
-                if spec.base_count != 0 || spec.has_metaclass {
-                    return Err("inheritance/metaclass not supported in spike".into());
-                }
-                let ty = Rc::new(TypeObj {
-                    name: spec.name.clone(),
-                    methods: RefCell::new(HashMap::new()),
-                });
-                for (name, index) in &spec.methods {
+                DEF_FUN => {
+                    let fproto = &module.functions[bx];
                     let closure = Value::Closure(Rc::new(Closure {
-                        proto_index: *index as usize,
-                        defining_type: Some(Rc::clone(&ty)),
+                        proto_index: bx,
+                        defining_type: None,
                     }));
-                    ty.methods.borrow_mut().insert(name.clone(), closure);
+                    globals.insert(fproto.name.clone(), closure);
                 }
-                regs[a] = Value::Type(ty);
-            }
-            GET_ATTR => {
-                let name = const_str(&consts[bx])?;
-                let receiver = regs[a].clone();
-                regs[a] = get_attr(&receiver, name)?;
-            }
-            SET_ATTR => {
-                let name = const_str(&consts[bx])?;
-                let value = regs[a + 1].clone();
-                match &regs[a] {
-                    Value::Instance(inst) => {
-                        inst.fields.borrow_mut().insert(name.to_string(), value);
+                ADD | SUB | MUL | DIV | FLOORDIV | MOD | EQ | NE | LT | LE | GT | GE => {
+                    regs[a] = binary(op, &regs[b], &regs[c])?;
+                }
+                NEG | POS | INVERT | NOT => regs[a] = unary(op, &regs[b])?,
+                JUMP => {
+                    return Ok(Flow::Jump((pc as i64 + 1 + sbx as i64) as usize));
+                }
+                JUMP_FALSE => {
+                    if !truthy(&regs[a]) {
+                        return Ok(Flow::Jump((pc as i64 + 1 + sbx as i64) as usize));
                     }
-                    _ => return Err(format!("Cannot set attribute on '{}'", type_name(&regs[a]))),
                 }
+                JUMP_TRUE => {
+                    if truthy(&regs[a]) {
+                        return Ok(Flow::Jump((pc as i64 + 1 + sbx as i64) as usize));
+                    }
+                }
+                CALL => {
+                    let callee = regs[a].clone();
+                    let call_args: Vec<Value> = regs[a + 1..a + 1 + c].to_vec();
+                    regs[a] = invoke(module, globals, &callee, call_args, start)?;
+                }
+                RET => return Ok(Flow::Return(regs[a].clone())),
+                OPEN_ITER => {
+                    let values = match &regs[b] {
+                        Value::List(l) => l.borrow().clone(),
+                        Value::Str(s) => s
+                            .chars()
+                            .map(|ch| Value::Str(Rc::from(ch.to_string().as_str())))
+                            .collect(),
+                        _ => return Err(format!("'{}' is not iterable", type_name(&regs[b]))),
+                    };
+                    regs[a] =
+                        Value::Iterator(Rc::new(RefCell::new(IterState { values, index: 0 })));
+                }
+                ITER_NEXT => {
+                    let iter = match &regs[b] {
+                        Value::Iterator(it) => Rc::clone(it),
+                        _ => return Err("iterator expected".into()),
+                    };
+                    let mut state = iter.borrow_mut();
+                    if state.index < state.values.len() {
+                        regs[a] = state.values[state.index].clone();
+                        state.index += 1;
+                        regs[c] = Value::Bool(true);
+                    } else {
+                        regs[a] = Value::Null;
+                        regs[c] = Value::Bool(false);
+                    }
+                }
+                BUILD_CLASS => {
+                    let spec = match &consts[bx] {
+                        Constant::Class(s) => s,
+                        _ => return Err("Invalid class descriptor".into()),
+                    };
+                    if spec.base_count != 0 || spec.has_metaclass {
+                        return Err("inheritance/metaclass not supported in spike".into());
+                    }
+                    let ty = Rc::new(TypeObj {
+                        name: spec.name.clone(),
+                        methods: RefCell::new(HashMap::new()),
+                    });
+                    for (name, index) in &spec.methods {
+                        let closure = Value::Closure(Rc::new(Closure {
+                            proto_index: *index as usize,
+                            defining_type: Some(Rc::clone(&ty)),
+                        }));
+                        ty.methods.borrow_mut().insert(name.clone(), closure);
+                    }
+                    regs[a] = Value::Type(ty);
+                }
+                GET_ATTR => {
+                    let name = const_str(&consts[bx])?;
+                    let receiver = regs[a].clone();
+                    regs[a] = get_attr(&receiver, name)?;
+                }
+                SET_ATTR => {
+                    let name = const_str(&consts[bx])?;
+                    let value = regs[a + 1].clone();
+                    match &regs[a] {
+                        Value::Instance(inst) => {
+                            inst.fields.borrow_mut().insert(name.to_string(), value);
+                        }
+                        _ => {
+                            return Err(format!(
+                                "Cannot set attribute on '{}'",
+                                type_name(&regs[a])
+                            ))
+                        }
+                    }
+                }
+                _ => return Err(format!("Bytecode VM does not support opcode {op}")),
             }
-            _ => return Err(format!("Bytecode VM does not support opcode {op}")),
+            Ok(Flow::Next)
+        })();
+        match step {
+            Ok(Flow::Next) => pc += 1,
+            Ok(Flow::Jump(target)) => pc = target,
+            Ok(Flow::Return(value)) => return Ok(value),
+            Err(error) => {
+                let pos = proto.positions.get(pc).copied();
+                return Err(annotate_error(&proto.name, &proto.filename, pos, error));
+            }
         }
-        pc += 1;
     }
     Ok(Value::Null)
 }

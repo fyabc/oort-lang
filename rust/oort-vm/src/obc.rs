@@ -106,6 +106,61 @@ pub struct Proto {
     pub signature: Signature,
     pub code: Vec<u32>,
     pub constants: Vec<Constant>,
+    /// Diagnostic table written by the frontend: one entry per code word.
+    /// Empty when the artifact carries no positions (hand-built bytecode).
+    pub positions: Vec<SourcePos>,
+    pub filename: String,
+}
+
+/// One source location from the optional diagnostic table.
+///
+/// Columns are stored 0-based, as in the Python `SourcePosition`; error
+/// messages add one to match editor conventions.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SourcePos {
+    pub line: u32,
+    pub column: i32,
+}
+
+/// Append one diagnostic frame to a runtime error message.
+///
+/// The innermost annotation becomes the standard header
+/// `file:line:col: error: message`; callers append `note: called from ...`
+/// lines as the error unwinds. Frames are capped so runaway recursion cannot
+/// build an unbounded message; the innermost frames are the useful ones.
+pub(crate) fn annotate_error(
+    proto_name: &str,
+    filename: &str,
+    pos: Option<SourcePos>,
+    message: String,
+) -> String {
+    const MAX_FRAMES: usize = 8;
+    let location = match pos {
+        Some(pos) if pos.line > 0 => {
+            if filename.is_empty() {
+                format!("{}:{}", pos.line, pos.column + 1)
+            } else {
+                format!("{}:{}:{}", filename, pos.line, pos.column + 1)
+            }
+        }
+        _ => String::new(),
+    };
+    // Already annotated once: this is a caller frame.
+    if message.contains(": error: ") || message.starts_with("error: ") {
+        if message.matches("\n  note: ").count() >= MAX_FRAMES {
+            return message;
+        }
+        return if location.is_empty() {
+            format!("{message}\n  note: called from {proto_name}")
+        } else {
+            format!("{message}\n  note: called from {proto_name} at {location}")
+        };
+    }
+    if location.is_empty() {
+        format!("error: {message}")
+    } else {
+        format!("{location}: error: {message}")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -191,6 +246,26 @@ impl<'a> Reader<'a> {
         } else {
             Ok(None)
         }
+    }
+
+    /// Read the optional `(filename, positions)` diagnostic table.
+    ///
+    /// The frontend writes one entry per instruction word, so the table is
+    /// indexed by `pc`. Unknown/older artifacts may omit it entirely.
+    pub(crate) fn source_positions(&mut self) -> RResult<(String, Vec<SourcePos>)> {
+        if !self.boolean()? {
+            return Ok((String::new(), Vec::new()));
+        }
+        let filename = self.string()?;
+        let count = self.u32()? as usize;
+        let mut positions = Vec::with_capacity(count);
+        for _ in 0..count {
+            positions.push(SourcePos {
+                line: self.u32()?,
+                column: self.i32()?,
+            });
+        }
+        Ok((filename, positions))
     }
 
     fn pattern(&mut self) -> RResult<Pattern> {
@@ -382,15 +457,8 @@ impl<'a> Reader<'a> {
         for _ in 0..nk {
             constants.push(self.constant()?);
         }
-        // Positions are optional and only used for diagnostics; skip them.
-        if self.boolean()? {
-            let _filename = self.string()?;
-            let npos = self.u32()?;
-            for _ in 0..npos {
-                let _line = self.u32()?;
-                let _column = self.i32()?;
-            }
-        }
+        // Positions are optional and only used for runtime diagnostics.
+        let (filename, positions) = self.source_positions()?;
         Ok(Proto {
             name,
             params,
@@ -403,6 +471,8 @@ impl<'a> Reader<'a> {
             signature,
             code,
             constants,
+            positions,
+            filename,
         })
     }
 }

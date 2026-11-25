@@ -89,7 +89,7 @@ def test_lexer_error_reports_oort_diagnostic(monkeypatch, caplog, source, messag
     # diagnostic naming the category and position — not as a raw ANTLR
     # console message — and the process must exit non-zero.
     assert _run_cli(monkeypatch, ["-c", source]) != 0
-    assert f"OortSyntaxError: {message}" in caplog.text
+    assert f"error[OortSyntaxError]: {message}" in caplog.text
     assert "<string>:1:" in caplog.text
 
 
@@ -111,7 +111,7 @@ def test_delimiter_error_points_at_the_bracket(monkeypatch, caplog, source, mess
     # "'X' was never closed" / "Unmatched 'X'"), not wherever the parser
     # happened to give up.
     assert _run_cli(monkeypatch, ["-c", source]) != 0
-    assert f"OortSyntaxError: {message}" in caplog.text
+    assert f"error[OortSyntaxError]: {message}" in caplog.text
     assert position in caplog.text
 
 
@@ -430,10 +430,11 @@ def test_repl_empty_piped_input_exits_zero():
 def test_repl_incomplete_input_at_eof_reports_syntax_error():
     proc = _run_repl_subprocess("print(\n")
     assert proc.returncode == 0
-    # The console wraps the message mid-phrase; the tail survives on one line.
-    assert "OortSyntaxError" in proc.stdout
-    assert "was never closed" in proc.stdout
-    assert "print(" in proc.stdout
+    # Diagnostics go to stderr; the REPL prompt stays on stdout.
+    combined = proc.stdout + proc.stderr
+    assert "OortSyntaxError" in combined
+    assert "was never closed" in combined
+    assert "print(" in combined
     assert "Traceback" not in proc.stdout
     assert "Traceback" not in proc.stderr
 
@@ -534,7 +535,7 @@ print(f(), xs, d)
     assert "OortSyntaxWarning" not in caplog.text
 
 
-def test_plain_output_keeps_messages_on_one_line():
+def test_plain_output_has_no_ansi_and_keeps_messages_together():
     proc = subprocess.run(
         [sys.executable, "-m", "oort_lang", "--plain", "-c", "if true { print(1)"],
         capture_output=True,
@@ -543,9 +544,23 @@ def test_plain_output_keeps_messages_on_one_line():
         check=False,
     )
     assert proc.returncode != 0
-    # Plain output is one line per record; the message must stay contiguous.
-    assert "'{' was never closed" in proc.stdout + proc.stderr
+    # Plain output is uncolored; the message must stay contiguous.
+    combined = proc.stdout + proc.stderr
+    assert "'{' was never closed" in combined
+    assert "\x1b[" not in combined
     assert "Traceback" not in proc.stderr
+
+
+def test_color_always_forces_ansi():
+    proc = subprocess.run(
+        [sys.executable, "-m", "oort_lang", "--color", "always", "-c", "if true { print(1)"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode != 0
+    assert "\x1b[" in proc.stderr
 
 
 @pytest.mark.parametrize(

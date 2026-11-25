@@ -56,11 +56,10 @@ var a = 1
     assert (
         caplog.text
         == """\
-<string>:2:11: OortNameError: Can't read local variable a in its own initializer.
+<string>:2:11: error[OortNameError]: Can't read local variable a in its own initializer.
 { var a = a }
           ^
 1 error generated.
-0 warnings generated.
 """
     )
 
@@ -80,11 +79,10 @@ var a = 2
     assert (
         caplog.text
         == """\
-<string>:5:9: OortNameError: Variable b is already defined.
+<string>:5:9: error[OortNameError]: Variable b is already defined.
     var b = 4
         ^
 1 error generated.
-0 warnings generated.
 """
     )
 
@@ -102,17 +100,16 @@ class D { def g { this } }
     assert (
         caplog.text
         == """\
-<string>:1:1: OortNameError: Can't access 'this' outside method.
+<string>:1:1: error[OortNameError]: Can't access 'this' outside method.
 this
 ^^^^
-<string>:2:9: OortNameError: Can't access 'this' outside method.
+<string>:2:9: error[OortNameError]: Can't access 'this' outside method.
 def f { this }
         ^^^^
-<string>:3:11: OortNameError: Can't access 'this' outside method.
+<string>:3:11: error[OortNameError]: Can't access 'this' outside method.
 class C { this }
           ^^^^
 3 errors generated.
-0 warnings generated.
 """
     )
 
@@ -131,11 +128,10 @@ class C {
     assert (
         caplog.text
         == """\
-<string>:3:9: OortSyntaxError: Return inside method initializer.
+<string>:3:9: error[OortSyntaxError]: Return inside method initializer.
         return 1
         ^^^^^^^^
 1 error generated.
-0 warnings generated.
 """
     )
 
@@ -152,17 +148,16 @@ class C { super }
     assert (
         caplog.text
         == """\
-<string>:1:1: OortNameError: Can't use implicit 'super' outside method.
+<string>:1:1: error[OortNameError]: Can't use implicit 'super' outside method.
 super
 ^^^^^
-<string>:2:9: OortNameError: Can't use implicit 'super' outside method.
+<string>:2:9: error[OortNameError]: Can't use implicit 'super' outside method.
 def f { super }
         ^^^^^
-<string>:3:11: OortNameError: Can't use implicit 'super' outside method.
+<string>:3:11: error[OortNameError]: Can't use implicit 'super' outside method.
 class C { super }
           ^^^^^
 3 errors generated.
-0 warnings generated.
 """
     )
 

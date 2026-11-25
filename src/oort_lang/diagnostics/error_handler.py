@@ -1,22 +1,25 @@
 #! /usr/bin/env python
 
 import logging
-import re
 import sys
 from pathlib import Path
 
 from ..source.input_info import InputInfo
 from ..source.source_position import AbstractSourcePosition
 from . import OortException, OortSyntaxWarning
+from .render import render_diagnostic, render_note
 
 logger = logging.getLogger(__name__)
 
 
 class CompilerErrorHandler:
-    def __init__(self):
+    def __init__(self, color: bool = False):
         self._entries: list[tuple[OortException, InputInfo]] = []
         self._inputs_by_filename: dict[str, InputInfo] = {}
         self._last_input_info: InputInfo | None = None
+        # ANSI color is decided once per process (CLI flags/env/tty); records
+        # themselves stay plain so tests can assert on their text.
+        self._color = color
 
     @property
     def has_errors(self) -> bool:
@@ -95,21 +98,36 @@ class CompilerErrorHandler:
         num_errors, num_warnings = 0, 0
         for error, input_info in entries:
             if isinstance(error, OortSyntaxWarning):
-                level = logging.WARNING
+                severity, level = "warning", logging.WARNING
                 num_warnings += 1
             else:
-                level = logging.ERROR
+                severity, level = "error", logging.ERROR
                 num_errors += 1
-            self._report_position(
-                level, type(error).__name__ + ": " + error.msg, error.position, input_info
+            logger.log(
+                level,
+                render_diagnostic(
+                    error.msg,
+                    error.position,
+                    input_info,
+                    severity=severity,
+                    kind=type(error).__name__,
+                    color=self._color,
+                ),
             )
             for trace_msg, trace_pos in error.traceback:
                 trace_input = self.input_info_for(trace_pos) or input_info
-                self._report_position(logging.INFO, trace_msg, trace_pos, trace_input)
+                logger.log(
+                    logging.INFO,
+                    render_note(trace_msg, trace_pos, trace_input, color=self._color),
+                )
 
-        if summary and (num_errors > 0 or num_warnings > 0):
-            logger.error(f"{num_errors} error{'s' if num_errors != 1 else ''} generated.")
-            logger.warning(f"{num_warnings} warning{'s' if num_warnings != 1 else ''} generated.")
+        if summary:
+            if num_errors:
+                logger.error(f"{num_errors} error{'s' if num_errors != 1 else ''} generated.")
+            if num_warnings:
+                logger.warning(
+                    f"{num_warnings} warning{'s' if num_warnings != 1 else ''} generated."
+                )
 
         if num_errors > 0 and exit_on_error:
             sys.exit(1)
@@ -128,54 +146,3 @@ class CompilerErrorHandler:
             position.start_line,
             position.start_column if position.start_column is not None else 0,
         )
-
-    def _report_position(
-        self,
-        level: int,
-        msg: str,
-        position: AbstractSourcePosition | None,
-        input_info: InputInfo,
-    ):
-        if position is None:
-            logger.log(level, msg)
-            return
-
-        full_msg_lines = [f"{position}: {msg}"]
-
-        lines = input_info.get_lines()
-        if position.start_line > len(lines):
-            logger.log(level, "\n".join(full_msg_lines))
-            return
-
-        # Write start line.
-        start_error_line = lines[position.start_line - 1]
-        full_msg_lines.append(start_error_line.rstrip("\n"))
-
-        # Write marker line.
-        if position.start_column is not None:
-            marker_line_prefix = re.sub(
-                r"[^\r\n\t]", " ", start_error_line[: position.start_column]
-            )
-            marker_start = position.start_column
-            if position.start_line == position.stop_line and position.stop_column is not None:
-                marker_stop = position.stop_column
-            else:
-                marker_stop = len(start_error_line) - 2  # skip last '\n'
-            marker = "^" * max(0, marker_stop - marker_start + 1)
-            full_msg_lines.append(f"{marker_line_prefix}{marker}")
-
-        # Write intermediate lines.
-        num_intermediate_lines = position.stop_line - position.start_line - 1
-        if num_intermediate_lines >= 1:
-            full_msg_lines.append(f"... ({num_intermediate_lines} lines) ...\n")
-
-        # Write stop line.
-        if num_intermediate_lines >= 0:
-            stop_error_line = lines[position.stop_line - 1]
-            full_msg_lines.append(stop_error_line)
-
-            # Write stop marker line.
-            if position.stop_column is not None and position.stop_column >= 0:
-                full_msg_lines.append("^" * (position.stop_column + 1))
-
-        logger.log(level, "\n".join(full_msg_lines))

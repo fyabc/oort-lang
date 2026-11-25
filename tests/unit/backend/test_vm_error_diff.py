@@ -29,7 +29,9 @@ from tests.helpers import get_compiler
 # location is split from the right. The kind is not always ``Oort*``:
 # lowering rejections report ``UnsupportedSyntax`` and static checks report
 # ``TypeCheckError``.
-_DIAGNOSTIC = re.compile(r"^(?P<location>.*): (?P<kind>[A-Z]\w*): (?P<message>.*)$")
+_DIAGNOSTIC = re.compile(
+    r"^(?P<location>.*): (?P<severity>error|warning)(?:\[(?P<kind>[A-Z]\w*)\])?: (?P<message>.*)$"
+)
 
 
 def _split_location(location: str) -> int | None:

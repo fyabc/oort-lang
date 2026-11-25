@@ -68,9 +68,15 @@ def get_main_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--plain",
         action="store_true",
+        help="Disable ANSI colors in diagnostics (same as --color=never).",
+    )
+    parser.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default="auto",
         help=(
-            "Plain diagnostic output: no rich console, one line per record.\n"
-            "Useful when piping output or when wrapping hides the message."
+            "Colorize diagnostics: auto (default; only when stderr is a terminal), "
+            "always, or never. NO_COLOR and FORCE_COLOR are honored in auto mode."
         ),
     )
 
