@@ -4,6 +4,71 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，
 本项目遵循 [语义化版本](https://semver.org/)。
 
+## [0.6.0] - 2026-11-25
+
+### 新增
+
+- **oort-core 类型化后端**（design 15、OP 0027）：`-t thir` 打印逐模块 typed
+  HIR，`-t tbc` 把 typed units 编译并链接成 typed 字节码后反汇编，`-t tvm`
+  执行同一链接结果。每个模块产出 v12 artifact（module id、export/import 表、
+  ABI hash、构造器表），由 linker 校验 ABI 并重定位；kind=2 链接 bundle 可被
+  Rust VM 直接消费，或用 `oort-vm --link` 原生链接 v12 artifact。typed 子集
+  覆盖标量、String、List/Tuple/Set/Dict、单态与泛型 ADT、完整模式匹配、
+  命名函数值、非捕获 lambda 与捕获闭包（含写共享 cells）。
+- **oort-core 集合表面**（OP 0031）：`in`/`!in`、List/Dict 下标写入、
+  List/Tuple/String 切片读、Set 的 `| & - ^` 以及 `< <= > >=` 子集/超集比较；
+  非集合操作数的诊断会区分“集合关系”与普通比较。
+- **oort-core 排序与拼接**（OP 0032）：List `+`、List 字典序（元素限
+  Int/Float/String）与 `sorted(xs)`（稳定升序，返回新 List）；不可排序元素与
+  混合列表在检查期拒绝。
+- **类型化编译缓存**（OP 0030）：按源码、编译器版本、模块 id 与直接依赖接口
+  哈希寻址的 `.obc` 缓存；single-flight 写锁、sidecar、LRU 限额、统计与清理；
+  CLI 提供 `--cache-dir`、`OORT_CACHE_DIR`、`--no-cache`、`--cache-stats`、
+  `--cache-clean`、`--cache-max-size`。
+- **任意精度整数**：Rust 动态 VM 使用 i64 快速路径，溢出后提升为 `BigInt`；
+  Rust typed VM 的 `Int` 始终为任意精度。`.obc` 增加 tag 6 大整数常量
+  （kind=0 仍为 v2）。混合 Int/Float 比较使用精确有理数，NaN 排序与 Python
+  一致；`//`/`%` 采用向下取整。
+- **标准诊断输出**：CLI 诊断改为 GCC/Clang 风格
+  `file:line:col: error[Kind]: message` + 源码行 + caret，输出到 stderr；
+  新增 `--color=auto|always|never`（遵循 `NO_COLOR`/`FORCE_COLOR`），
+  `--plain` 等价于不彩色；汇总行只在数量非零时打印，rich 仅用于 REPL。
+- **Rust VM 调试工具**：运行时错误使用 `.obc` 位置表，首行给出来源位置并追加
+  `note: called from ...` 调用帧；`--trace` 逐指令跟踪到 stderr；`--disasm`
+  打印 kind=0/1/2 反汇编，`--disasm --link` 先链接 v12 artifact 再打印。
+- **object→core 边界原型**（OP 0028）：object 入口可导入 core 模块；core
+  模块编译为 typed 字节码执行，边界做参数/返回值守卫与容器深拷贝，ADT 按模块
+  origin 区分与复制；core→object 导入仍显式拒绝。
+- **示例**：新增 `08_15`–`08_23`（typed 子集、集合、ADT、模式、函数值、
+  闭包、集合表面、排序）与 `09_00_object_calls_core` 边界示例。
+
+### 变更
+
+- 默认后端仍是 `-t vm`。Python `eval`/`vm`/`tvm` 进入冻结状态（只修 bug），
+  新的执行语义只进入 Rust VM。
+- `-t tvm` 不再执行 typed HIR，改为执行链接后的 typed 字节码；`-t thir`
+  成为逐模块 typed HIR 调试视图。旧的 HIR 合并 linker 已删除，artifact loader
+  是唯一的执行 linker。
+- 诊断不再带时间戳、logger 名或 rich 折行；`-t` 帮助文本修正为
+  `thir/tbc/tvm` 的真实语义。
+- `.obc` 版本：typed proto **v10**、单模块 artifact **v12**、链接 bundle
+  **v5**；kind=0 保持 **v2**。
+
+### 修复
+
+- typed 顶层 block 捕获 main 局部变量时 `STORE_OUTER` 失败（main 现在同样
+  参与 creator 链与 cell 槽）。
+- i64 范围外的大整数常量无法写入 `.obc`。
+- Python 3.11 下测试 argv 中选项位于位置参数之后触发 `SystemExit: 2`。
+
+### 工程化
+
+- Rust `typed.rs` 按职责拆为 `typed/{mod,decode,link,value,opcodes,vm}.rs`；
+  kind=0 操作码常量与名字表移到 `opcodes.rs`，VM、trace 与反汇编共用。
+- `scripts/rust_vm_check.py` 覆盖动态/typed 差分、错误路径（两边失败且源行
+  一致）、trace 与反汇编；Rust 单测 33 项。
+- Python 测试默认只跑 `tests/`；benchmarks 需显式 `pytest benchmarks/`。
+
 ## [0.5.0] - 2026-11-22
 
 ### 新增
