@@ -36,10 +36,10 @@ COMPILER_MODE_HELPS = {
     "ast": "Print AST.",
     "astm": "Print AST with metadata.",
     "hir": "Lower to HIR and print it.",
-    "thir": "Lower to typed HIR and print it (research; restricted core subset).",
-    "tbc": "Compile typed HIR to typed bytecode and print disassembly (research).",
+    "thir": "Lower to typed HIR and print per-module units (research).",
+    "tbc": "Compile and link typed units to typed bytecode and print disassembly (research).",
     "bc": "Compile to bytecode and print disassembly.",
-    "tvm": "Execute the typed HIR subset (research).",
+    "tvm": "Compile and link typed units, then execute the typed bytecode (research).",
     "vm": "Execute the supported bytecode subset (default).",
     "eval": "Evaluate the AST (tree-walking interpreter, fallback).",
 }

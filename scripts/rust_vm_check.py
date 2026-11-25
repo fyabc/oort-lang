@@ -834,11 +834,13 @@ def typed_differential(rust_bin: Path) -> bool:
     return ok
 
 
-def rust_result(rust_bin: Path, obc: Path) -> subprocess.CompletedProcess:
+def rust_result(
+    rust_bin: Path, obc: Path, extra: list[str] | None = None
+) -> subprocess.CompletedProcess:
     """Run the Rust VM and keep stdout/stderr/exit code for assertions."""
 
     return subprocess.run(
-        [str(rust_bin), str(obc)],
+        [str(rust_bin), *(extra or []), str(obc)],
         check=False,
         capture_output=True,
         text=True,
@@ -908,6 +910,31 @@ def error_differential(rust_bin: Path) -> bool:
     return ok
 
 
+def trace_check(rust_bin: Path) -> bool:
+    print("\n== trace (Rust --trace; instruction lines on stderr) ==")
+    source = "#lang oort-core\n\ndef add(a: Int, b: Int) -> Int { a + b }\n\nprint(add(2, 3))\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        obc = Path(tmp) / "trace.obc"
+        compile_to_linked_bundle(source, obc)
+        traced = rust_result(rust_bin, obc, extra=["--trace"])
+        plain = rust_result(rust_bin, obc)
+        problems: list[str] = []
+        if traced.returncode != 0:
+            problems.append(f"exit {traced.returncode}")
+        if traced.stdout != "5\n":
+            problems.append(f"stdout {traced.stdout!r}")
+        for needle in ("[<main>]", "ADD_I", "-> R"):
+            if needle not in traced.stderr:
+                problems.append(f"missing {needle!r}")
+        if "[<main>]" in plain.stderr:
+            problems.append("trace leaked without --trace")
+        if problems:
+            print(f"  trace            FAIL ({'; '.join(problems)})")
+            return False
+        print("  trace            OK")
+        return True
+
+
 def benchmark(rust_bin: Path, repeat: int) -> None:
     print(f"\n== benchmark (Rust VM, median of {repeat}, program-internal ms/rep) ==")
     with tempfile.TemporaryDirectory() as tmp:
@@ -947,6 +974,7 @@ def main() -> int:
         ok = differential(rust_bin)
         ok = typed_differential(rust_bin) and ok
         ok = error_differential(rust_bin) and ok
+        ok = trace_check(rust_bin) and ok
     if not options.diff_only:
         benchmark(rust_bin, options.repeat)
     return 0 if ok else 1

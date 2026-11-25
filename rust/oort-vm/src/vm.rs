@@ -117,12 +117,53 @@ const GET_ATTR: u32 = 57;
 const SET_ATTR: u32 = 58;
 const BUILD_CLASS: u32 = 62;
 
+/// Human-readable opcode name for tracing; `None` for unassigned numbers.
+fn opcode_name(op: u32) -> Option<&'static str> {
+    Some(match op {
+        LOAD_K => "LOAD_K",
+        LOAD_L => "LOAD_L",
+        STORE_L => "STORE_L",
+        LOAD_G => "LOAD_G",
+        STORE_G => "STORE_G",
+        DEF_FUN => "DEF_FUN",
+        MOVE => "MOVE",
+        ADD => "ADD",
+        SUB => "SUB",
+        MUL => "MUL",
+        DIV => "DIV",
+        FLOORDIV => "FLOORDIV",
+        MOD => "MOD",
+        EQ => "EQ",
+        NE => "NE",
+        LT => "LT",
+        LE => "LE",
+        GT => "GT",
+        GE => "GE",
+        NEG => "NEG",
+        POS => "POS",
+        INVERT => "INVERT",
+        NOT => "NOT",
+        JUMP => "JUMP",
+        JUMP_FALSE => "JUMP_FALSE",
+        JUMP_TRUE => "JUMP_TRUE",
+        CALL => "CALL",
+        RET => "RET",
+        OPEN_ITER => "OPEN_ITER",
+        ITER_NEXT => "ITER_NEXT",
+        GET_ATTR => "GET_ATTR",
+        SET_ATTR => "SET_ATTR",
+        BUILD_CLASS => "BUILD_CLASS",
+        _ => return None,
+    })
+}
+
 type VResult<T> = Result<T, String>;
 
 pub struct Vm {
     pub module: Module,
     pub globals: Globals,
     start: Instant,
+    trace: bool,
 }
 
 impl Vm {
@@ -135,19 +176,36 @@ impl Vm {
             module,
             globals,
             start: Instant::now(),
+            trace: false,
         }
+    }
+
+    /// Enable or disable the per-instruction trace on stderr.
+    pub fn set_trace(&mut self, trace: bool) {
+        self.trace = trace;
     }
 
     pub fn run_main(&mut self) -> VResult<Value> {
         let main = Rc::clone(&self.module.main);
-        execute(
-            &self.module,
-            &mut self.globals,
-            &main,
-            Vec::new(),
-            None,
-            self.start,
-        )
+        if self.trace {
+            execute::<true>(
+                &self.module,
+                &mut self.globals,
+                &main,
+                Vec::new(),
+                None,
+                self.start,
+            )
+        } else {
+            execute::<false>(
+                &self.module,
+                &mut self.globals,
+                &main,
+                Vec::new(),
+                None,
+                self.start,
+            )
+        }
     }
 }
 
@@ -590,7 +648,7 @@ fn int_arg(v: &Value) -> VResult<i64> {
     }
 }
 
-fn invoke(
+fn invoke<const TRACE: bool>(
     module: &Module,
     globals: &mut Globals,
     callee: &Value,
@@ -600,12 +658,12 @@ fn invoke(
     match callee {
         Value::Closure(c) => {
             let proto = Rc::clone(&module.functions[c.proto_index]);
-            execute(module, globals, &proto, args, None, start)
+            execute::<TRACE>(module, globals, &proto, args, None, start)
         }
         Value::BoundMethod(m) => {
             let target = m.target.clone();
             let this = m.this.clone();
-            invoke_with_this(module, globals, &target, args, Some(this), start)
+            invoke_with_this::<TRACE>(module, globals, &target, args, Some(this), start)
         }
         Value::Type(t) => {
             let instance = Value::Instance(Rc::new(Instance {
@@ -613,7 +671,14 @@ fn invoke(
                 fields: RefCell::new(HashMap::new()),
             }));
             if let Some(init) = t.methods.borrow().get("__init__").cloned() {
-                invoke_with_this(module, globals, &init, args, Some(instance.clone()), start)?;
+                invoke_with_this::<TRACE>(
+                    module,
+                    globals,
+                    &init,
+                    args,
+                    Some(instance.clone()),
+                    start,
+                )?;
             } else if !args.is_empty() {
                 return Err(format!(
                     "{}() takes 0 arguments but {} were given",
@@ -628,7 +693,7 @@ fn invoke(
     }
 }
 
-fn invoke_with_this(
+fn invoke_with_this<const TRACE: bool>(
     module: &Module,
     globals: &mut Globals,
     callee: &Value,
@@ -639,14 +704,14 @@ fn invoke_with_this(
     match callee {
         Value::Closure(c) => {
             let proto = Rc::clone(&module.functions[c.proto_index]);
-            execute(module, globals, &proto, args, this, start)
+            execute::<TRACE>(module, globals, &proto, args, this, start)
         }
         Value::BoundMethod(m) => {
             let target = m.target.clone();
             let this = m.this.clone();
-            invoke_with_this(module, globals, &target, args, Some(this), start)
+            invoke_with_this::<TRACE>(module, globals, &target, args, Some(this), start)
         }
-        _ => invoke(module, globals, callee, args, start),
+        _ => invoke::<TRACE>(module, globals, callee, args, start),
     }
 }
 
@@ -669,7 +734,7 @@ enum Flow {
 ///
 /// Errors raised while executing a word are annotated with that word's source
 /// position; the trace grows as the error unwinds through callers.
-fn execute(
+fn execute<const TRACE: bool>(
     module: &Module,
     globals: &mut Globals,
     proto: &Proto,
@@ -773,7 +838,7 @@ fn execute(
                 CALL => {
                     let callee = regs[a].clone();
                     let call_args: Vec<Value> = regs[a + 1..a + 1 + c].to_vec();
-                    regs[a] = invoke(module, globals, &callee, call_args, start)?;
+                    regs[a] = invoke::<TRACE>(module, globals, &callee, call_args, start)?;
                 }
                 RET => return Ok(Flow::Return(regs[a].clone())),
                 OPEN_ITER => {
@@ -849,9 +914,32 @@ fn execute(
             Ok(Flow::Next)
         })();
         match step {
-            Ok(Flow::Next) => pc += 1,
-            Ok(Flow::Jump(target)) => pc = target,
-            Ok(Flow::Return(value)) => return Ok(value),
+            Ok(Flow::Next) => {
+                if TRACE {
+                    let mut text = trace_text(proto, pc, op, a, b, c, bx);
+                    if let Some(value) = regs.get(a) {
+                        text.push_str(&format!(" -> R{a}={}", display(value)));
+                    }
+                    eprintln!("{text}");
+                }
+                pc += 1;
+            }
+            Ok(Flow::Jump(target)) => {
+                if TRACE {
+                    eprintln!("{} -> pc={target}", trace_text(proto, pc, op, a, b, c, bx));
+                }
+                pc = target;
+            }
+            Ok(Flow::Return(value)) => {
+                if TRACE {
+                    eprintln!(
+                        "{} -> ret {}",
+                        trace_text(proto, pc, op, a, b, c, bx),
+                        display(&value)
+                    );
+                }
+                return Ok(value);
+            }
             Err(error) => {
                 let pos = proto.positions.get(pc).copied();
                 return Err(annotate_error(&proto.name, &proto.filename, pos, error));
@@ -859,6 +947,27 @@ fn execute(
         }
     }
     Ok(Value::Null)
+}
+
+/// One trace line: decoded operands plus the instruction's source line.
+fn trace_text(
+    proto: &Proto,
+    pc: usize,
+    op: u32,
+    a: usize,
+    b: usize,
+    c: usize,
+    bx: usize,
+) -> String {
+    let name = match opcode_name(op) {
+        Some(name) => name.to_string(),
+        None => format!("OP{op}"),
+    };
+    let line = proto.positions.get(pc).map_or(0, |pos| pos.line);
+    format!(
+        "[{}] {pc:04}  {name} a={a} b={b} c={c} bx={bx}  ; line {line}",
+        proto.name
+    )
 }
 
 fn const_str(c: &Constant) -> VResult<&str> {
@@ -901,6 +1010,14 @@ fn get_attr(receiver: &Value, name: &str) -> VResult<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opcode_names_cover_implemented_instructions() {
+        assert_eq!(opcode_name(LOAD_K), Some("LOAD_K"));
+        assert_eq!(opcode_name(ADD), Some("ADD"));
+        assert_eq!(opcode_name(0), None);
+        assert_eq!(opcode_name(255), None);
+    }
 
     #[test]
     fn floor_div_matches_python() {

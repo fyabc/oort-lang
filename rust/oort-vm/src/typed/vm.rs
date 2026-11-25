@@ -28,6 +28,7 @@ pub struct TypedVm {
     adt_decls: Vec<TypedAdtDecl>,
     pool: FramePool,
     globals: GlobalTable,
+    trace: bool,
 }
 
 /// Reusable register frames; LIFO reuse matches recursive call unwinding.
@@ -183,7 +184,13 @@ impl TypedVm {
             adt_decls,
             pool: FramePool::new(),
             globals,
+            trace: false,
         }
+    }
+
+    /// Enable or disable the per-instruction trace on stderr.
+    pub fn set_trace(&mut self, trace: bool) {
+        self.trace = trace;
     }
 
     /// Bump the globals version; cached `LOAD_G` targets refresh lazily.
@@ -196,9 +203,14 @@ impl TypedVm {
         let main = &self.main;
         let globals = &self.globals;
         let adt_decls = &self.adt_decls;
+        let trace = self.trace;
         let pool = &mut self.pool;
         let mut frame = pool.acquire(main.proto.register_count as usize);
-        let result = execute(main, functions, globals, adt_decls, pool, &mut frame, None);
+        let result = if trace {
+            execute::<true>(main, functions, globals, adt_decls, pool, &mut frame, None)
+        } else {
+            execute::<false>(main, functions, globals, adt_decls, pool, &mut frame, None)
+        };
         pool.release(frame);
         result.and_then(to_value)
     }
@@ -223,7 +235,7 @@ enum Flow {
 ///
 /// Any error raised while executing a word is annotated with that word's
 /// source position; the trace grows as the error unwinds through callers.
-fn execute(
+fn execute<const TRACE: bool>(
     resolved: &ResolvedProto,
     functions: &[ResolvedProto],
     globals: &GlobalTable,
@@ -599,7 +611,7 @@ fn execute(
                 }
                 CALL => {
                     let callee = registers[a].clone();
-                    let result = call(
+                    let result = call::<TRACE>(
                         functions,
                         globals,
                         adt_decls,
@@ -617,9 +629,34 @@ fn execute(
             Ok(Flow::Next)
         })();
         match step {
-            Ok(Flow::Next) => pc += 1,
-            Ok(Flow::Jump(target)) => pc = target,
-            Ok(Flow::Return(value)) => return Ok(value),
+            Ok(Flow::Next) => {
+                if TRACE {
+                    let mut text = trace_text(proto, pc, op, a, b, c, bx);
+                    if let Some(dest) = trace_dest(op, a, c) {
+                        if let Some(value) = registers.get(dest) {
+                            text.push_str(&format!(" -> R{dest}={}", display_typed(value)));
+                        }
+                    }
+                    eprintln!("{text}");
+                }
+                pc += 1;
+            }
+            Ok(Flow::Jump(target)) => {
+                if TRACE {
+                    eprintln!("{} -> pc={target}", trace_text(proto, pc, op, a, b, c, bx));
+                }
+                pc = target;
+            }
+            Ok(Flow::Return(value)) => {
+                if TRACE {
+                    eprintln!(
+                        "{} -> ret {}",
+                        trace_text(proto, pc, op, a, b, c, bx),
+                        display_typed(&value)
+                    );
+                }
+                return Ok(value);
+            }
             Err(error) => {
                 let pos = proto.positions.get(pc).copied();
                 return Err(annotate_error(&proto.name, &proto.filename, pos, error));
@@ -634,7 +671,39 @@ fn execute(
     ))
 }
 
-fn call(
+/// One trace line: decoded operands plus the instruction's source line.
+fn trace_text(
+    proto: &TypedProto,
+    pc: usize,
+    op: u32,
+    a: usize,
+    b: usize,
+    c: usize,
+    bx: usize,
+) -> String {
+    let name = match super::opcodes::name(op) {
+        Some(name) => name.to_string(),
+        None => format!("OP{op}"),
+    };
+    let line = proto.positions.get(pc).map_or(0, |pos| pos.line);
+    format!(
+        "[{}] {pc:04}  {name} a={a} b={b} c={c} bx={bx}  ; line {line}",
+        proto.name
+    )
+}
+
+/// Register that receives an instruction's result, when it has one. Operand
+/// layouts differ per opcode: calls and container builders write `C`, most
+/// others write `A`, and control flow writes no register.
+fn trace_dest(op: u32, a: usize, c: usize) -> Option<usize> {
+    match op {
+        JMP | JMP_FALSE | JMP_TRUE | RET => None,
+        CALL | NEW_LIST | NEW_TUPLE | NEW_SET | NEW_DICT | NEW_ADT | SLICE => Some(c),
+        _ => Some(a),
+    }
+}
+
+fn call<const TRACE: bool>(
     functions: &[ResolvedProto],
     globals: &GlobalTable,
     adt_decls: &[TypedAdtDecl],
@@ -664,7 +733,7 @@ fn call(
             for (slot, value) in frame.iter_mut().zip(arguments) {
                 *slot = value.clone();
             }
-            let result = execute(
+            let result = execute::<TRACE>(
                 resolved,
                 functions,
                 globals,
@@ -695,7 +764,7 @@ fn call(
             for (slot, value) in frame.iter_mut().zip(arguments) {
                 *slot = value.clone();
             }
-            let result = execute(
+            let result = execute::<TRACE>(
                 resolved, functions, globals, adt_decls, pool, &mut frame, None,
             );
             pool.release(frame);
@@ -857,10 +926,11 @@ mod tests {
         };
         let mut pool = FramePool::new();
         let mut frame = vec![TypedValue::Unit; 3];
-        let error = match execute(&resolved, &[], &globals, &[], &mut pool, &mut frame, None) {
-            Err(error) => error,
-            Ok(_) => panic!("expected a runtime error"),
-        };
+        let error =
+            match execute::<false>(&resolved, &[], &globals, &[], &mut pool, &mut frame, None) {
+                Err(error) => error,
+                Ok(_) => panic!("expected a runtime error"),
+            };
         assert!(error.starts_with("main.ort:7:5: error: "), "{error}");
     }
 
