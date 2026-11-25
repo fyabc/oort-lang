@@ -17,6 +17,7 @@ use num_rational::BigRational;
 use num_traits::{ToPrimitive, Zero};
 
 use crate::obc::{annotate_error, Constant, Module, Proto};
+use crate::opcodes::*;
 
 pub type Globals = HashMap<String, Value>;
 
@@ -80,81 +81,6 @@ pub struct Instance {
 pub struct IterState {
     pub values: Vec<Value>,
     pub index: usize,
-}
-
-// Opcodes (spec 12 / opcodes.py).
-const LOAD_K: u32 = 1;
-const LOAD_L: u32 = 2;
-const STORE_L: u32 = 3;
-const LOAD_G: u32 = 4;
-const STORE_G: u32 = 5;
-const DEF_FUN: u32 = 6;
-const MOVE: u32 = 7;
-const ADD: u32 = 10;
-const SUB: u32 = 11;
-const MUL: u32 = 12;
-const DIV: u32 = 13;
-const FLOORDIV: u32 = 14;
-const MOD: u32 = 15;
-const EQ: u32 = 22;
-const NE: u32 = 23;
-const LT: u32 = 24;
-const LE: u32 = 25;
-const GT: u32 = 26;
-const GE: u32 = 27;
-const NEG: u32 = 36;
-const POS: u32 = 35;
-const INVERT: u32 = 37;
-const NOT: u32 = 38;
-const JUMP: u32 = 40;
-const JUMP_FALSE: u32 = 41;
-const JUMP_TRUE: u32 = 42;
-const CALL: u32 = 43;
-const RET: u32 = 44;
-const OPEN_ITER: u32 = 45;
-const ITER_NEXT: u32 = 46;
-const GET_ATTR: u32 = 57;
-const SET_ATTR: u32 = 58;
-const BUILD_CLASS: u32 = 62;
-
-/// Human-readable opcode name for tracing; `None` for unassigned numbers.
-fn opcode_name(op: u32) -> Option<&'static str> {
-    Some(match op {
-        LOAD_K => "LOAD_K",
-        LOAD_L => "LOAD_L",
-        STORE_L => "STORE_L",
-        LOAD_G => "LOAD_G",
-        STORE_G => "STORE_G",
-        DEF_FUN => "DEF_FUN",
-        MOVE => "MOVE",
-        ADD => "ADD",
-        SUB => "SUB",
-        MUL => "MUL",
-        DIV => "DIV",
-        FLOORDIV => "FLOORDIV",
-        MOD => "MOD",
-        EQ => "EQ",
-        NE => "NE",
-        LT => "LT",
-        LE => "LE",
-        GT => "GT",
-        GE => "GE",
-        NEG => "NEG",
-        POS => "POS",
-        INVERT => "INVERT",
-        NOT => "NOT",
-        JUMP => "JUMP",
-        JUMP_FALSE => "JUMP_FALSE",
-        JUMP_TRUE => "JUMP_TRUE",
-        CALL => "CALL",
-        RET => "RET",
-        OPEN_ITER => "OPEN_ITER",
-        ITER_NEXT => "ITER_NEXT",
-        GET_ATTR => "GET_ATTR",
-        SET_ATTR => "SET_ATTR",
-        BUILD_CLASS => "BUILD_CLASS",
-        _ => return None,
-    })
 }
 
 type VResult<T> = Result<T, String>;
@@ -959,7 +885,7 @@ fn trace_text(
     c: usize,
     bx: usize,
 ) -> String {
-    let name = match opcode_name(op) {
+    let name = match crate::opcodes::name(op) {
         Some(name) => name.to_string(),
         None => format!("OP{op}"),
     };
@@ -1013,10 +939,10 @@ mod tests {
 
     #[test]
     fn opcode_names_cover_implemented_instructions() {
-        assert_eq!(opcode_name(LOAD_K), Some("LOAD_K"));
-        assert_eq!(opcode_name(ADD), Some("ADD"));
-        assert_eq!(opcode_name(0), None);
-        assert_eq!(opcode_name(255), None);
+        assert_eq!(crate::opcodes::name(LOAD_K), Some("LOAD_K"));
+        assert_eq!(crate::opcodes::name(ADD), Some("ADD"));
+        assert_eq!(crate::opcodes::name(0), None);
+        assert_eq!(crate::opcodes::name(255), None);
     }
 
     #[test]

@@ -23,7 +23,7 @@ pub(crate) type TResult<T> = Result<T, String>;
 
 mod decode;
 mod link;
-mod opcodes;
+pub(crate) mod opcodes;
 mod value;
 mod vm;
 

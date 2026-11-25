@@ -935,6 +935,46 @@ def trace_check(rust_bin: Path) -> bool:
         return True
 
 
+def disasm_check(rust_bin: Path) -> bool:
+    print("\n== disassembly (Rust --disasm) ==")
+    cases = [
+        (
+            "dynamic",
+            "def add(a, b) { a + b }\nprint(add(2, 3))\n",
+            compile_to_obc,
+            ["Proto <main>", "ADD", "CALL"],
+        ),
+        (
+            "typed",
+            ("#lang oort-core\n\ndef add(a: Int, b: Int) -> Int { a + b }\n\nprint(add(2, 3))\n"),
+            compile_to_linked_bundle,
+            ["<main>() -> Unit", "ADD_I", "CALL"],
+        ),
+    ]
+    ok = True
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, source, compile_fn, needles in cases:
+            obc = Path(tmp) / f"{name}-disasm.obc"
+            compile_fn(source, obc)
+            proc = rust_result(rust_bin, obc, extra=["--disasm"])
+            problems: list[str] = []
+            if proc.returncode != 0:
+                problems.append(f"exit {proc.returncode}")
+            if proc.stderr.strip():
+                problems.append(f"stderr {proc.stderr.strip()!r}")
+            for needle in needles:
+                if needle not in proc.stdout:
+                    problems.append(f"missing {needle!r}")
+            if proc.stdout.strip() == "5":
+                problems.append("program was executed")
+            if problems:
+                ok = False
+                print(f"  {name:16s} FAIL ({'; '.join(problems)})")
+            else:
+                print(f"  {name:16s} OK")
+    return ok
+
+
 def benchmark(rust_bin: Path, repeat: int) -> None:
     print(f"\n== benchmark (Rust VM, median of {repeat}, program-internal ms/rep) ==")
     with tempfile.TemporaryDirectory() as tmp:
@@ -975,6 +1015,7 @@ def main() -> int:
         ok = typed_differential(rust_bin) and ok
         ok = error_differential(rust_bin) and ok
         ok = trace_check(rust_bin) and ok
+        ok = disasm_check(rust_bin) and ok
     if not options.diff_only:
         benchmark(rust_bin, options.repeat)
     return 0 if ok else 1
