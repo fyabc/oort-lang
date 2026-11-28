@@ -73,7 +73,10 @@ class TypedCodeVM:
     def __init__(self, interpreter: ASTInterpreter):
         self.interpreter = interpreter
         self.runtime = interpreter.runtime
-        self.globals: dict[str, TypedCodeFunction] = {}
+        # Module functions plus runtime global values written by STORE_G
+        # (top-level val/var bindings; a function entry and a value entry
+        # share this namespace by name).
+        self.globals: dict[str, Any] = {}
         self._program: TypedProgram | None = None
         self._adt_types: dict[str, OortType] = {}
         self._adt_by_name: dict[str, int] = {}
@@ -168,6 +171,13 @@ class TypedCodeVM:
                     registers[a] = registers[b]
             elif op is TypedOp.LOAD_G:
                 registers[a] = self._load_global(proto, bx, position)
+            elif op is TypedOp.STORE_G:
+                name = proto.constants[bx]
+                if not isinstance(name, str):
+                    raise OortTypeError("Invalid global name constant.", position)
+                # Top-level val/var bindings share the global namespace with
+                # functions; assignment shadows any earlier entry.
+                self.globals[name] = registers[a]
             elif op is TypedOp.DEF_FUN:
                 name = proto.constants[a]
                 if not isinstance(name, str):
@@ -439,9 +449,8 @@ class TypedCodeVM:
         name = proto.constants[index]
         if not isinstance(name, str):
             raise OortTypeError("Invalid global name constant.", position)
-        function = self.globals.get(name)
-        if function is not None:
-            return function
+        if name in self.globals:
+            return self.globals[name]
         entry = self.env.get(name)
         if entry is None:
             raise OortNameError(f"Unknown name '{name}'.", position)

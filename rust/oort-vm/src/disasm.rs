@@ -234,6 +234,7 @@ fn format_typed(proto: &TypedProto, word: u32) -> String {
         typed_op::LOAD_L => format!("LOAD_L R{} slot{}", f.a, f.b),
         typed_op::STORE_L => format!("STORE_L slot{} R{}", f.a, f.b),
         typed_op::LOAD_G => format!("LOAD_G R{} {}", f.a, typed_constant(proto, f.bx)),
+        typed_op::STORE_G => format!("STORE_G R{} {}", f.a, typed_constant(proto, f.bx)),
         typed_op::DEF_FUN => format!("DEF_FUN {} proto[{}]", typed_constant(proto, f.a), f.bx),
         typed_op::MOVE => format!("MOVE R{} R{}", f.a, f.b),
         typed_op::TO_FLOAT => format!("TO_FLOAT R{} R{}", f.a, f.b),

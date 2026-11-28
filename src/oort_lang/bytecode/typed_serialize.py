@@ -2,11 +2,13 @@
 
 """Serialization of typed bytecode (``.obc`` kind=1, design 15).
 
-Version 8 stores a module-level ADT declaration table plus a per-proto type
-table: register/param/return types are type-table indices, composite types
-reference earlier entries, and ADT types reference module declarations. Each
-proto also carries its cell-slot table for shared closure captures. The
-tables only describe static types; values remain runtime values.
+Version 11 adds the STORE_G opcode (top-level val/var bindings; A is the
+source register, Bx a name constant). Version 8 stored a module-level ADT
+declaration table plus a per-proto type table: register/param/return types
+are type-table indices, composite types reference earlier entries, and ADT
+types reference module declarations. Each proto also carries its cell-slot
+table for shared closure captures. The tables only describe static types;
+values remain runtime values.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from .serialize import MAGIC, ObcError, _read_constant, _Reader, _write_constant
 from .typed_compile import TypedProgram, TypedProto
 
 KIND_TYPED = 1
-VERSION = 10
+VERSION = 11
 
 _SCALAR_BY_TAG = {
     1: IrType.INT,

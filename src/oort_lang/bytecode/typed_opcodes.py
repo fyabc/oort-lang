@@ -113,6 +113,7 @@ class TypedOp(IntEnum):
     SET_PROPER_SUPERSET = 95
     CMP_LIST = 96
     LIST_CONCAT = 97
+    STORE_G = 98
 
 
 # ABC: [op:8][A:8][B:8][C:8]
@@ -197,6 +198,7 @@ ABX_OPS = frozenset(
     {
         TypedOp.LOAD_K,
         TypedOp.LOAD_G,
+        TypedOp.STORE_G,
         TypedOp.DEF_FUN,
         TypedOp.JMP,
         TypedOp.JMP_FALSE,

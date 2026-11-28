@@ -158,7 +158,7 @@ fn read_proto(r: &mut Reader<'_>, adt_decls: &[TypedAdtDecl]) -> TResult<TypedPr
     })
 }
 
-/// Read a single-module typed program (kind=1, proto version 10): ADT
+/// Read a single-module typed program (kind=1, proto version 11): ADT
 /// declarations, function protos, then main. Used for `-t tvm` artifacts that
 /// were never split into modules.
 pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
@@ -170,7 +170,7 @@ pub fn read_typed_module(data: &[u8]) -> TResult<TypedModule> {
         return Err(format!("expected typed bytecode (kind=1), got kind={kind}"));
     }
     let version = data[4];
-    if version != 10 {
+    if version != 11 {
         return Err(format!("unsupported typed bytecode version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -218,7 +218,7 @@ pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
         ));
     }
     let version = data[4];
-    if version != 5 {
+    if version != 6 {
         return Err(format!("unsupported linked bundle version {version}"));
     }
     let mut r = Reader::new(&data[5..]);
@@ -281,7 +281,7 @@ pub fn read_linked_bundle(data: &[u8]) -> TResult<TypedModule> {
     })
 }
 
-/// Read a kind=1 module artifact (v12). Version 10 is the standalone
+/// Read a kind=1 module artifact (v13). Version 10 was the standalone
 /// single-module format and is not accepted here.
 pub fn read_typed_artifact(data: &[u8]) -> TResult<TypedArtifact> {
     if data.len() < 5 || &data[0..3] != b"OBC" {
@@ -294,7 +294,7 @@ pub fn read_typed_artifact(data: &[u8]) -> TResult<TypedArtifact> {
         ));
     }
     let version = data[4];
-    if version != 12 {
+    if version != 13 {
         return Err(format!(
             "unsupported typed module artifact version {version}"
         ));

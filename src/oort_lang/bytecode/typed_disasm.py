@@ -27,6 +27,8 @@ def _format_instruction(proto: TypedProto, word: int) -> str:
         return f"STORE_L slot{a} R{b}"
     if op is TypedOp.LOAD_G:
         return f"LOAD_G R{a} {proto.constants[bx]!r}"
+    if op is TypedOp.STORE_G:
+        return f"STORE_G R{a} {proto.constants[bx]!r}"
     if op is TypedOp.DEF_FUN:
         return f"DEF_FUN {proto.constants[a]!r} proto[{bx}]"
     if op is TypedOp.MOVE:

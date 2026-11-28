@@ -416,7 +416,9 @@ class Compiler:
             from ..hir.typed_link import load_typed_units
 
             resolve = self._make_typed_resolver(path.parent if path else entry_dir)
-            units = load_typed_units(ast, path, resolve)
+            # The boundary binds exported functions only; module-level values
+            # do not cross the object→core boundary yet (OP 0028).
+            units = load_typed_units(ast, path, resolve, allow_top_level=False)
             program, exports = build_typed_program_exports(units, self._typed_cache())
             run_core(env, interpreter, program, exports)
 
@@ -446,7 +448,9 @@ class Compiler:
             from ..hir.typed_link import load_typed_units
 
             resolve = self._make_typed_resolver(path.parent if path else entry_dir)
-            units = load_typed_units(ast, path, resolve)
+            # The boundary binds exported functions only; module-level values
+            # do not cross the object→core boundary yet (OP 0028).
+            units = load_typed_units(ast, path, resolve, allow_top_level=False)
             program, exports = build_typed_program_exports(units, self._typed_cache())
             run_core(env, interpreter, program, exports)
 

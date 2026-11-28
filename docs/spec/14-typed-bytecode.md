@@ -12,14 +12,14 @@
   Rust `rust/oort-vm/src/typed.rs`；
 - 类型系统与 typed HIR 的研究背景见 [design 15](../design/15-typed-ir.md)；
 - kind=0、kind=1 与 kind=2 互斥：各自读者必须拒绝其他 kind；
-- kind=2 是 loader 链接后的 typed linked bundle（v5，见 design 19 §3.1），
+- kind=2 是 loader 链接后的 typed linked bundle（v6，见 design 19 §3.1），
   只保存合并声明表、扁平构造器表与 proto，不含 import/export。
 
 ## 2. 文件头与布局
 
 ```text
-magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=10)
-# v10 单模块布局；v12 module artifact 的头部（module_id/export/import/
+magic "OBC" (3 bytes) | kind u8 (=1) | version u8 (=11)
+# v11 单模块布局；v13 module artifact 的头部（module_id/export/import/
 # constructor 表）见 design 19
 u32 adt_decl_count
 adt_decl[adt_decl_count]:
@@ -168,6 +168,7 @@ ABx: [op:8][A:8][Bx:16]
 | 95 | `SET_PROPER_SUPERSET` | ABC | 同上 | 真超集：超集且元素数更多（`>`） |
 | 96 | `CMP_LIST` | ABC | A=目标 Int, B=左 List, C=右 List | 字典序比较：-1/0/1（元素按值相等跳过前缀，再比较首个不同元素，最后比长度） |
 | 97 | `LIST_CONCAT` | ABC | A=目标, B=左 List, C=右 List | 拼接为新 List，不修改操作数 |
+| 98 | `STORE_G` | ABx | A=源寄存器, Bx=名字常量 | 顶层 `val`/`var` 绑定：写入全局表并失效 `LOAD_G` 缓存；读先于写在运行时报 unknown name |
 
 ### 3.2 调用约定
 
@@ -271,23 +272,25 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
 - 支持单态与泛型 ADT（含 prelude `Option`）；类型参数进入类型表并在运行时
   作为 ADT 实例身份保留；match 支持 ADT/Int/Float/Bool/String/Tuple
   scrutinee，构造器/通配/变量/守卫/字面量/Tuple/或模式与嵌套组合；
-- 无切片赋值/步长切片、Set 子集比较、列表拼接/排序；类/接口/泛型函数仍拒绝；
+- 无切片赋值/步长切片；类/接口/泛型函数仍拒绝；顶层 `val`/`var` 声明在
+  入口模块可用（`STORE_G`/`LOAD_G`，函数体可读写 `var` 全局；依赖模块与
+  B1 边界仍拒绝，模块级值不跨模块导出）；
   函数值比较/打印仍拒绝；typed 模块导入在 loader 中解析，
   函数体不进入 kind=1 字节码；
-- kind=1 有两个不再互读的版本：**v10** 为单模块程序（含 proto cell 表），
-  **v12** 为 module artifact（module_id/export/import 表 + 构造器表；
-  v6–v11 为历史格式）；
+- kind=1 有两个不再互读的版本：**v11** 为单模块程序（含 proto cell 表与
+  `STORE_G` 顶层绑定），**v13** 为 module artifact（module_id/export/import
+  表 + 构造器表；v6–v12 为历史格式）；
   ADT 模块声明表位于文件头；旧读者遇到未知 version/opcode/tag 必须报错
   而不是猜测；破坏既有布局的变更必须提升 version；
-- `-t tvm` 与 `-t tbc` 共享 v12 artifact + loader 的同一链接结果（tbc 只是
-  反汇编该程序）；`--cache-dir DIR`/`OORT_CACHE_DIR` 复用磁盘上的 v12 artifact，`--no-cache` 关闭，`--cache-max-size` 限制容量（缓存契约见
+- `-t tvm` 与 `-t tbc` 共享 v13 artifact + loader 的同一链接结果（tbc 只是
+  反汇编该程序）；`--cache-dir DIR`/`OORT_CACHE_DIR` 复用磁盘上的 v13 artifact，`--no-cache` 关闭，`--cache-max-size` 限制容量（缓存契约见
   [OP 0030](../proposals/0030-compilation-cache.md)）；`-t thir` 仍用
   P1a/P1b 的 HIR 拍平器，作为链接前的调试视图；
 - kind=1 本身不编码跨方言边界；`oort-object → oort-core` 由 B1
   边界（OP 0028）处理，反向仍拒绝；`box`/`unbox`/blame 的稳定 ABI
   尚未定义；
-- 单模块格式版本 `version=8`，module artifact 版本 `version=10`，
-  linked bundle `kind=2, version=3`；不兼容变更
+- 单模块格式版本 `version=11`，module artifact 版本 `version=13`，
+  linked bundle `kind=2, version=6`；不兼容变更
   必须提升 version，并保持 kind=1 的独立命名空间。
 
 ## 6. 参考实现入口
@@ -296,5 +299,5 @@ String（元素为单字符 String）；Set 迭代元素，Dict 迭代键。迭�
 |---|---|
 | Python | `bytecode/typed_compile.py`、`typed_artifact.py`、`typed_vm.py`、`typed_serialize.py` |
 | CLI | `-t tbc`（反汇编）、`-t tvm`（执行） |
-| Rust | `rust/oort-vm/src/typed.rs`；`oort-vm <file.obc>` 按 kind 分派；`oort-vm --link <root.obc> <dep.obc>...` 原生链接 v12 artifact |
+| Rust | `rust/oort-vm/src/typed.rs`；`oort-vm <file.obc>` 按 kind 分派；`oort-vm --link <root.obc> <dep.obc>...` 原生链接 v13 artifact |
 | 差分 | `scripts/rust_vm_check.py --diff-only`（含 typed 程序） |

@@ -153,7 +153,9 @@ def test_object_import_of_core_module_requires_typed_subset(tmp_path, caplog):
     main = _write(tmp_path, "main.ort", 'import "./lib"\n')
     with pytest.raises(CompilerError):
         _run(main)
-    assert "does not support top-level declarations or assignments" in caplog.text
+    assert (
+        "top-level declarations in modules executed across the object→core boundary" in caplog.text
+    )
 
 
 def test_class_with_inferred_methods_exported(tmp_path, run_file):

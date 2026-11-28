@@ -56,80 +56,111 @@ impl FramePool {
     }
 }
 
-#[derive(Clone, Copy)]
+/// A resolved `LOAD_G` target. Values are cloned out of their slot; caching
+/// them is sound because `STORE_G` bumps the version, forcing a re-resolve.
+#[derive(Clone)]
 enum TypedGlobal {
     Function(usize),
     Native(TypedNative),
+    Value(TypedValue),
 }
 
 /// A cached `LOAD_G` target. The version makes invalidation lazy: a globals
 /// write bumps `GlobalTable::version`, and the next load refreshes the entry.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct CachedGlobal {
     version: u64,
     target: TypedGlobal,
 }
 
-/// Runtime global bindings. kind=1 currently has no writes (top-level
-/// functions and `print` only), but the version hook lets a future `STORE_G`
-/// invalidate caches without changing `.obc` or the resolver.
+enum GlobalSlot {
+    Function(usize),
+    Native(TypedNative),
+    /// A top-level val/var binding written by `STORE_G`; `main` initializes
+    /// these in module order, so reads before the store are "unknown name".
+    Value(RefCell<TypedValue>),
+}
+
+/// Runtime global bindings: module functions, natives and top-level values.
+/// Interior mutability keeps `execute`'s `&GlobalTable` while `STORE_G`
+/// writes; the version hook invalidates cached `LOAD_G` targets.
 struct GlobalTable {
-    version: u64,
-    bindings: HashMap<String, TypedGlobal>,
+    version: Cell<u64>,
+    bindings: RefCell<HashMap<String, GlobalSlot>>,
 }
 
 impl GlobalTable {
     fn from_module(module: &TypedModule) -> Self {
-        let mut bindings: HashMap<String, TypedGlobal> = module
+        let mut bindings: HashMap<String, GlobalSlot> = module
             .functions
             .iter()
             .enumerate()
-            .map(|(index, proto)| (proto.name.clone(), TypedGlobal::Function(index)))
+            .map(|(index, proto)| (proto.name.clone(), GlobalSlot::Function(index)))
             .collect();
         // A user function named `print` keeps precedence over the native.
         bindings
             .entry("print".to_string())
-            .or_insert(TypedGlobal::Native(TypedNative::Print));
+            .or_insert(GlobalSlot::Native(TypedNative::Print));
         bindings
             .entry("len".to_string())
-            .or_insert(TypedGlobal::Native(TypedNative::Len));
+            .or_insert(GlobalSlot::Native(TypedNative::Len));
         bindings
             .entry("sorted".to_string())
-            .or_insert(TypedGlobal::Native(TypedNative::Sorted));
+            .or_insert(GlobalSlot::Native(TypedNative::Sorted));
         GlobalTable {
-            version: 0,
-            bindings,
+            version: Cell::new(0),
+            bindings: RefCell::new(bindings),
         }
     }
 
-    fn lookup(&self, name: &str) -> Option<TypedGlobal> {
-        self.bindings.get(name).copied()
+    fn version(&self) -> u64 {
+        self.version.get()
     }
 
-    fn invalidate(&mut self) {
-        self.version = self.version.wrapping_add(1);
+    fn lookup(&self, name: &str) -> Option<TypedGlobal> {
+        match self.bindings.borrow().get(name) {
+            Some(GlobalSlot::Function(index)) => Some(TypedGlobal::Function(*index)),
+            Some(GlobalSlot::Native(native)) => Some(TypedGlobal::Native(*native)),
+            Some(GlobalSlot::Value(value)) => Some(TypedGlobal::Value(value.borrow().clone())),
+            None => None,
+        }
+    }
+
+    /// `STORE_G`: define or overwrite a global, then invalidate caches.
+    fn store(&self, name: &str, value: TypedValue) {
+        self.bindings
+            .borrow_mut()
+            .insert(name.to_string(), GlobalSlot::Value(RefCell::new(value)));
+        self.invalidate();
+    }
+
+    fn invalidate(&self) {
+        self.version.set(self.version.get().wrapping_add(1));
     }
 }
 
 /// A proto plus its `LOAD_G` cache, keyed by constant-pool index.
 struct ResolvedProto {
     proto: Rc<TypedProto>,
-    globals: Vec<Cell<Option<CachedGlobal>>>,
+    globals: Vec<RefCell<Option<CachedGlobal>>>,
 }
 
-fn resolve_globals(proto: &TypedProto, globals: &GlobalTable) -> Vec<Cell<Option<CachedGlobal>>> {
+fn resolve_globals(
+    proto: &TypedProto,
+    globals: &GlobalTable,
+) -> Vec<RefCell<Option<CachedGlobal>>> {
     proto
         .constants
         .iter()
         .map(|constant| match constant {
             Constant::Str(name) => match globals.lookup(name) {
-                Some(target) => Cell::new(Some(CachedGlobal {
-                    version: globals.version,
+                Some(target) => RefCell::new(Some(CachedGlobal {
+                    version: globals.version(),
                     target,
                 })),
-                None => Cell::new(None),
+                None => RefCell::new(None),
             },
-            _ => Cell::new(None),
+            _ => RefCell::new(None),
         })
         .collect()
 }
@@ -143,9 +174,9 @@ fn resolve_global(
         .globals
         .get(index)
         .ok_or("invalid global constant index")?;
-    if let Some(cached) = entry.get() {
-        if cached.version == globals.version {
-            return Ok(cached.target);
+    if let Some(cached) = entry.borrow().as_ref() {
+        if cached.version == globals.version() {
+            return Ok(cached.target.clone());
         }
     }
     let name = match resolved.proto.constants.get(index) {
@@ -155,10 +186,10 @@ fn resolve_global(
     let target = globals
         .lookup(name)
         .ok_or_else(|| format!("unknown name '{name}'"))?;
-    entry.set(Some(CachedGlobal {
-        version: globals.version,
-        target,
-    }));
+    *entry.borrow_mut() = Some(CachedGlobal {
+        version: globals.version(),
+        target: target.clone(),
+    });
     Ok(target)
 }
 
@@ -285,7 +316,16 @@ fn execute<const TRACE: bool>(
                     registers[a] = match resolve_global(resolved, globals, bx)? {
                         TypedGlobal::Function(index) => TypedValue::Function(index),
                         TypedGlobal::Native(native) => TypedValue::Native(native),
+                        TypedGlobal::Value(value) => value,
                     };
+                }
+                STORE_G => {
+                    // A=source register, Bx=name constant (mirrors LOAD_G).
+                    let name = match proto.constants.get(bx) {
+                        Some(Constant::Str(name)) => name.as_ref(),
+                        _ => return Err("invalid global name constant".into()),
+                    };
+                    globals.store(name, registers[a].clone());
                 }
                 DEF_FUN => {}
                 MK_FUN => {
@@ -697,7 +737,7 @@ fn trace_text(
 /// others write `A`, and control flow writes no register.
 fn trace_dest(op: u32, a: usize, c: usize) -> Option<usize> {
     match op {
-        JMP | JMP_FALSE | JMP_TRUE | RET => None,
+        JMP | JMP_FALSE | JMP_TRUE | RET | STORE_G | STORE_OUTER => None,
         CALL | NEW_LIST | NEW_TUPLE | NEW_SET | NEW_DICT | NEW_ADT | SLICE => Some(c),
         _ => Some(a),
     }
@@ -837,23 +877,23 @@ mod tests {
             ],
         };
         let globals = GlobalTable {
-            version: 0,
-            bindings: HashMap::from([
-                ("f".to_string(), TypedGlobal::Function(0)),
-                ("print".to_string(), TypedGlobal::Native(TypedNative::Print)),
-            ]),
+            version: Cell::new(0),
+            bindings: RefCell::new(HashMap::from([
+                ("f".to_string(), GlobalSlot::Function(0)),
+                ("print".to_string(), GlobalSlot::Native(TypedNative::Print)),
+            ])),
         };
 
         let cells = resolve_globals(&proto, &globals);
         assert!(matches!(
-            cells[0].get().unwrap().target,
+            cells[0].borrow().as_ref().unwrap().target,
             TypedGlobal::Function(0)
         ));
         assert!(matches!(
-            cells[1].get().unwrap().target,
+            cells[1].borrow().as_ref().unwrap().target,
             TypedGlobal::Native(TypedNative::Print)
         ));
-        assert!(cells[2].get().is_none());
+        assert!(cells[2].borrow().is_none());
     }
 
     #[test]
@@ -874,11 +914,11 @@ mod tests {
         };
         let resolved = ResolvedProto {
             proto: Rc::new(proto),
-            globals: vec![std::cell::Cell::new(None)],
+            globals: vec![RefCell::new(None)],
         };
-        let mut globals = GlobalTable {
-            version: 0,
-            bindings: HashMap::from([("f".to_string(), TypedGlobal::Function(0))]),
+        let globals = GlobalTable {
+            version: Cell::new(0),
+            bindings: RefCell::new(HashMap::from([("f".to_string(), GlobalSlot::Function(0))])),
         };
 
         assert!(matches!(
@@ -886,16 +926,42 @@ mod tests {
             TypedGlobal::Function(0)
         ));
 
-        globals.invalidate();
-        globals
-            .bindings
-            .insert("f".to_string(), TypedGlobal::Native(TypedNative::Print));
+        globals.store("f", TypedValue::Int(BigInt::from(7)));
         assert!(matches!(
             resolve_global(&resolved, &globals, 0).unwrap(),
-            TypedGlobal::Native(TypedNative::Print)
+            TypedGlobal::Value(_)
         ));
-        let cached = resolved.globals[0].get().unwrap();
-        assert_eq!(cached.version, 1);
+        assert_eq!(globals.version(), 1);
+    }
+
+    #[test]
+    fn store_global_then_load_roundtrip() {
+        let globals = GlobalTable::from_module(&TypedModule {
+            functions: vec![],
+            main: Rc::new(TypedProto {
+                cells: vec![],
+                name: "<main>".into(),
+                is_main: true,
+                register_count: 0,
+                types: vec![],
+                register_types: vec![],
+                param_types: vec![],
+                ret_type: TypedType::Unit,
+                code: vec![],
+                positions: vec![],
+                filename: String::new(),
+                constants: vec![],
+            }),
+            adt_decls: vec![],
+        });
+        globals.store("answer", TypedValue::Int(BigInt::from(42)));
+        match globals.lookup("answer") {
+            Some(TypedGlobal::Value(TypedValue::Int(i))) => {
+                assert_eq!(i, BigInt::from(42));
+            }
+            Some(TypedGlobal::Value(_)) => panic!("unexpected stored value"),
+            _ => panic!("expected a value slot"),
+        }
     }
 
     #[test]
@@ -921,8 +987,8 @@ mod tests {
             globals: vec![],
         };
         let globals = GlobalTable {
-            version: 0,
-            bindings: HashMap::new(),
+            version: Cell::new(0),
+            bindings: RefCell::new(HashMap::new()),
         };
         let mut pool = FramePool::new();
         let mut frame = vec![TypedValue::Unit; 3];

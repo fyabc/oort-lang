@@ -253,6 +253,14 @@ class TypedModule:
     constructors: tuple[ConstructorRef, ...] = ()
     # ADT declarations imported for constructor/type use, not re-exported.
     external_decls: tuple[AdtDecl, ...] = ()
+    # Top-level val/var bindings (name -> declared type) in module order.
+    # Used to validate LoadGlobal/StoreGlobal; empty for dependency modules,
+    # where top-level declarations are rejected.
+    global_types: tuple[tuple[str, IrTypeLike], ...] = ()
+
+    @property
+    def global_types_map(self) -> dict[str, IrTypeLike]:
+        return dict(self.global_types)
 
 
 def _reject(node: nodes.ASTNode, detail: str) -> NoReturn:
@@ -316,11 +324,33 @@ def _ir_type_for_node(node: nodes.ASTNode, *, allow_function: bool = False) -> I
 # ---------------------------------------------------------------------------
 
 
-def _validate_module(module: nodes.ModuleNode) -> None:
+def _validate_module(
+    module: nodes.ModuleNode,
+    *,
+    allow_top_level: bool = True,
+    reject_reason: str = "dependency modules (only the entry module may declare top-level bindings)",
+) -> dict[str, IrTypeLike]:
+    """Validate the module and return its top-level binding types."""
+
+    detail = f"top-level declarations in {reject_reason}"
+    # First pass: top-level declarations declare globals that any function
+    # may reference regardless of position, so collect them up front.
+    global_types: dict[str, IrTypeLike] = {}
     for stmt in module.body.statements:
         if getattr(stmt, "synthetic", False):
             # Compiler-injected nodes (for example the core prelude enums) are
             # not part of the user program.
+            continue
+        if isinstance(stmt, nodes.VarDecl):
+            if not allow_top_level:
+                _reject(stmt, detail)
+            _validate_var_decl(stmt)
+            target_type = stmt.decl_targets[0].metadata.get("type_obj")
+            assert isinstance(target_type, Type)
+            global_types[stmt.decl_targets[0].name] = _ir_type_from(target_type, stmt.position)
+
+    for stmt in module.body.statements:
+        if getattr(stmt, "synthetic", False):
             continue
         if isinstance(stmt, nodes.FunctionDef):
             _validate_function(stmt)
@@ -328,14 +358,22 @@ def _validate_module(module: nodes.ModuleNode) -> None:
         if isinstance(stmt, nodes.EnumDef):
             _validate_enum(stmt)
             continue
-        if isinstance(stmt, (nodes.VarDecl, nodes.Assignment)):
-            _reject(stmt, "top-level declarations or assignments (move them into a function)")
+        if isinstance(stmt, nodes.VarDecl):
+            if not allow_top_level:
+                _reject(stmt, detail)
+            continue  # validated (and collected) in the first pass
+        if isinstance(stmt, nodes.Assignment):
+            if not allow_top_level:
+                _reject(stmt, detail)
+            _validate_assignment(stmt)
+            continue
         if isinstance(stmt, (nodes.ImportStmt, nodes.ImportFromStmt)):
             # P1 linker resolves both forms before typed bytecode.
             continue
         if isinstance(stmt, (nodes.ClassDef, nodes.InterfaceDef)):
             _reject(stmt, f"{type(stmt).__name__.removesuffix('Def')} definitions")
         _validate_expr(stmt)
+    return global_types
 
 
 def _validate_enum(node: nodes.EnumDef) -> None:
@@ -542,11 +580,12 @@ def _validate_expr(node: nodes.ASTNode, *, as_callee: bool = False) -> None:
     if isinstance(node, nodes.Call):
         if node.infix:
             _reject(node, "infix calls")
-        if not isinstance(node.func, (nodes.Name, nodes.Attribute)):
-            _reject(node, "calls to values other than function names")
+        # Any function-typed expression is callable, including the result of
+        # another call (`add(2)(3)`) and function-valued names.
+        _validate_expr(node.func, as_callee=True)
         callee_type = _ir_type_for_node(node.func, allow_function=True)
         if callee_type is not IrType.FUNCTION:
-            _reject(node.func, "calls to non-function names")
+            _reject(node.func, "calls to non-function values")
         for arg in node.args:
             if arg.kind != nodes.ArgumentKind.DEFAULT or arg.keyword is not None:
                 _reject(arg, "keyword, variadic or block arguments")
@@ -1117,15 +1156,26 @@ def lower_typed_module(
     module_functions: dict[str, set[str]] | None = None,
     external_constructors: dict[str, ConstructorRef] | None = None,
     external_decls: tuple[AdtDecl, ...] = (),
+    *,
+    allow_top_level: bool = True,
+    top_level_reject_reason: str = "dependency modules "
+    "(only the entry module may declare top-level bindings)",
 ) -> TypedModule:
     """Lower a checked ``oort-core`` module to typed HIR.
 
     Only the scalar subset is accepted; anything else raises
     ``UnsupportedSyntax`` rather than silently falling back.
+
+    ``allow_top_level`` permits top-level val/var declarations; the module
+    linker passes ``False`` for dependencies (a linked program only executes
+    the entry module's main), and the object→core boundary passes ``False``
+    with its own rejection reason (values do not cross the boundary yet).
     """
 
     module = _user_module(module)
-    _validate_module(module)
+    global_types = _validate_module(
+        module, allow_top_level=allow_top_level, reject_reason=top_level_reject_reason
+    )
     adt_decls, constructors, refs = _collect_adt_decls(module)
     table = list(refs)
     for name, ref in (external_constructors or {}).items():
@@ -1166,6 +1216,7 @@ def lower_typed_module(
         adt_decls,
         tuple(table),
         tuple(external_decls),
+        tuple(global_types.items()),
     )
     validate_typed_module(typed_module)
     return typed_module
@@ -1517,8 +1568,18 @@ def validate_typed_module(module: TypedModule) -> None:
                     if function.register_types[register] is None:
                         _invalid(function, instruction, "function argument has no type")
             elif isinstance(instruction, LoadGlobal):
-                if function.register_types[instruction.dst] is not IrType.FUNCTION:
-                    _invalid(function, instruction, "non-function global")
+                declared = module.global_types_map.get(instruction.name)
+                if declared is None:
+                    # Only functions (and natives) live in undeclared globals.
+                    if function.register_types[instruction.dst] is not IrType.FUNCTION:
+                        _invalid(function, instruction, "non-function global")
+                elif function.register_types[instruction.dst] != declared:
+                    _invalid(
+                        function,
+                        instruction,
+                        f"global '{instruction.name}' load type "
+                        f"{function.register_types[instruction.dst]} != {declared}",
+                    )
             elif isinstance(instruction, MakeClosure):
                 if function.register_types[instruction.dst] is not IrType.FUNCTION:
                     _invalid(function, instruction, "closure target is not a function")
@@ -1529,7 +1590,20 @@ def validate_typed_module(module: TypedModule) -> None:
                 if function.register_types[instruction.src] is None:
                     _invalid(function, instruction, "outer write has no type")
             elif isinstance(instruction, StoreGlobal):
-                _invalid(function, instruction, "global stores")
+                declared = module.global_types_map.get(instruction.name)
+                if declared is None:
+                    _invalid(
+                        function,
+                        instruction,
+                        f"store to undeclared global '{instruction.name}'",
+                    )
+                if function.register_types[instruction.src] != declared:
+                    _invalid(
+                        function,
+                        instruction,
+                        f"global '{instruction.name}' store type "
+                        f"{function.register_types[instruction.src]} != {declared}",
+                    )
             elif isinstance(instruction, (BuildList, BuildSet, BuildTuple)):
                 _validate_sequence(function, instruction)
             elif isinstance(instruction, BuildDict):

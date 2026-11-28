@@ -69,7 +69,8 @@ artifact 至少记录：
 
 ### 5. ABI 与版本
 
-- kind=1 提升到 v12（artifact 带 module/export/import、构造器表与集合指令）；
+- kind=1 提升到 v13（artifact 带 module/export/import、构造器表与集合指令；
+  v13 增加顶层绑定 `STORE_G`）；
 - 模块记录 ABI/version；loader 校验；
 - 旧 v7–v11 文件不被 artifact reader 静默接受（v8 单模块、v9 早期 artifact、
   v10 typed cells、v11 Set 比较，均已淘汰）；

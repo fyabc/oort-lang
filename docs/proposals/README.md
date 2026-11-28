@@ -105,6 +105,7 @@
 | 2026-11-24 | 编译缓存采用内容寻址 + 版本目录 + 依赖接口哈希；短期项目内 opt-in，长期接口/代码分离与共享缓存 | [OP 0030](0030-compilation-cache.md)（Proposed） |
 | 2026-11-24 | OP 0031 C1–C4：core 支持 `in`/`!in`、List/Dict 下标写入、List/Tuple/String 切片读、Set 代数；kind=1 v7 / artifact v9 / bundle v2 | [OP 0031](0031-core-collection-surface.md)（Implemented） |
 | 2026-11-25 | OP 0031 C7 + OP 0032 C5：Set 子集比较；List `+`、字典序与 `sorted`，可排序集合初始为 Int/Float/String；kind=1 v10 / artifact v12 / bundle v5 | [OP 0032](0032-core-ordering-and-sorting.md)（Implemented） |
+| 2026-11-26 | B5 typed 顶层声明：入口模块 `val`/`var` 全局（`STORE_G`=98）与链式调用；依赖模块/B1 边界仍拒绝；kind=1 v11 / artifact v13 / bundle v6 | [design 15](../design/15-typed-ir.md) §B5 |
 | 2026-11-24 | P1 收尾：移除 HIR 合并 linker，`-t thir` 改逐模块输出；enum 类型名仍不能 `from` 导入，显式 `import type` 留待后续 | [OP 0027](0027-typed-modules.md)（Implemented） |
 | 2026-11-23 | Dict 插入顺序仅作为实现特性，不是语言保证；Set 顺序未定义 | [spec 09](../spec/09-iterators.md) |
 

@@ -17,7 +17,14 @@ from oort_lang.bytecode.serialize import ObcError, read_obc, write_obc
 from oort_lang.diagnostics.error_handler import CompilerErrorHandler
 from oort_lang.diagnostics.syntax_errors import UnsupportedSyntax
 from oort_lang.driver.compiler import CompilerError
-from oort_lang.hir import AdtType, ContainerType, IrType, lower_module, lower_typed_module
+from oort_lang.hir import (
+    AdtType,
+    ContainerType,
+    IrType,
+    StoreGlobal,
+    lower_module,
+    lower_typed_module,
+)
 from oort_lang.hir.typed_link import load_typed_units
 from oort_lang.runtime.interpreter import ASTInterpreter
 from oort_lang.source.input_info import StringInputInfo
@@ -112,6 +119,8 @@ def test_typed_subset_example_is_accepted():
         "08_20_typed_modules.ort",
         "08_21_typed_collection_surface.ort",
         "08_22_typed_function_values.ort",
+        "08_04_function_values.ort",
+        "08_05_currying.ort",
         "08_10_patterns.ort",
     ],
 )
@@ -845,20 +854,15 @@ def test_typed_lowering_rejects_out_of_subset():
         lower_typed_module(ast)
 
 
-def test_typed_lowering_rejects_top_level_declarations():
-    ast = build_ast("#lang oort-core\nval x: Int = 1\nprint(x)\n")
-    with pytest.raises(UnsupportedSyntax, match="top-level declarations"):
-        lower_typed_module(ast)
+def test_typed_lowering_accepts_top_level_declarations():
+    ast = build_ast("#lang oort-core\nval x: Int = 1\nvar y: Int = x + 1\nprint(x, y)\n")
+    typed = lower_typed_module(ast)
+    assert dict(typed.global_types) == {"x": IrType.INT, "y": IrType.INT}
+    stores = [i for i in typed.main.hir.code if isinstance(i, StoreGlobal)]
+    assert {store.name for store in stores} == {"x", "y"}
 
 
-def test_typed_lowering_rejects_function_values():
-    ast = build_ast(
-        """\
-#lang oort-core
-def f(x: Int) -> Int { x }
-val g: (Int) -> Int = f
-print(g(1))
-"""
-    )
-    with pytest.raises(UnsupportedSyntax):
-        lower_typed_module(ast)
+def test_typed_lowering_rejects_top_level_when_disabled():
+    ast = build_ast("#lang oort-core\nval x: Int = 1\n")
+    with pytest.raises(UnsupportedSyntax, match="top-level declarations in"):
+        lower_typed_module(ast, allow_top_level=False)

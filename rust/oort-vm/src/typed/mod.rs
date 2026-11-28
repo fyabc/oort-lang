@@ -6,8 +6,9 @@
 //! `Rc`/`RefCell`. Conversions happen only at the native `print` boundary and
 //! when reporting the main result. Semantics mirror the Python typed VM.
 //!
-//! Accepted file versions are exact, never inferred: kind=1 typed proto v10,
-//! kind=1 module artifact v12, kind=2 linked bundle v5. Malformed bytecode
+//! Accepted file versions are exact, never inferred: kind=1 typed proto v11
+//! (STORE_G top-level bindings), kind=1 module artifact v13, kind=2 linked
+//! bundle v6. Malformed bytecode
 //! (unknown opcode/tag/version, out-of-range index) is rejected explicitly;
 //! numeric semantics follow docs/design/16-numeric-semantics.md.
 //!
@@ -119,7 +120,7 @@ pub struct TypedConstructorRef {
     pub arity: u16,
 }
 
-/// One module compiled to its own artifact (kind=1, version 12).
+/// One module compiled to its own artifact (kind=1, version 13).
 ///
 /// Export/import tables describe module edges; `module.adt_decls` and
 /// `constructors` still use artifact-local ids that the linker remaps.

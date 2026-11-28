@@ -37,7 +37,7 @@ module artifacts → import/export validation → relocation → linked program
 - 后续 package manager 使用 `package::module`；
 - source path 与 module_id 的映射由 loader/清单提供。
 
-## 3. Artifact 布局（v12，已实现）
+## 3. Artifact 布局（v13，已实现）
 
 ```text
 OBC | kind=1 | version=10
@@ -146,7 +146,7 @@ proto(main)
 Python loader/linker（`load_typed_units` + `build_typed_program`）：
 
 1. 从 root checked AST 出发解析 import spec → path，得到 unit 图（依赖在前）；
-2. 每个 unit lowering 后编译为 v12 artifact（内存或磁盘）；
+2. 每个 unit lowering 后编译为 v13 artifact（内存或磁盘）；
 3. 校验 module_id、kind/version、ABI 版本、import/export 边；
 4. 检测循环，得到拓扑序；
 5. 合并 ADT 声明（prelude 去重），按 `module_id` 重写 origin；
@@ -163,7 +163,7 @@ Python loader/linker（`load_typed_units` + `build_typed_program`）：
 ### 5.1 编译缓存（P1c-3，契约见 [OP 0030](../proposals/0030-compilation-cache.md)）
 
 - `--cache-dir DIR` 或 `OORT_CACHE_DIR` 开启缓存（`--no-cache` 关闭）；布局为
-  `DIR/v12/abi<N>/<ab>/<cd>/<sha256>.obc`，版本化且内容寻址；
+  `DIR/v13/abi<N>/<ab>/<cd>/<sha256>.obc`，版本化且内容寻址；
 - key 包含源码字节、`module_id`、编译器版本、artifact/ABI 版本、代码生成
   选项以及直接依赖的接口哈希；依赖实现变化不会使依赖者 miss，接口变化会
   直接 miss；
@@ -179,7 +179,7 @@ B1 边界使用同一 loader：`build_typed_program_exports` 返回链接后的�
 Rust（已实现）：
 
 - 读取 kind=2 linked bundle，直接交给 typed VM；
-- 读取 v12 module artifact，原生校验 import/export 与 ABI hash、合并声明、
+- 读取 v13 module artifact，原生校验 import/export 与 ABI hash、合并声明、
   重定位 `NEW_ADT`/`DEF_FUN`、重映射类型表里的 ADT 声明 id；
 - CLI：`oort-vm --link <root.obc> <dependency.obc>...`；
 - 缓存仍由 Python 编译器负责；Rust 只读取已经产出的 artifact。
@@ -196,9 +196,9 @@ Rust（已实现）：
 
 - artifact `abi_version` 与 kind/version 分离；
 - 读取方要求精确的 kind/version/ABI 版本，不做兼容猜测：
-  - kind=1 只接受 v10（单模块）或 v12（module artifact）；
-  - kind=2 只接受 v5 linked bundle；
-- v10 与 v12 不静默互读；v6–v11 是历史格式；
+  - kind=1 只接受 v11（单模块）或 v13（module artifact）；
+  - kind=2 只接受 v6 linked bundle；
+- v11 与 v13 不静默互读；v6–v12 是历史格式；
 - 缓存 key 含 artifact/ABI/compiler 版本，升级后自然 miss；
 - 暂不承诺跨版本模块混用；需要迁移时重新编译源码。
 

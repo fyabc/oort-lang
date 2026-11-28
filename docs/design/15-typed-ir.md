@@ -669,7 +669,26 @@ GC 仍未定：`Rc` 环（闭包 ↔ 单元格 ↔ 闭包）在引入类/引用�
 捕获后赋值、累加器）；typed differential `typed_function_values`、
 `typed_capturing_closures` 与 `typed_module_lambdas`（bundle + 原生链接）；
 eval/vm/tvm 三目标一致性测试，覆盖顶层 block 捕获 main 局部变量；
-`08_04`/`08_05` 因顶层 `val`（非闭包原因）仍不能进 tvm。
+`08_04`/`08_05` 自 B5（顶层声明）起进入 tvm。
+
+### B5 实现状态：顶层声明（2026-11-26）
+
+入口模块支持顶层 `val`/`var` 声明与赋值：共享 lowerer 在模块作用域发出
+`StoreGlobal`，typed 路径新增 `STORE_G`（opcode 98，A=源寄存器、Bx=名字
+常量）写入运行时全局表；`LOAD_G` 不再限于函数值。main 按模块顺序初始化
+绑定，函数体可读写 `var` 全局（先读后写运行时报 unknown name，与动态
+语义一致）。链式调用（`add(2)(3)`）同步放开：任意函数类型表达式可作
+callee。
+
+**边界与限制。** 链接程序只执行入口模块的 main，因此依赖模块的顶层声明
+显式拒绝（"top-level declarations in dependency modules"）；object→core
+边界同样拒绝（模块级值不跨边界，OP 0028）；跨模块导入全局值待值导出
+设计（export kind 4 + 初始化顺序）后再议。版本：proto **v11**、artifact
+**v13**、bundle **v6**。
+
+**验收。** `tests/integration/test_core_top_level.py`（三目标一致性、
+val 不可变/Unit 全局拒绝、依赖模块拒绝、顶层块）；typed differential
+`typed_top_level`、`typed_currying`；`08_04`/`08_05` 进入 tvm 示例矩阵。
 
 ## 9. 风险与开放问题
 

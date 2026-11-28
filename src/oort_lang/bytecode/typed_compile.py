@@ -264,6 +264,10 @@ class _ProtoBuilder:
         elif isinstance(instruction, LoadGlobal):
             index = self._constant(instruction.name, position)
             self._emit(encode_abx(TypedOp.LOAD_G, instruction.dst, index), position)
+        elif isinstance(instruction, StoreGlobal):
+            # A=source register, Bx=name constant; mirrors LOAD_G.
+            index = self._constant(instruction.name, position)
+            self._emit(encode_abx(TypedOp.STORE_G, instruction.src, index), position)
         elif isinstance(instruction, MakeClosure):
             # A capturing lambda snapshots the creating frame; a leaf lambda
             # is just a function reference.
@@ -387,8 +391,6 @@ class _ProtoBuilder:
             self._emit(encode_abc(TypedOp.RET, instruction.src, 0, 0), position)
         elif isinstance(instruction, Call):
             self._emit_call(instruction)
-        elif isinstance(instruction, StoreGlobal):
-            raise UnsupportedSyntax("Typed bytecode does not support global stores.", position)
         else:
             raise UnsupportedSyntax(
                 f"Typed bytecode does not support {type(instruction).__name__}.",

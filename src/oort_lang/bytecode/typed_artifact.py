@@ -1,8 +1,8 @@
 #! /usr/bin/env python
 
-"""Typed module artifacts and the link-time loader (v12, design 19).
+"""Typed module artifacts and the link-time loader (v13, design 19).
 
-A v12 artifact is one compiled typed core module plus its export/import
+A v13 artifact is one compiled typed core module plus its export/import
 surface and an artifact-level constructor table. Artifacts never store host
 paths: the module id is a relative POSIX path, ADT origins are rewritten to
 it, and position tables use it as the filename.
@@ -53,10 +53,10 @@ if TYPE_CHECKING:
     from ..hir.typed_link import TypedUnit
     from .typed_cache import TypedArtifactCache
 
-ARTIFACT_VERSION = 12
+ARTIFACT_VERSION = 13
 ABI_VERSION = 1
 LINKED_KIND = 2
-LINKED_VERSION = 5
+LINKED_VERSION = 6
 _LINKED_FILENAME = "<linked>"
 
 _EXPORT_CODES = {"function": 1, "adt": 2, "constructor": 3}
@@ -677,12 +677,12 @@ def build_typed_program_exports(
 
 
 # ----------------------------------------------------------------------
-# v12 serialization
+# v13 serialization
 # ----------------------------------------------------------------------
 
 
 def write_typed_artifact(artifact: TypedArtifact, path: str | Path) -> None:
-    """Serialize a typed module artifact as a kind=1 v12 file."""
+    """Serialize a typed module artifact as a kind=1 v13 file."""
 
     _validate_artifact(artifact)
     w = _Writer()
@@ -734,7 +734,7 @@ def write_typed_artifact(artifact: TypedArtifact, path: str | Path) -> None:
 
 
 def read_typed_artifact(path: str | Path) -> TypedArtifact:
-    """Read a kind=1 v12 typed module artifact."""
+    """Read a kind=1 v13 typed module artifact."""
 
     data = Path(path).read_bytes()
     if not data.startswith(MAGIC):

@@ -94,6 +94,7 @@ pub(crate) const SET_SUPERSET: u32 = 94;
 pub(crate) const SET_PROPER_SUPERSET: u32 = 95;
 pub(crate) const CMP_LIST: u32 = 96;
 pub(crate) const LIST_CONCAT: u32 = 97;
+pub(crate) const STORE_G: u32 = 98;
 
 /// Human-readable opcode name for tracing and diagnostics.
 pub(crate) fn name(op: u32) -> Option<&'static str> {
@@ -102,6 +103,7 @@ pub(crate) fn name(op: u32) -> Option<&'static str> {
         LOAD_L => "LOAD_L",
         STORE_L => "STORE_L",
         LOAD_G => "LOAD_G",
+        STORE_G => "STORE_G",
         DEF_FUN => "DEF_FUN",
         MOVE => "MOVE",
         ADD_I => "ADD_I",

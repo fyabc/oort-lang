@@ -571,11 +571,37 @@ def ordering() -> Unit {
 
 ordering()
 """,
+    "typed_top_level": """#lang oort-core
+
+def apply(f: (Int) -> Int, x: Int) -> Int { f(x) }
+
+val name: String = "Oort"
+val double: (Int) -> Int = do(x: Int) -> Int { x * 2 }
+var count: Int = 0
+
+def bump() -> Int {
+    count = count + 1
+    count
+}
+
+count = 10
+print(name, count)
+print(apply(double, 3))
+print(bump(), bump(), count)
+""",
+    "typed_currying": """#lang oort-core
+
+val add: Int -> Int -> Int = do(a: Int) -> Int -> Int {
+    do(b: Int) -> Int { a + b }
+}
+
+print(add(2)(3))
+""",
 }
 
 
 # Multi-module typed cases: (dependency sources, root source). They exercise
-# v12 artifact linking (imported constructors, same-named ADTs) through kind=2.
+# v13 artifact linking (imported constructors, same-named ADTs) through kind=2.
 # Programs that fail at runtime. Both VMs must fail, and the innermost Rust
 # frame must point at the same source line as the Python exception position.
 # Messages are not compared: Python surfaces host exception text.
@@ -716,7 +742,7 @@ def compile_files_to_bundle(main_path: Path, out: Path):
 
 
 def compile_files_to_artifacts(main_path: Path, out_dir: Path):
-    """Write one v12 artifact per module; return (root_path, dependency_paths)."""
+    """Write one v13 artifact per module; return (root_path, dependency_paths)."""
 
     compiler, ast, _info = _frontend(main_path)
     resolve = compiler._make_typed_resolver(main_path.parent)

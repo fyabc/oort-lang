@@ -120,15 +120,26 @@ def load_typed_units(
     root_ast: nodes.ModuleNode,
     root_path: Path | None,
     resolve: ResolveModule,
+    *,
+    allow_top_level: bool = True,
 ) -> tuple[TypedUnit, ...]:
-    """Load the root module and its typed imports, dependencies first."""
+    """Load the root module and its typed imports, dependencies first.
+
+    ``allow_top_level=False`` rejects top-level val/var bindings even in the
+    entry module; the object→core boundary uses this because exported values
+    do not cross the boundary yet (OP 0028).
+    """
+
+    boundary_reason = (
+        "modules executed across the object→core boundary (module-level values do not cross yet)"
+    )
 
     root_dir = root_path.parent if root_path is not None else None
     loaded: dict[Path, TypedUnit] = {}
     active: set[Path] = set()
     units: list[TypedUnit] = []
 
-    def load(ast: nodes.ModuleNode, path: Path | None) -> TypedUnit:
+    def load(ast: nodes.ModuleNode, path: Path | None, *, is_root: bool) -> TypedUnit:
         if path is not None and path in loaded:
             return loaded[path]
         if path is not None:
@@ -148,7 +159,7 @@ def load_typed_units(
             if resolved is None:
                 raise UnsupportedSyntax(f"Typed import failed: {stmt.module_path}", stmt.position)
             dep_path, dep_ast = resolved
-            dependency = load(dep_ast, dep_path)
+            dependency = load(dep_ast, dep_path, is_root=False)
             for decl in _own_decls(dependency.module):
                 key = (decl.origin, decl.name)
                 if key not in seen_decls:
@@ -189,6 +200,14 @@ def load_typed_units(
             module_functions,
             external_constructors=external_constructors,
             external_decls=tuple(external_decls),
+            # A linked program executes only the entry module's main, so
+            # top-level bindings can only initialize there.
+            allow_top_level=is_root and allow_top_level,
+            top_level_reject_reason=(
+                boundary_reason
+                if not allow_top_level
+                else "dependency modules (only the entry module may declare top-level bindings)"
+            ),
         )
         functions, constructors, adts = _exports(module)
         unit = TypedUnit(
@@ -207,7 +226,7 @@ def load_typed_units(
         units.append(unit)
         return unit
 
-    load(root_ast, root_path)
+    load(root_ast, root_path, is_root=True)
     return tuple(units)
 
 
