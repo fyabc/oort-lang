@@ -79,6 +79,9 @@ EXPECTED_OUTPUTS = {
     "08_core/08_23_typed_list_ordering.ort": (
         "[1, 2, 3] [3, 1, 2]\n[1, 2, 3]\ntrue true true\n[a, b, c]\nfalse\n"
     ),
+    "08_core/08_24_generic_functions.ort": (
+        "true 2.5\n[7, 7] [a, a]\n(1, x) (false, 2.5)\n1 x\n3 2\n"
+    ),
     "09_boundary/09_00_object_calls_core.ort": "10\n0.6\n4\n3\n(7, x)\n",
     "09_boundary/09_01_object_calls_nested_core.ort": "10\n",
 }

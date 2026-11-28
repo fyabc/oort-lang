@@ -195,6 +195,7 @@ def load_typed_units(
                     stmt.position,
                 )
 
+        module_id = _module_id(path, root_dir)
         module = lower_typed_module(
             ast,
             module_functions,
@@ -208,11 +209,15 @@ def load_typed_units(
                 if not allow_top_level
                 else "dependency modules (only the entry module may declare top-level bindings)"
             ),
+            # Instantiations are called by name in the merged globals table;
+            # salt them with the module id so same-named generics in different
+            # linked modules cannot shadow each other.
+            instantiation_salt=module_id,
         )
         functions, constructors, adts = _exports(module)
         unit = TypedUnit(
             path,
-            _module_id(path, root_dir),
+            module_id,
             ast,
             module,
             functions,

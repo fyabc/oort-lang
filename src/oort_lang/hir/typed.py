@@ -11,6 +11,7 @@ explicitly; the erased path is never changed.
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 from enum import Enum
 from typing import TYPE_CHECKING, NoReturn
@@ -22,6 +23,7 @@ from ..semantics.core.types import (
 )
 from ..semantics.core.types import (
     DictType,
+    ForallType,
     FunctionType,
     ListType,
     NeverType,
@@ -1108,6 +1110,152 @@ def _user_module(module: nodes.ModuleNode) -> nodes.ModuleNode:
     return module
 
 
+# ---------------------------------------------------------------------------
+# Generic-function monomorphization (OP 0033)
+# ---------------------------------------------------------------------------
+
+
+def generic_function_name(base: str, index: int, salt: str = "") -> str:
+    """Internal name for one instantiation of a generic function.
+
+    Like ``<lambda:N>``, the ``<generic:...>`` prefix keeps instantiations out
+    of user scope, export tables and the linker's duplicate-name checks.
+    ``salt`` (the owning module's id) keeps same-named generics in different
+    linked modules from colliding in the merged function table: instantiations
+    are called by name through the globals table, unlike lambdas which call
+    by index.
+    """
+
+    if salt:
+        return f"<generic:{salt}:{base}:{index}>"
+    return f"<generic:{base}:{index}>"
+
+
+def is_generic_function_name(name: str) -> bool:
+    return name.startswith("<generic:")
+
+
+def _clone_value(value):
+    if isinstance(value, nodes.ASTNode):
+        return _clone_ast(value)
+    if isinstance(value, list):
+        return [_clone_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_clone_value(item) for item in value)
+    if isinstance(value, dict):
+        return {key: _clone_value(item) for key, item in value.items()}
+    return value
+
+
+def _clone_ast(node: nodes.ASTNode) -> nodes.ASTNode:
+    """Structurally clone one declaration for monomorphization.
+
+    ``copy.deepcopy`` chokes on positions (they hold ANTLR tokens with live
+    streams), so clone the node shape manually and share the read-only leaves:
+    positions, bindings, tokens and frozen checker types. Each clone gets its
+    own ``metadata`` dict, which ``_substitute_metadata`` rewrites.
+    """
+
+    clone = copy.copy(node)
+    clone.metadata = dict(node.metadata)
+    for name, value in list(vars(clone).items()):
+        if name == "metadata":
+            continue
+        setattr(clone, name, _clone_value(value))
+    return clone
+
+
+def _monomorphize_generics(module: nodes.ModuleNode, salt: str = "") -> None:
+    """Rewrite same-module generic calls to concrete instantiations.
+
+    The checker recorded each call's inferred type arguments in
+    ``node.metadata["generic_args"]``. For every distinct instantiation we
+    deep-copy the generic declaration, substitute the rigid parameters
+    through its metadata, strip the type parameters and rename it; call sites
+    are redirected to the copy. Original generic declarations are removed —
+    the typed backend only ever lowers instantiations.
+    """
+
+    declarations = {
+        stmt.name: stmt
+        for stmt in module.body.statements
+        if isinstance(stmt, nodes.FunctionDef) and stmt.type_params
+    }
+    if not declarations:
+        return
+
+    memo: dict[tuple[str, tuple[str, ...]], str] = {}
+    added: list[nodes.FunctionDef] = []
+
+    def instantiate(decl: nodes.FunctionDef, args: tuple) -> str:
+        base = decl.name
+        key = (base, tuple(describe_type(arg) for arg in args))
+        existing = memo.get(key)
+        if existing is not None:
+            return existing
+        name = generic_function_name(base, len(memo) + 1, salt)
+        memo[key] = name  # Register first: recursive self-calls resolve here.
+
+        bindings = {declaration.name: arg for declaration, arg in zip(decl.type_params, args)}
+        clone = _clone_ast(decl)
+        assert isinstance(clone, nodes.FunctionDef)
+        clone.type_params = []
+        clone.names = [name]
+        signature = clone.metadata.get("type_obj")
+        if isinstance(signature, Type):
+            # Unwrap the ForallType scheme: the instantiation is monomorphic.
+            if isinstance(signature, ForallType):
+                signature = signature.body
+            signature = substitute(signature, bindings)
+            clone.metadata["type_obj"] = signature
+            clone.metadata["type"] = describe_type(signature)
+        _substitute_metadata(clone, bindings)
+        added.append(clone)
+        # The copy's body may call the same (or other) generics; its recorded
+        # instantiations were substituted alongside the metadata above.
+        walk_calls(clone)
+        return name
+
+    def walk_calls(root: nodes.ASTNode) -> None:
+        """Redirect generic calls under ``root`` to instantiations."""
+
+        if (
+            isinstance(root, nodes.Call)
+            and isinstance(root.func, nodes.Name)
+            and root.func.id in declarations
+            and root.metadata.get("generic_args") is not None
+        ):
+            name = instantiate(declarations[root.func.id], root.metadata["generic_args"])
+            root.func.id = name
+            signature = root.func.metadata.get("type_obj")
+            if isinstance(signature, ForallType):
+                root.func.metadata["type_obj"] = signature.body
+        for child in root.children():
+            walk_calls(child)
+
+    def _substitute_metadata(root: nodes.ASTNode, bindings: dict) -> None:
+        type_obj = root.metadata.get("type_obj")
+        if isinstance(type_obj, Type):
+            substituted = substitute(type_obj, bindings)
+            root.metadata["type_obj"] = substituted
+            root.metadata["type"] = describe_type(substituted)
+        generic_args = root.metadata.get("generic_args")
+        if generic_args is not None:
+            root.metadata["generic_args"] = tuple(
+                substitute(arg, bindings) if isinstance(arg, Type) else arg for arg in generic_args
+            )
+        for child in root.children():
+            _substitute_metadata(child, bindings)
+
+    kept: list[nodes.ASTNode] = []
+    for stmt in module.body.statements:
+        if isinstance(stmt, nodes.FunctionDef) and stmt.type_params:
+            continue  # Replaced by its instantiations.
+        walk_calls(stmt)
+        kept.append(stmt)
+    module.body.statements = [*kept, *added]
+
+
 def _main_return_type(
     function: HirFunction, register_types: tuple[IrTypeLike | None, ...]
 ) -> IrTypeLike:
@@ -1160,6 +1308,7 @@ def lower_typed_module(
     allow_top_level: bool = True,
     top_level_reject_reason: str = "dependency modules "
     "(only the entry module may declare top-level bindings)",
+    instantiation_salt: str = "",
 ) -> TypedModule:
     """Lower a checked ``oort-core`` module to typed HIR.
 
@@ -1170,9 +1319,14 @@ def lower_typed_module(
     linker passes ``False`` for dependencies (a linked program only executes
     the entry module's main), and the object→core boundary passes ``False``
     with its own rejection reason (values do not cross the boundary yet).
+
+    ``instantiation_salt`` disambiguates generic instantiations across linked
+    modules (the owning module's id); instantiations are called by name, so
+    same-named generics in two modules must not produce identical names.
     """
 
     module = _user_module(module)
+    _monomorphize_generics(module, salt=instantiation_salt)
     global_types = _validate_module(
         module, allow_top_level=allow_top_level, reject_reason=top_level_reject_reason
     )

@@ -72,6 +72,8 @@
 | [类型化模块](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_20_typed_modules.ort) | 多模块 typed core、导入构造器、同名 ADT 按 module_id 区分 |
 | [类型化集合表面](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_21_typed_collection_surface.ort) | `in`/`!in`、List/Dict 下标写入、切片读、Set 代数 |
 | [类型化函数值](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_22_typed_function_values.ort) | 命名函数一等值、高阶参数/返回、函数容器 |
+| [类型化排序](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_23_typed_list_ordering.ort) | List `+`、字典序比较、`sorted` |
+| [泛型函数](https://github.com/fyabc/oort-lang/blob/main/examples/08_core/08_24_generic_functions.ort) | 类型参数推断、递归泛型；动态路径擦除、typed 路径单态化 |
 
 ```bash
 oort examples/08_core/08_01_core_functions.ort

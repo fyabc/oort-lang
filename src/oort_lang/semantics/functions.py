@@ -48,9 +48,6 @@ class FunctionResolverMixin(ASTVisitor):
         raise NotImplementedError
 
     def visit_function_def(self, node: nodes.FunctionDef) -> None:
-        if node.type_params:
-            self._unsupported("Generic functions are not implemented yet.", node)
-
         if len(node.names) > 2:
             message = (
                 "Class method names must use 'def class.name'."

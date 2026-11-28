@@ -121,6 +121,7 @@ def test_typed_subset_example_is_accepted():
         "08_22_typed_function_values.ort",
         "08_04_function_values.ort",
         "08_05_currying.ort",
+        "08_24_generic_functions.ort",
         "08_10_patterns.ort",
     ],
 )

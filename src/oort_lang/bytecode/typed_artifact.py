@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..diagnostics.syntax_errors import UnsupportedSyntax
-from ..hir.lower import is_lambda_function_name
+from ..hir.lower import is_internal_function_name
 from ..hir.typed import (
     AdtConstructor,
     AdtDecl,
@@ -277,9 +277,10 @@ def build_typed_artifact(
 
     exports: list[TypedExport] = []
     for index, proto in enumerate(program.functions):
-        if is_lambda_function_name(proto.name):
-            # Lambdas are internal helpers; they have no importable name and
-            # must not collide across modules or affect interface hashes.
+        if is_internal_function_name(proto.name):
+            # Lambdas and generic instantiations are internal helpers; they
+            # have no importable name and must not collide across modules or
+            # affect interface hashes.
             continue
         exports.append(TypedExport("function", proto.name, index, abi_hash=_function_abi(proto)))
     for decl_index, decl in enumerate(program.adt_decls):
@@ -563,7 +564,7 @@ def link_typed_artifacts(
         # relocate against the complete map.
         function_map = {index: len(functions) + index for index in range(len(protos))}
         for proto in protos:
-            if not is_lambda_function_name(proto.name):
+            if not is_internal_function_name(proto.name):
                 if proto.name in owners:
                     raise UnsupportedSyntax(
                         f"Typed function name collision: '{proto.name}' in "

@@ -597,6 +597,20 @@ val add: Int -> Int -> Int = do(a: Int) -> Int -> Int {
 
 print(add(2)(3))
 """,
+    "typed_generic_functions": """#lang oort-core
+
+def id[T](x: T) -> T { x }
+def wrap[T](x: T) -> List[T] { [x, x] }
+def pair[A, B](a: A, b: B) -> Tuple[A, B] { (a, b) }
+def count_all[T](xs: List[T]) -> Int {
+    if len(xs) == 0 { 0 } else { 1 + count_all(xs[1:]) }
+}
+
+print(id(true), id(2.5))
+print(wrap(7), wrap("a"))
+print(pair(1, "x"), pair(false, 2.5))
+print(count_all([1, 2, 3]), count_all(["a", "b"]))
+""",
 }
 
 

@@ -690,6 +690,27 @@ callee。
 val 不可变/Unit 全局拒绝、依赖模块拒绝、顶层块）；typed differential
 `typed_top_level`、`typed_currying`；`08_04`/`08_05` 进入 tvm 示例矩阵。
 
+### B6 实现状态：泛型函数（2026-11-28，OP 0033）
+
+checker 放开 `def f[T](...)` 声明：类型参数以 `TypeParameterType` 进入
+`type_parameters` 作用域，签名包成 `ForallType` scheme；体内在刚性参数下
+检查一次（无上界：对 `T` 的运算符/相等按现有规则拒绝）。调用点复用
+OP 0022 的构造器推断（`unify` + 期望驱动），并把实例记录到
+`metadata["generic_args"]`。返回类型必须显式标注。
+
+后端策略：动态路径（eval/vm）擦除——HIR 不携带类型，仅放开
+`type_params` 拒绝；typed 路径在 `lower_typed_module` 前预扫描调用点，
+按 `(函数, 实例参数)` 深拷贝泛型声明（手写 AST 克隆器，position/token
+共享只读），`substitute` 代换 metadata、剥 `type_params`、命名为
+`<generic:name:N>`（与 `<lambda:...>` 一样不导出、不参与重名检查），
+调用点重定向到实例；体内递归经 memo 落回同一实例。跨模块泛型调用在
+typed 路径不可用（依赖 artifact 不携带泛型源体，导入解析报
+"does not export"）。
+
+**验收。** `tests/integration/test_core_generic_functions.py`（三目标一致
+性、期望驱动、8 类错误、实例去重）；differential
+`typed_generic_functions`；示例 `08_24_generic_functions.ort`。
+
 ## 9. 风险与开放问题
 
 1. **类型来源漂移**：若 lowering 重新推断或解析字符串，规则必然与检查器分叉。

@@ -1519,8 +1519,6 @@ class CoreTypeChecker(ASTVisitor[Type]):
             return self._unsupported(
                 node, "Only plain top-level functions are supported in oort-core."
             )
-        if node.type_params:
-            return self._unsupported(node, "Generic functions are not supported in oort-core yet.")
         if node.operator_symbol is not None:
             return self._unsupported(
                 node, "Operator definitions are not supported in oort-core yet."
@@ -1530,25 +1528,104 @@ class CoreTypeChecker(ASTVisitor[Type]):
                 node, "Nested function definitions are not supported in oort-core yet."
             )
 
-        infer_return = node.ret_type is None
-        signature = self._build_signature(node, node.name, infer_return=infer_return)
-        # Declare before checking the body so self-recursive calls resolve; the
-        # inferred return type is backfilled afterwards.
-        self.declare(
-            node.name,
-            signature,
-            mutable=False,
-            position=node.name_position,
-            is_function=True,
-        )
-        signature = self._check_function_body(node, signature, node.name, infer_return=infer_return)
-        if infer_return:
-            info = self.lookup(node.name)
-            if info is not None:
-                info.type = signature
+        params = self._function_type_parameters(node)
+        previous_params = self.type_parameters
+        if params:
+            self.type_parameters = {param.name: param for param in params}
+            if node.ret_type is None:
+                self._error(
+                    f"Generic function '{node.name}' requires a return type annotation.",
+                    node.name_position,
+                )
+        try:
+            infer_return = node.ret_type is None
+            signature: Type = self._build_signature(node, node.name, infer_return=infer_return)
+            if params:
+                # Callers see the polymorphic scheme; the body is checked
+                # against the underlying monomorphic signature.
+                signature = ForallType(params, signature)
+            # Declare before checking the body so self-recursive calls resolve;
+            # the inferred return type is backfilled afterwards.
+            self.declare(
+                node.name,
+                signature,
+                mutable=False,
+                position=node.name_position,
+                is_function=True,
+            )
+            body = signature.body if isinstance(signature, ForallType) else signature
+            assert isinstance(body, FunctionType)
+            body = self._check_function_body(node, body, node.name, infer_return=infer_return)
+            if params:
+                signature = ForallType(params, body)
+            else:
+                signature = body
+            if infer_return:
+                info = self.lookup(node.name)
+                if info is not None:
+                    info.type = signature
+        finally:
+            self.type_parameters = previous_params
         node.metadata["type"] = describe_type(signature)
         node.metadata["type_obj"] = signature
         return UNIT
+
+    def _function_type_parameters(self, node: nodes.FunctionDef) -> tuple[TypeParameterType, ...]:
+        """Validate and collect a function's type parameters (OP 0033).
+
+        Mirrors the enum rules: bounds and defaults are rejected (no traits
+        yet) and names may not shadow types or variance keywords; unlike
+        enums, variance qualifiers are also rejected because functions have no
+        declaration-site variance to check.
+        """
+        if not node.type_params:
+            return ()
+        params: list[TypeParameterType] = []
+        seen: set[str] = set()
+        for declaration in node.type_params:
+            name = declaration.name
+            if declaration.qualifier.name != "DEFAULT":
+                self._unsupported(
+                    declaration,
+                    "Type parameter bounds are not supported in oort-core yet; "
+                    "oort-core has no traits/interfaces to use as bounds.",
+                )
+                continue
+            if declaration.default_value is not None:
+                self._unsupported(
+                    declaration,
+                    "Type parameter defaults are not supported in oort-core yet.",
+                )
+                continue
+            if declaration.variance is not VarianceKind.INVARIANT:
+                self._unsupported(
+                    declaration,
+                    "Type parameter variance is not supported on functions.",
+                )
+                continue
+            if name in seen:
+                self._error(f"Duplicate type parameter '{name}'.", declaration.position)
+                continue
+            if name == node.name:
+                self._error(
+                    f"Type parameter '{name}' shadows the function name.",
+                    declaration.position,
+                )
+                continue
+            if (
+                name in _RESERVED_TYPE_NAMES
+                or name in {"in", "out"}
+                or name in self.classes
+                or name in self.enums
+            ):
+                self._error(
+                    f"Type parameter '{name}' is already declared or reserved.",
+                    declaration.position,
+                )
+                continue
+            seen.add(name)
+            params.append(TypeParameterType(name, Variance.INVARIANT))
+        return tuple(params)
 
     def _check_lambda(self, node: nodes.FunctionDef, expected: Type = UNKNOWN) -> Type:
         if not node.has_explicit_param_list:
@@ -1979,6 +2056,9 @@ class CoreTypeChecker(ASTVisitor[Type]):
         node.func.metadata["type_obj"] = body
         node.func.metadata["type"] = describe_type(body)
         bindings = {param.name: arg for param, arg in zip(scheme.params, expected.args)}
+        node.metadata["generic_args"] = tuple(
+            bindings.get(param.name, UNKNOWN) for param in scheme.params
+        )
         if len(node.args) != len(body.params):
             self._error(
                 f"Function '{name}' expects {len(body.params)} arguments, got {len(node.args)}.",
@@ -2046,6 +2126,10 @@ class CoreTypeChecker(ASTVisitor[Type]):
         result = substitute(body.ret, bindings)
         if failed:
             return self._record(node, UNKNOWN)
+        # Record the instantiation for the typed backend's monomorphizer.
+        node.metadata["generic_args"] = tuple(
+            bindings.get(param.name, UNKNOWN) for param in scheme.params
+        )
         return self._record(node, result)
 
     def _check_generic_value_expected(

@@ -1394,7 +1394,24 @@ class TestCoreFunctionValueRejections:
         check_error(
             caplog,
             "val f = do[T](x: Int) -> Int { x }\n",
-            "Generic functions are not implemented yet.",
+            "Generic lambdas are not supported in oort-core yet.",
+        )
+
+    def test_generic_function_variants_are_rejected(self, caplog):
+        check_error(
+            caplog,
+            "def f[T: Bound](x: T) -> T { x }\n",
+            "Type parameter bounds are not supported in oort-core yet",
+        )
+        check_error(
+            caplog,
+            "def f[out T](x: T) -> T { x }\n",
+            "Type parameter variance is not supported on functions",
+        )
+        check_error(
+            caplog,
+            "def f[T](x: T) { x }\n",
+            "requires a return type annotation",
         )
 
     def test_default_parameter_in_lambda_is_rejected(self, caplog):

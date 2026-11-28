@@ -309,8 +309,6 @@ class HirLowerer:
             self._reject(node, "class methods")
         if node.operator_symbol is not None:
             self._reject(node, "operator methods")
-        if node.type_params:
-            self._reject(node, "generic functions")
         if len(node.names) != 1:
             self._reject(node, "namespaced functions")
 
@@ -1253,6 +1251,12 @@ def lambda_function_name(index: int) -> str:
 
 def is_lambda_function_name(name: str) -> bool:
     return name.startswith("<lambda:")
+
+
+def is_internal_function_name(name: str) -> bool:
+    """Lambdas and generic instantiations: internal, not importable names."""
+
+    return name.startswith(("<lambda:", "<generic:"))
 
 
 def _simple_signature(names: tuple[str, ...]) -> SignatureSpec:

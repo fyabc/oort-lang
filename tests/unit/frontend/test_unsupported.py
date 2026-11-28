@@ -16,7 +16,6 @@ UNSUPPORTED_CASES = [
     ("@m(1)", "macro system"),
     ("def f() { yield 1 }", "Generators"),
     ("def f() { await g() }", "Async/await"),
-    ("def f[T](a) {}", "Generic functions"),
     ("class C[T] {}", "Generic classes"),
     ("enum E { A }", "Enums are only supported in oort-core yet."),
     ("match 1 { _ => 1 }", "match is only supported in oort-core yet."),
